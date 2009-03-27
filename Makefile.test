@@ -1,0 +1,24 @@
+OCAMLMAKEFILE = OCamlMakefile
+
+ANNOTATE = yes
+export ANNOTATE
+DEBUG = yes
+export DEBUG
+
+OCAMLRUNPARAM=b
+export OCAMLRUNPARAM
+
+SOURCES=sql_access.ml ormtest.ml
+THREADS=yes
+RESULT=ormtest
+PACKS=unix sqlite3
+LIBDIRS=/opt/local/lib
+
+PP=./camlp4find $(PACKS)
+export PP
+
+.PHONY: all
+all: dnc
+	@ :
+
+include $(OCAMLMAKEFILE)
