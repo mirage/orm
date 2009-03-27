@@ -81,13 +81,12 @@ module Schema = struct
 
     let rec foreign_table_names all table =
       let fs = get_table_fields all table in
-      let res = List.fold_left (fun a b ->
+      List.fold_left (fun a b ->
         match b.ty with 
         |Foreign x |ForeignMany x ->
            (foreign_table_names all x) @ (x::a)
         |_ -> a
-      ) [] fs in
-      prerr_endline (String.concat "," res); res
+      ) [] fs
 end
 
 let all = Schema.make [
