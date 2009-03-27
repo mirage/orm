@@ -79,6 +79,9 @@ module Schema = struct
        List.partition (fun f -> match f.ty with ForeignMany _|Foreign _ -> true |_ -> false)
           (get_table_fields c table)
 
+    let filter_out_id fields =
+       List.filter (fun f -> f.name <> "id") fields
+
     let rec foreign_table_names all table =
       let fs = get_table_fields all table in
       List.fold_left (fun a b ->
@@ -136,7 +139,9 @@ let output_module e (module_name, fields) =
     print_object e "t" (fun e ->
       List.iter (fun f ->
           e.p (sprintf "%s : %s;" f.Schema.name (Schema.to_ocaml_type f));
+          e.p (sprintf "set_%s : %s -> unit;" f.Schema.name (Schema.to_ocaml_type f));
       ) fields;
+      e.p "save: unit";
     );
     e.p "let init db =";
     indent_fn e (fun e ->
@@ -151,11 +156,57 @@ let output_module e (module_name, fields) =
        |name -> sprintf "~%s" name) fields) in
     e.p (sprintf "let t %s (db:Sqlite3.db)  = object" label_names);
     indent_fn e (fun e -> 
+      print_comment e "get functions";
       List.iter (fun f ->
           e.p (sprintf "val mutable _%s = %s" f.Schema.name f.Schema.name);
           e.p (sprintf "method %s : %s = _%s" f.Schema.name (Schema.to_ocaml_type f) f.Schema.name);
       ) fields;
+      e.nl ();
+      print_comment e "set functions";
+      List.iter (fun f ->
+          e.p (sprintf "method set_%s v =" f.Schema.name);
+          indent_fn e (fun e -> 
+            e.p (sprintf "_%s <- v" f.Schema.name);
+          );
+      ) fields;
+      e.nl ();
+      print_comment e "admin functions";
+      e.p "method save =";
+      indent_fn e (fun e ->
+        e.p "match id with";
+        e.p "|None -> (* insert new record *)";
+        indent_fn e (fun e ->
+          let values = String.concat "," (List.map (fun f -> "?") native_fields) in
+          e.p (sprintf "let sql = \"insert into %s values(NULL,%s)\" in" module_name values);
+          e.p "let stmt = Sqlite3.prepare db sql in";
+          let pos = ref 1 in
+          List.iter (fun f ->
+             let var = sprintf "let v = _%s in %s" f.Schema.name (Schema.to_sql_type_wrapper f.Schema.ty) in
+             e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" !pos var);
+             incr pos;
+          ) (Schema.filter_out_id native_fields);
+          e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e.p "_id <- Some (Sqlite3.last_insert_rowid db)"
+        );
+        e.p "|Some id -> (* update *)";
+        indent_fn e (fun e ->
+          let up_fields = Schema.filter_out_id native_fields in
+          let set_vars = String.concat "," (List.map (fun f ->
+            sprintf "%s=?" f.Schema.name
+          ) up_fields) in
+          e.p (sprintf "let sql = \"update %s set %s where id=?\" in" module_name set_vars);
+          e.p "let stmt = Sqlite3.prepare db sql in";
+          let pos = ref 1 in
+          List.iter (fun f ->
+             let var = sprintf "let v = _%s in %s" f.Schema.name (Schema.to_sql_type_wrapper f.Schema.ty) in
+             e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" !pos var);
+             incr pos;
+          ) up_fields;
+          e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)) (* XXX add error check *)";
+        );
+      );
     );
+
     e.p "end";
     e.nl ();
     print_comment e "General get function for any of the columns";
