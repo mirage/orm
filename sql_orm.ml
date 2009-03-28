@@ -64,14 +64,6 @@ module Schema = struct
     |ForeignMany _ -> assert false
     |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
 
-    let sql_decls (fs: s list) =
-     let fs = List.filter (fun x -> match x.ty with |ForeignMany _ -> false |_ -> true) fs in
-     let pid = "id integer primary key autoincrement" in
-      let sqls = List.map (fun f ->
-        sprintf "%s %s" f.name (to_sql_type f.ty) 
-      ) fs in
-      String.concat ", " (pid::sqls)
-
     let get_table_fields (c:collection) table = 
       List.assoc table c
 
@@ -90,6 +82,14 @@ module Schema = struct
            (foreign_table_names all x) @ (x::a)
         |_ -> a
       ) [] fs
+
+    let sql_decls (fs: s list) =
+     let fs = List.filter (fun x -> match x.ty with |ForeignMany _ -> false |_ -> true) fs in
+     let pid = "id integer primary key autoincrement" in
+      let sqls = List.map (fun f ->
+        sprintf "%s %s" f.name (to_sql_type f.ty) 
+      ) (filter_out_id fs) in
+      String.concat ", " (pid::sqls)
 end
 
 let all = Schema.make [
@@ -115,18 +115,19 @@ let all = Schema.make [
     Schema.text "implements";
   ];
 
+  "attachments" , [
+    Schema.text "file_name";
+    Schema.text "mime_type";
+  ];
+
   "lifedb" , [
     Schema.text "file_name";
     Schema.date "ctime";
     Schema.foreign "mtype" "mtypes";
     Schema.foreign "people_from" "people";
+    Schema.foreign "attachment_id" "attachments";
     Schema.foreign_many "people_to" "people";
     Schema.text "summary";
-  ];
-
-  "attachments" , [
-    Schema.foreign "lifedb_id" "lifedb";
-    Schema.text "file_name";
   ];
 
 ]
