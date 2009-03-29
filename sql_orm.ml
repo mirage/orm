@@ -52,7 +52,7 @@ module Schema = struct
     |Text -> "Sqlite3.Data.TEXT v"
     |Blob -> "Sqlite3.Data.BLOB v"
     |Int -> "Sqlite3.Data.INT v"
-    |Foreign _ -> assert false
+    |Foreign _ -> "Sqlite3.Data.INT v"
     |ForeignMany _ -> assert false
     |Date -> "Sqlite3.Data.INT (Int64.of_float v)"
 
@@ -64,6 +64,10 @@ module Schema = struct
     |ForeignMany _ -> assert false
     |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
 
+    let ocaml_var_name f = f.name ^ match f.ty with
+    |Foreign _ -> "_id"
+    |_ -> ""
+
     let get_table_fields (c:collection) table = 
       List.assoc table c
 
@@ -73,6 +77,9 @@ module Schema = struct
 
     let filter_out_id fields =
        List.filter (fun f -> f.name <> "id") fields
+
+    let filter_singular_fields f =
+       List.filter (fun f -> match f.ty with ForeignMany _ -> false |_ -> true) (filter_out_id f)
 
     let rec foreign_table_names all table =
       let fs = get_table_fields all table in
@@ -98,7 +105,7 @@ let all = Schema.make [
   "people" , [
     Schema.text "service_name";
     Schema.text "service_id";
-    Schema.foreign "contact_id" "contacts"
+    Schema.foreign "contact" "contacts"
   ];
 
   "mtypes" , [
@@ -135,14 +142,14 @@ let output_module e (module_name, fields) =
           e.p (sprintf "%s : %s;" f.Schema.name (Schema.to_ocaml_type f));
           e.p (sprintf "set_%s : %s -> unit;" f.Schema.name (Schema.to_ocaml_type f));
       ) fields;
-      e.p "save: unit";
+      e.p "save: int64";
     );
     e.p "let init db =";
     indent_fn e (fun e ->
       let fs,fsmany = List.partition (fun x -> match x.Schema.ty with |Schema.ForeignMany _ -> false |_ -> true) fields in
       let pid = "id integer primary key autoincrement" in
       let sqls = String.concat "," (pid :: List.map (fun f ->
-        sprintf "%s%s %s" f.Schema.name (match f.Schema.ty with |Schema.Foreign _ -> "_id" |_ -> "") (Schema.to_sql_type f.Schema.ty)
+        sprintf "%s %s" (Schema.ocaml_var_name f) (Schema.to_sql_type f.Schema.ty)
       ) (Schema.filter_out_id fs)) in
       let create_table table sql =
         e.p (sprintf "let sql = \"create table if not exists %s (%s);\" in" table sql);
@@ -184,36 +191,51 @@ let output_module e (module_name, fields) =
       print_comment e "admin functions";
       e.p "method save =";
       indent_fn e (fun e ->
+        print_comment e "(* XXX wrap this in transaction *)";
+        print_comment e "insert any foreign-one fields into their table and get id";
+        List.iter (fun f -> match f.Schema.ty with
+        |Schema.Foreign _ ->
+          e.p (sprintf "let _%s = %s#save in" (Schema.ocaml_var_name f) f.Schema.name);
+        |Schema.ForeignMany ftable ->
+          (* foreign manys have their own tables *)
+          (* XXX todo *) ()
+        |_ -> assert false
+        ) foreign_fields;
         e.p "match id with";
         e.p "|None -> (* insert new record *)";
         indent_fn e (fun e ->
-          let values = String.concat "," (List.map (fun f -> "?") native_fields) in
+          let singular_fields = Schema.filter_singular_fields fields in
+          let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
           e.p (sprintf "let sql = \"insert into %s values(NULL,%s)\" in" module_name values);
           e.p "let stmt = Sqlite3.prepare db sql in";
           let pos = ref 1 in
           List.iter (fun f ->
-             let var = sprintf "let v = _%s in %s" f.Schema.name (Schema.to_sql_type_wrapper f.Schema.ty) in
+             let var = sprintf "let v = _%s in %s" (Schema.ocaml_var_name f) (Schema.to_sql_type_wrapper f.Schema.ty) in
              e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" !pos var);
              incr pos;
-          ) (Schema.filter_out_id native_fields);
+          ) singular_fields;
           e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
-          e.p "_id <- Some (Sqlite3.last_insert_rowid db)"
+          e.p "let __id = Sqlite3.last_insert_rowid db in";
+          e.p "_id <- Some __id;";
+          e.p "__id"
         );
         e.p "|Some id -> (* update *)";
         indent_fn e (fun e ->
-          let up_fields = Schema.filter_out_id native_fields in
+          let up_fields = Schema.filter_singular_fields fields in
           let set_vars = String.concat "," (List.map (fun f ->
-            sprintf "%s=?" f.Schema.name
+            sprintf "%s%s=?" f.Schema.name (match f.Schema.ty with |Schema.Foreign _ -> "_id" |_ -> "")
           ) up_fields) in
           e.p (sprintf "let sql = \"update %s set %s where id=?\" in" module_name set_vars);
           e.p "let stmt = Sqlite3.prepare db sql in";
           let pos = ref 1 in
           List.iter (fun f ->
-             let var = sprintf "let v = _%s in %s" f.Schema.name (Schema.to_sql_type_wrapper f.Schema.ty) in
+             let var = sprintf "let v = _%s in %s" (Schema.ocaml_var_name f) (Schema.to_sql_type_wrapper f.Schema.ty) in
              e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" !pos var);
              incr pos;
           ) up_fields;
-          e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)) (* XXX add error check *)";
+          e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" !pos);
+          e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e.p "id";
         );
       );
     );
