@@ -8,10 +8,10 @@ export DEBUG
 OCAMLRUNPARAM=b
 export OCAMLRUNPARAM
 
-SOURCES=sql_access.ml ormtest.ml
+SOURCES=sql_access.ml ormtest.ml test.ml
 THREADS=yes
 RESULT=ormtest
-PACKS=unix sqlite3
+PACKS=unix sqlite3 ounit
 LIBDIRS=/opt/local/lib
 
 PP=./camlp4find $(PACKS)
@@ -22,3 +22,4 @@ all: dnc
 	@ :
 
 include $(OCAMLMAKEFILE)
+

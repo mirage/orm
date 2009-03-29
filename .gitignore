@@ -6,3 +6,7 @@
 *.cmx
 *.cmi
 *.swp
+ormgen
+ormtest
+ormtest.ml
+test.db

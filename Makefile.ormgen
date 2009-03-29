@@ -8,8 +8,9 @@ export DEBUG
 OCAMLRUNPARAM=b
 export OCAMLRUNPARAM
 
-SOURCES=printer_utils.ml sql_orm.ml
+SOURCES=printer_utils.ml sql_access.ml sql_orm.ml testgen.ml
 THREADS=yes
+RESULT=ormgen
 PACKS=unix sqlite3
 LIBDIRS=/opt/local/lib
 
@@ -17,7 +18,8 @@ PP=./camlp4find $(PACKS)
 export PP
 
 .PHONY: all
-all: dnl
-	@ :
+all: dnc
+	./ormgen > ormtest.ml
 
 include $(OCAMLMAKEFILE)
+
