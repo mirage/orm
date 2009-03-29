@@ -172,7 +172,7 @@ let output_module e (module_name, fields) =
        match f.Schema.name with
        |"id" -> "?(id=None)"
        |name -> sprintf "~%s" name) fields) in
-    e.p (sprintf "let t %s (db:Sqlite3.db)  = object" label_names);
+    e.p (sprintf "let t %s (db:Sqlite3.db) : t = object" label_names);
     indent_fn e (fun e -> 
       print_comment e "get functions";
       List.iter (fun f ->
