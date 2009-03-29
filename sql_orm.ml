@@ -103,7 +103,7 @@ let output_module e debug_mode all (module_name, fields) =
           e.p (sprintf "%s : %s;" f.Schema.name (Schema.to_ocaml_type f));
           e.p (sprintf "set_%s : %s -> unit;" f.Schema.name (Schema.to_ocaml_type f));
       ) fields;
-      e.p "save: int64";
+      e.p "save: int64; delete: unit";
     );
     e.p "let init db =";
     indent_fn e (fun e ->
@@ -150,6 +150,22 @@ let output_module e debug_mode all (module_name, fields) =
       ) fields;
       e.nl ();
       print_comment e "admin functions";
+      e.p "method delete =";
+      indent_fn e (fun e ->
+         e.p "match _id with";
+         e.p "|None -> ()";
+         e.p "|Some id ->";
+         indent_fn e (fun e ->
+            dbg e (sprintf "\"%s.delete: id found, deleting\"" module_name);
+            e.p (sprintf "let sql = \"DELETE FROM %s WHERE id=?\" in" module_name);
+            dbg e (sprintf "\"%s.delete: \" ^ sql" module_name);
+            e.p "let stmt = Sqlite3.prepare db sql in";
+            e.p "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
+            e.p "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
+            e.p "_id <- None"
+         );
+      );
+      e.nl ();
       e.p "method save =";
       indent_fn e (fun e ->
         print_comment e "(* XXX wrap this in transaction *)";
@@ -242,7 +258,6 @@ let output_module e debug_mode all (module_name, fields) =
          ) foreign_fields) in
       e.p (sprintf "let q=\"SELECT %s FROM %s %sWHERE \" ^ q in" sql_field_names module_name joins);
       dbg e (sprintf "\"%s.get: \" ^ q" module_name);
-      e.p (sprintf "print_endline (\"get: \" ^ q);");
       e.p "let stmt=Sqlite3.prepare db q in";
       print_comment e "bind the position variables to the statement";
       e.p "let bindpos = ref 1 in";
