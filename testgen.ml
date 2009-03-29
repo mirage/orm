@@ -24,4 +24,4 @@ let all = Schema.make [
 ]
 
 let _ = 
-  generate all
+  generate true all

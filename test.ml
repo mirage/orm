@@ -36,8 +36,15 @@ let test_simple_insert_update_delete () =
    let contact' = Contact.get ~id:(Some id) db in
    List.iter (fun c ->
      printf "contact_name: %s %s\n%!" c#first_name c#last_name
-   ) contact'
-  
+   ) contact';
+   assert_equal (List.length contact') 1; 
+   printf "saving same object again\n%!";
+   let id2 = contact#save in
+   printf "id=%Lu id2=%Lu\n%!" id id2;
+   assert_equal id id2;
+   let contact' = Contact.get ~id:(Some id2) db in
+   assert_equal (List.length contact') 1
+
 let suite = "SQL ORM test" >:::
     [  "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
@@ -52,7 +59,6 @@ let rec was_successful results =
     | RFailure _::_
     | RError _::_
     | RTodo _::_ -> false
-
 
 let _ =
   let verbose = ref false in
