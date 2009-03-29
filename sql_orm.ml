@@ -83,13 +83,6 @@ module Schema = struct
         |_ -> a
       ) [] fs
 
-    let sql_decls (fs: s list) =
-     let fs = List.filter (fun x -> match x.ty with |ForeignMany _ -> false |_ -> true) fs in
-     let pid = "id integer primary key autoincrement" in
-      let sqls = List.map (fun f ->
-        sprintf "%s %s" f.name (to_sql_type f.ty) 
-      ) (filter_out_id fs) in
-      String.concat ", " (pid::sqls)
 end
 
 let all = Schema.make [
@@ -125,7 +118,7 @@ let all = Schema.make [
     Schema.date "ctime";
     Schema.foreign "mtype" "mtypes";
     Schema.foreign "people_from" "people";
-    Schema.foreign "attachment_id" "attachments";
+    Schema.foreign_many "atts" "attachments";
     Schema.foreign_many "people_to" "people";
     Schema.text "summary";
   ];
@@ -146,8 +139,25 @@ let output_module e (module_name, fields) =
     );
     e.p "let init db =";
     indent_fn e (fun e ->
-      e.p (sprintf "let sql = \"create table if not exists %s (%s);\" in" module_name (Schema.sql_decls native_fields));
-      e.p "Sql_access.db_must_ok (fun () -> Sqlite3.exec db sql)";
+      let fs,fsmany = List.partition (fun x -> match x.Schema.ty with |Schema.ForeignMany _ -> false |_ -> true) fields in
+      let pid = "id integer primary key autoincrement" in
+      let sqls = String.concat "," (pid :: List.map (fun f ->
+        sprintf "%s%s %s" f.Schema.name (match f.Schema.ty with |Schema.Foreign _ -> "_id" |_ -> "") (Schema.to_sql_type f.Schema.ty)
+      ) (Schema.filter_out_id fs)) in
+      let create_table table sql =
+        e.p (sprintf "let sql = \"create table if not exists %s (%s);\" in" table sql);
+        e.p "Sql_access.db_must_ok (fun () -> Sqlite3.exec db sql);" in
+      create_table module_name sqls;
+      (* create foreign many-many tables now *)
+      List.iter (fun fm -> match fm.Schema.ty with
+        |Schema.ForeignMany ftable ->
+          let table_name = sprintf "map_%s_%s" module_name fm.Schema.name in
+          let sqls = sprintf "%s_id integer, %s_id integer, primary key(%s_id, %s_id)" module_name ftable module_name ftable in
+          create_table table_name sqls;
+        |_ -> assert false
+      ) fsmany;
+      e.p "()";
+       
     );
     e.nl(); 
     print_comment e "object definition";
