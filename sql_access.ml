@@ -30,3 +30,12 @@ let db_must_ok fn =
     match db_busy_retry fn with
     |Rc.OK -> ()
     |x -> raise_sql_error x
+
+let step_fold stmt iterfn =
+    let stepfn () = Sqlite3.step stmt in
+    let rec fn a = match db_busy_retry stepfn with
+    |Sqlite3.Rc.ROW -> fn (iterfn stmt :: a)
+    |Sqlite3.Rc.DONE -> a
+    |x -> raise_sql_error x
+    in
+    fn []

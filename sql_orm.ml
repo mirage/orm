@@ -37,7 +37,7 @@ module Schema = struct
       |_,Blob -> "string" (* watch out for 16MB limit *)
       |_,Int -> "int64"
       |_,Foreign x -> sprintf "%s.t" (String.capitalize x)
-      |_,ForeignMany x -> sprintf "%s.t" (String.capitalize x)
+      |_,ForeignMany x -> sprintf "%s.t list" (String.capitalize x)
       |_,Date -> "float"
 
     let to_sql_type = function
@@ -69,7 +69,7 @@ module Schema = struct
     |_ -> ""
 
     let get_table_fields (c:collection) table = 
-      List.assoc table c
+       List.assoc table c
 
     let partition_table_fields c table =
        List.partition (fun f -> match f.ty with ForeignMany _|Foreign _ -> true |_ -> false)
@@ -79,13 +79,13 @@ module Schema = struct
        List.filter (fun f -> f.name <> "id") fields
 
     let filter_singular_fields f =
-       List.filter (fun f -> match f.ty with ForeignMany _ -> false |_ -> true) (filter_out_id f)
+       List.filter (fun f -> match f.ty with ForeignMany _ -> false |_ -> true) f
 
     let rec foreign_table_names all table =
       let fs = get_table_fields all table in
       List.fold_left (fun a b ->
         match b.ty with 
-        |Foreign x |ForeignMany x ->
+        |Foreign x ->
            (foreign_table_names all x) @ (x::a)
         |_ -> a
       ) [] fs
@@ -197,14 +197,17 @@ let output_module e (module_name, fields) =
         |Schema.Foreign _ ->
           e.p (sprintf "let _%s = %s#save in" (Schema.ocaml_var_name f) f.Schema.name);
         |Schema.ForeignMany ftable ->
-          (* foreign manys have their own tables *)
-          (* XXX todo *) ()
+          e.p "List.iter (fun f ->";
+          indent_fn e (fun e ->
+            e.p "()";
+          );
+          e.p (sprintf ") %s;" f.Schema.name);
         |_ -> assert false
         ) foreign_fields;
         e.p "match id with";
         e.p "|None -> (* insert new record *)";
         indent_fn e (fun e ->
-          let singular_fields = Schema.filter_singular_fields fields in
+          let singular_fields = Schema.filter_out_id (Schema.filter_singular_fields fields) in
           let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
           e.p (sprintf "let sql = \"insert into %s values(NULL,%s)\" in" module_name values);
           e.p "let stmt = Sqlite3.prepare db sql in";
@@ -221,7 +224,7 @@ let output_module e (module_name, fields) =
         );
         e.p "|Some id -> (* update *)";
         indent_fn e (fun e ->
-          let up_fields = Schema.filter_singular_fields fields in
+          let up_fields = Schema.filter_out_id ( Schema.filter_singular_fields fields) in
           let set_vars = String.concat "," (List.map (fun f ->
             sprintf "%s%s=?" f.Schema.name (match f.Schema.ty with |Schema.Foreign _ -> "_id" |_ -> "")
           ) up_fields) in
@@ -243,7 +246,7 @@ let output_module e (module_name, fields) =
     e.p "end";
     e.nl ();
     print_comment e "General get function for any of the columns";
-    e.p (sprintf "let get %s (db:Sqlite3.db) (iterfn:t->unit) =" (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields)));
+    e.p (sprintf "let get %s (db:Sqlite3.db) =" (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields)));
     indent_fn e (fun e ->
       print_comment e "assemble the SQL query string";
       let wheres = List.map (fun f -> sprintf "(match %s with |None -> \"\" |Some _ -> \"%s=?\");" f.Schema.name f.Schema.name) native_fields in
@@ -253,21 +256,21 @@ let output_module e (module_name, fields) =
       (* get all the field names to select, combination of the foreign keys as well *)
       let col_positions = Hashtbl.create 1 in
       let pos = ref 0 in
-      let sql_field_names = String.concat "," ( 
+      let sql_field_names = String.concat ", " ( 
         List.concat (
           List.map (fun table -> 
              List.map (fun f ->
                Hashtbl.add col_positions (table,f.Schema.name) !pos;
                incr pos;
                sprintf "%s.%s" table f.Schema.name;
-             ) (Schema.get_table_fields all table)
+             ) (Schema.filter_singular_fields (Schema.get_table_fields all table))
           ) (module_name :: (Schema.foreign_table_names all module_name))
         )
       ) in
       let joins = String.concat " " (List.map (fun f ->
            match f.Schema.ty with 
-           |Schema.Foreign ftable
-           |Schema.ForeignMany ftable -> sprintf "LEFT JOIN %s ON (%s.id = %s.id)" ftable ftable module_name
+           |Schema.Foreign ftable -> sprintf "LEFT JOIN %s ON (%s.id = %s.%s_id)" ftable ftable module_name ftable
+           |Schema.ForeignMany ftable -> ""
            |_ -> assert false
          ) foreign_fields) in
       e.p (sprintf "let q=\"SELECT %s FROM %s %s WHERE \" ^ wheres in" sql_field_names module_name joins);
@@ -298,13 +301,24 @@ let output_module e (module_name, fields) =
              );
              e.p ")";
           ) fields;
-          print_comment e "foreign mapping fields";
           List.iter (fun f ->
             e.p (sprintf "~%s:(" f.Schema.name);
             match f.Schema.ty with
-            |Schema.ForeignMany ftable |Schema.Foreign ftable ->
+            |Schema.Foreign ftable ->
+              print_comment e "foreign mapping field";
               of_stmt e ftable;
               e.p ")"
+            |Schema.ForeignMany ftable ->
+              print_comment e "foreign many-many mapping field";
+              e.p (sprintf "let stmt' = Sqlite3.prepare db \"select %s_id from map_%s_%s where %s_id=?\" in" ftable table ftable table);
+              e.p (sprintf "let %s__id = Sqlite3.column stmt %d in" table (Hashtbl.find col_positions (table, "id")));
+              e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" table); 
+              e.p (sprintf "List.flatten (Sql_access.step_fold stmt' (fun s ->");
+              indent_fn e (fun e ->
+                e.p "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
+                e.p (sprintf "%s.get ~id:(Some i) db)" (String.capitalize ftable));
+              );
+              e.p "))"
             |_ -> assert false
           ) foreign_fields;
         );
@@ -313,14 +327,7 @@ let output_module e (module_name, fields) =
       of_stmt e module_name;
       e.p "in ";
       print_comment e "execute the SQL query";
-      e.p "let iterfn = (fun () ->";
-      indent_fn e (fun e ->
-        e.p "match Sqlite3.step stmt with";
-        e.p "|Sqlite3.Rc.ROW -> iterfn (of_stmt stmt); true";
-        e.p "|Sqlite3.Rc.DONE -> false";
-        e.p "|x -> raise (Sqlite_error x)";
-      );
-      e.p ") in while iterfn () do () done; ()"
+      e.p "Sql_access.step_fold stmt of_stmt"
   
     );
   )
