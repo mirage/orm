@@ -9,18 +9,23 @@ module Schema = struct
     |Foreign of string
     |ForeignMany of string
     |Date
- 
+
+    type options = [
+      `Optional
+    ]
+
     type s = {
         name: string;
         ty: t;
+        flags: options list;
     }
 
-    let text n = {name=n; ty=Text}
-    let blob n = {name=n; ty=Blob}
-    let date n = {name=n; ty=Date}
-    let foreign n f = {name=n; ty=(Foreign f)}
-    let foreign_many n f = {name=n; ty=(ForeignMany f)}
-    let id () = {name="id"; ty=Int}
+    let text ?(flags=[]) n = {name=n; ty=Text; flags=flags}
+    let blob ?(flags=[]) n = {name=n; ty=Blob; flags=flags}
+    let date ?(flags=[]) n = {name=n; ty=Date; flags=flags}
+    let foreign ?(flags=[]) n f = {name=n; ty=(Foreign f); flags=flags}
+    let foreign_many ?(flags=[]) n f = {name=n; ty=(ForeignMany f); flags=flags}
+    let id () = {name="id"; ty=Int; flags=[]}
 
     type collection = (string * s list) list
 
@@ -110,7 +115,7 @@ let output_module e debug_mode all (module_name, fields) =
       e.p "save: int64; delete: unit";
     );
     e.p "let init db =";
-    indent_fn e (fun e ->
+    e --> (fun e ->
       let fs,fsmany = List.partition (fun x -> match x.Schema.ty with |Schema.ForeignMany _ -> false |_ -> true) fields in
       let pid = "id integer primary key autoincrement" in
       let sqls = String.concat "," (pid :: List.map (fun f ->
@@ -132,34 +137,34 @@ let output_module e debug_mode all (module_name, fields) =
        
     );
     e.nl(); 
-    print_comment e "object definition";
+    e --* "object definition";
     let label_names = String.concat " " (List.map (fun f ->
        match f.Schema.name with
        |"id" -> "?(id=None)"
        |name -> sprintf "~%s" name) fields) in
     e.p (sprintf "let t %s (db:Sqlite3.db) : t = object" label_names);
-    indent_fn e (fun e -> 
-      print_comment e "get functions";
+    e --> (fun e -> 
+      e --* "get functions";
       List.iter (fun f ->
           e.p (sprintf "val mutable _%s = %s" f.Schema.name f.Schema.name);
           e.p (sprintf "method %s : %s = _%s" f.Schema.name (Schema.to_ocaml_type f) f.Schema.name);
       ) fields;
       e.nl ();
-      print_comment e "set functions";
+      e --* "set functions";
       List.iter (fun f ->
           e.p (sprintf "method set_%s v =" f.Schema.name);
-          indent_fn e (fun e -> 
+          e --> (fun e -> 
             e.p (sprintf "_%s <- v" f.Schema.name);
           );
       ) fields;
       e.nl ();
-      print_comment e "admin functions";
+      e --* "admin functions";
       e.p "method delete =";
-      indent_fn e (fun e ->
+      e --> (fun e ->
          e.p "match _id with";
          e.p "|None -> ()";
          e.p "|Some id ->";
-         indent_fn e (fun e ->
+         e --> (fun e ->
             dbg e (sprintf "\"%s.delete: id found, deleting\"" module_name);
             e.p (sprintf "let sql = \"DELETE FROM %s WHERE id=?\" in" module_name);
             dbg e (sprintf "\"%s.delete: \" ^ sql" module_name);
@@ -171,9 +176,9 @@ let output_module e debug_mode all (module_name, fields) =
       );
       e.nl ();
       e.p "method save =";
-      indent_fn e (fun e ->
-        print_comment e "(* XXX wrap this in transaction *)";
-        print_comment e "insert any foreign-one fields into their table and get id";
+      e --> (fun e ->
+        e --* "XXX wrap this in transaction";
+        e --* "insert any foreign-one fields into their table and get id";
         List.iter (fun f -> match f.Schema.ty with
         |Schema.Foreign _ ->
           e.p (sprintf "let _%s = %s#save in" (Schema.ocaml_var_name f) f.Schema.name);
@@ -182,7 +187,7 @@ let output_module e debug_mode all (module_name, fields) =
         ) foreign_fields;
         e.p "let _curobj_id = match _id with";
         e.p "|None -> (* insert new record *)";
-        indent_fn e (fun e ->
+        e --> (fun e ->
           dbg e (sprintf "\"%s.save: inserting new record\"" module_name);
           let singular_fields = Schema.filter_out_id (Schema.filter_singular_fields fields) in
           let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
@@ -201,7 +206,7 @@ let output_module e debug_mode all (module_name, fields) =
           e.p "__id"
         );
         e.p "|Some id -> (* update *)";
-        indent_fn e (fun e ->
+        e --> (fun e ->
           dbg e (sprintf "sprintf \"%s.save: id %%Lu exists, updating\" id" module_name);
           let up_fields = Schema.filter_out_id ( Schema.filter_singular_fields fields) in
           let set_vars = String.concat "," (List.map (fun f ->
@@ -225,7 +230,7 @@ let output_module e debug_mode all (module_name, fields) =
         |Schema.Foreign _ -> () (* done earlier *)
         |Schema.ForeignMany ftable -> 
           e.p "List.iter (fun f ->";
-          indent_fn e (fun e ->
+          e --> (fun e ->
             e.p "let _refobj_id = f#save in";
             e.p (sprintf "let sql = \"insert into %s values(?,?)\" in" (Schema.map_table module_name f));
             dbg e (sprintf "\"%s.save: foreign insert: \" ^ sql" module_name);
@@ -243,10 +248,10 @@ let output_module e debug_mode all (module_name, fields) =
 
     e.p "end";
     e.nl ();
-    print_comment e "General get function for any of the columns";
+    e --* "General get function for any of the columns";
     e.p (sprintf "let get %s (db:Sqlite3.db) =" (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields)));
-    indent_fn e (fun e ->
-      print_comment e "assemble the SQL query string";
+    e --> (fun e ->
+      e --* "assemble the SQL query string";
       e.p "let q = \"\" in";
       let first = ref true in
       List.iter (fun f ->
@@ -276,27 +281,27 @@ let output_module e debug_mode all (module_name, fields) =
       e.p (sprintf "let q=\"SELECT %s FROM %s %sWHERE \" ^ q in" sql_field_names module_name joins);
       dbg e (sprintf "\"%s.get: \" ^ q" module_name);
       e.p "let stmt=Sqlite3.prepare db q in";
-      print_comment e "bind the position variables to the statement";
+      e --* "bind the position variables to the statement";
       e.p "let bindpos = ref 1 in";
       List.iter (fun f ->
          e.p (sprintf "ignore(match %s with |None -> () |Some v ->" f.Schema.name);
-         indent_fn e (fun e ->
+         e --> (fun e ->
            e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt !bindpos (%s));" (Schema.to_sql_type_wrapper f.Schema.ty));
            e.p "incr bindpos";
          );
          e.p ");";
       ) native_fields;
 
-      print_comment e "convert statement into an ocaml object";
+      e --* "convert statement into an ocaml object";
       e.p "let of_stmt stmt =";
       let rec of_stmt e table =
         let foreign_fields, fields = Schema.partition_table_fields all table in
         (if table = module_name then e.p "t" else e.p (sprintf "%s.t" (String.capitalize table)));
-        indent_fn e (fun e ->
-          print_comment e "native fields";
+        e --> (fun e ->
+          e --* "native fields";
           List.iter (fun f ->
              e.p (match f.Schema.name with "id" -> "~id:(Some " |x -> sprintf "~%s:(" x);
-             indent_fn e (fun e ->
+             e --> (fun e ->
                e.p (sprintf "(let x = Sqlite3.column stmt %d in" (Hashtbl.find col_positions (table, f.Schema.name)));
                e.p (sprintf "%s)" (Schema.convert_from_sql f.Schema.ty));
              );
@@ -306,16 +311,16 @@ let output_module e debug_mode all (module_name, fields) =
             e.p (sprintf "~%s:(" f.Schema.name);
             match f.Schema.ty with
             |Schema.Foreign ftable ->
-              print_comment e "foreign mapping field";
+              e --* "foreign mapping field";
               of_stmt e ftable;
               e.p ")"
             |Schema.ForeignMany ftable ->
-              print_comment e "foreign many-many mapping field";
+              e --* "foreign many-many mapping field";
               e.p (sprintf "let stmt' = Sqlite3.prepare db \"select %s_id from %s where %s_id=?\" in" ftable (Schema.map_table table f) table);
               e.p (sprintf "let %s__id = Sqlite3.column stmt %d in" table (Hashtbl.find col_positions (table, "id")));
               e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" table); 
               e.p (sprintf "List.flatten (Sql_access.step_fold stmt' (fun s ->");
-              indent_fn e (fun e ->
+              e --> (fun e ->
                 e.p "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
                 e.p (sprintf "%s.get ~id:(Some i) db)" (String.capitalize ftable));
               );
@@ -327,7 +332,7 @@ let output_module e debug_mode all (module_name, fields) =
       in
       of_stmt e module_name;
       e.p "in ";
-      print_comment e "execute the SQL query";
+      e --* "execute the SQL query";
       e.p "Sql_access.step_fold stmt of_stmt"
   
     );
@@ -336,7 +341,7 @@ let output_module e debug_mode all (module_name, fields) =
 let output_init_module e all =
    print_module e "Init" (fun e ->
      e.p "let t db_name =";
-     indent_fn e (fun e ->
+     e --> (fun e ->
        e.p "let db = Sqlite3.db_open db_name in";
        List.iter (fun (m,_) ->
          e.p (sprintf "%s.init db;" (String.capitalize m));

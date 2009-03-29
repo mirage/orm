@@ -14,6 +14,8 @@ module Printer = struct
         let e = indent e in
         fn e
 
+    let (-->) e fn = indent_fn e fn
+
     let list_iter_indent e fn l =
         List.iter (indent_fn e fn) l
 
@@ -58,7 +60,13 @@ module Printer = struct
         e.nl ()
 
     let print_comment e x =
-        e.p (sprintf "(* %s *)" x);
-        
+        e.p (sprintf "(* %s *)" x)
+    
+    let (--*) = print_comment
+
+    let (--/) e fmt =
+        let xfn s = e.p s in
+        kprintf xfn fmt
+ 
 end
 
