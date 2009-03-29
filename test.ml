@@ -25,11 +25,14 @@ let test_init () =
    let _ = open_db ~rm:true () in
    ()
 
+let gen_contact fname lname db =
+   let now = Unix.gettimeofday () in
+   Contact.t ~first_name:fname ~last_name:lname
+     ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now db 
+
 let test_simple_insert_update_delete () =
    let db = open_db ~rm:true () in
-   let now = Unix.gettimeofday () in
-   let contact = Contact.t ~first_name:"John" ~last_name:"Smith"
-     ~email:"john@example.com" ~mtime:now db in
+   let contact = gen_contact "John" "Smith" db in
    let id = contact#save in
    "contact has id" @? (contact#id <> None);
    let contact' = Contact.get ~id:(Some id) db in
@@ -48,12 +51,24 @@ let test_simple_insert_update_delete () =
    contact#delete;
    assert_equal contact#id None;
    let id' = contact#save in
-   "contact has new id" @? (id' <> id);
+   "contact has new id" @? (id' <> id)
+
+let test_new_foreign_map () =
+   let db = open_db ~rm:true () in
+   let now = Unix.gettimeofday () in
+   let from = gen_contact "John" "Smith" db in
+   let cto = List.map (fun (a,b) -> gen_contact a b db) [
+      ("Alice","Aardvark"); ("Bob","Bear"); ("Charlie","Chaplin") ] in
+   let atts = [] in
+   let e = Entry.t ~body:"Test Body" ~received:now ~people_from:from
+     ~atts:atts ~people_to:cto db in
+   let eid = e#save in
    ()
 
 let suite = "SQL ORM test" >:::
     [  "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
+       "test_new_foreign_map" >:: test_new_foreign_map;
     ]
 
 (* Returns true if the result list contains successes only *)

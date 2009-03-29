@@ -64,6 +64,10 @@ module Schema = struct
     |ForeignMany _ -> assert false
     |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
 
+    let map_table t f = match f.ty with
+    |ForeignMany ft -> sprintf "map_%s_%s_%s" f.name t ft
+    |_ -> assert false
+    
     let ocaml_var_name f = f.name ^ match f.ty with
     |Foreign _ -> "_id"
     |_ -> ""
@@ -119,7 +123,7 @@ let output_module e debug_mode all (module_name, fields) =
       (* create foreign many-many tables now *)
       List.iter (fun fm -> match fm.Schema.ty with
         |Schema.ForeignMany ftable ->
-          let table_name = sprintf "map_%s_%s" module_name fm.Schema.name in
+          let table_name = Schema.map_table module_name fm in
           let sqls = sprintf "%s_id integer, %s_id integer, primary key(%s_id, %s_id)" module_name ftable module_name ftable in
           create_table table_name sqls;
         |_ -> assert false
@@ -173,15 +177,10 @@ let output_module e debug_mode all (module_name, fields) =
         List.iter (fun f -> match f.Schema.ty with
         |Schema.Foreign _ ->
           e.p (sprintf "let _%s = %s#save in" (Schema.ocaml_var_name f) f.Schema.name);
-        |Schema.ForeignMany ftable ->
-          e.p "List.iter (fun f ->";
-          indent_fn e (fun e ->
-            e.p "()";
-          );
-          e.p (sprintf ") %s;" f.Schema.name);
+        |Schema.ForeignMany ftable -> () (* this gets inserted later on after we have the current obj id *)
         |_ -> assert false
         ) foreign_fields;
-        e.p "match _id with";
+        e.p "let _curobj_id = match _id with";
         e.p "|None -> (* insert new record *)";
         indent_fn e (fun e ->
           dbg e (sprintf "\"%s.save: inserting new record\"" module_name);
@@ -221,6 +220,24 @@ let output_module e debug_mode all (module_name, fields) =
           e.p "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e.p "id";
         );
+        e.p "in";
+        List.iter (fun f -> match f.Schema.ty with
+        |Schema.Foreign _ -> () (* done earlier *)
+        |Schema.ForeignMany ftable -> 
+          e.p "List.iter (fun f ->";
+          indent_fn e (fun e ->
+            e.p "let _refobj_id = f#save in";
+            e.p (sprintf "let sql = \"insert into %s values(?,?)\" in" (Schema.map_table module_name f));
+            dbg e (sprintf "\"%s.save: foreign insert: \" ^ sql" module_name);
+            e.p "let stmt = Sqlite3.prepare db sql in";
+            e.p "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+            e.p "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
+            e.p "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
+          );
+          e.p (sprintf ") %s;" f.Schema.name);
+        |_ -> assert false
+        ) foreign_fields;
+        e.p "_curobj_id";
       );
     );
 
@@ -294,7 +311,7 @@ let output_module e debug_mode all (module_name, fields) =
               e.p ")"
             |Schema.ForeignMany ftable ->
               print_comment e "foreign many-many mapping field";
-              e.p (sprintf "let stmt' = Sqlite3.prepare db \"select %s_id from map_%s_%s where %s_id=?\" in" ftable table ftable table);
+              e.p (sprintf "let stmt' = Sqlite3.prepare db \"select %s_id from %s where %s_id=?\" in" ftable (Schema.map_table table f) table);
               e.p (sprintf "let %s__id = Sqlite3.column stmt %d in" table (Hashtbl.find col_positions (table, "id")));
               e.p (sprintf "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" table); 
               e.p (sprintf "List.flatten (Sql_access.step_fold stmt' (fun s ->");
