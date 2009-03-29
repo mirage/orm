@@ -1,0 +1,4 @@
+- ocamldoc in generated output
+- merge sql_access.ml into the module
+- mli generation
+- #delete leaks foreign map entries
