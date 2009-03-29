@@ -32,6 +32,7 @@ let test_simple_insert_update_delete () =
      ~email:"john@example.com" ~mtime:now db in
    printf "inserting\n%!";
    let id = contact#save in
+   "contact has id" @? (contact#id <> None);
    printf "saved\n%!";
    let contact' = Contact.get ~id:(Some id) db in
    List.iter (fun c ->
@@ -40,10 +41,18 @@ let test_simple_insert_update_delete () =
    assert_equal (List.length contact') 1; 
    printf "saving same object again\n%!";
    let id2 = contact#save in
-   printf "id=%Lu id2=%Lu\n%!" id id2;
    assert_equal id id2;
-   let contact' = Contact.get ~id:(Some id2) db in
-   assert_equal (List.length contact') 1
+   let contact'' = Contact.get ~id:(Some id2) db in
+   assert_equal (List.length contact'') 1;
+   assert_equal (List.hd contact'')#id (List.hd contact')#id;
+   assert_equal contact#id (List.hd contact')#id;
+   printf "changing first name\n%!";
+   contact#set_first_name "Foo";
+   ignore(contact#save);
+   assert_equal contact#first_name "Foo";
+   let contact' = List.hd (Contact.get ~id:(Some id) db) in
+   assert_equal contact'#first_name "Foo";
+   ()
 
 let suite = "SQL ORM test" >:::
     [  "test_init" >:: test_init ;

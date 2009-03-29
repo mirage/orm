@@ -171,7 +171,8 @@ let output_module e debug_mode all (module_name, fields) =
           dbg e (sprintf "\"%s.save: inserting new record\"" module_name);
           let singular_fields = Schema.filter_out_id (Schema.filter_singular_fields fields) in
           let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
-          e.p (sprintf "let sql = \"insert into %s values(NULL,%s)\" in" module_name values);
+          e.p (sprintf "let sql = \"INSERT INTO %s VALUES(NULL,%s)\" in" module_name values);
+          dbg e (sprintf "\"%s.save: \" ^ sql" module_name);
           e.p "let stmt = Sqlite3.prepare db sql in";
           let pos = ref 1 in
           List.iter (fun f ->
@@ -191,7 +192,8 @@ let output_module e debug_mode all (module_name, fields) =
           let set_vars = String.concat "," (List.map (fun f ->
             sprintf "%s%s=?" f.Schema.name (match f.Schema.ty with |Schema.Foreign _ -> "_id" |_ -> "")
           ) up_fields) in
-          e.p (sprintf "let sql = \"update %s set %s where id=?\" in" module_name set_vars);
+          e.p (sprintf "let sql = \"UPDATE %s SET %s WHERE id=?\" in" module_name set_vars);
+          dbg e (sprintf "\"%s.save: \" ^ sql" module_name);
           e.p "let stmt = Sqlite3.prepare db sql in";
           let pos = ref 1 in
           List.iter (fun f ->
@@ -232,14 +234,14 @@ let output_module e debug_mode all (module_name, fields) =
           ) (module_name :: (Schema.foreign_table_names all module_name))
         )
       ) in
-      let joins = String.concat " " (List.map (fun f ->
+      let joins = String.concat "" (List.map (fun f ->
            match f.Schema.ty with 
-           |Schema.Foreign ftable -> sprintf "LEFT JOIN %s ON (%s.id = %s.%s_id)" ftable ftable module_name ftable
+           |Schema.Foreign ftable -> sprintf "LEFT JOIN %s ON (%s.id = %s.%s_id) " ftable ftable module_name ftable
            |Schema.ForeignMany ftable -> ""
            |_ -> assert false
          ) foreign_fields) in
-      e.p (sprintf "let q=\"SELECT %s FROM %s %s WHERE \" ^ q in" sql_field_names module_name joins);
-      dbg e ("\"get: \" ^ q");
+      e.p (sprintf "let q=\"SELECT %s FROM %s %sWHERE \" ^ q in" sql_field_names module_name joins);
+      dbg e (sprintf "\"%s.get: \" ^ q" module_name);
       e.p (sprintf "print_endline (\"get: \" ^ q);");
       e.p "let stmt=Sqlite3.prepare db q in";
       print_comment e "bind the position variables to the statement";
