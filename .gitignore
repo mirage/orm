@@ -12,3 +12,4 @@ ormtest
 ormtest.ml
 ormtest.mli
 test.db
+doc/
