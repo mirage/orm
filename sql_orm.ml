@@ -393,6 +393,8 @@ let output_init_module e all =
        ) all;
        e += "db";
      );
+     e.nl ();
+     e += "let db handle = handle.db"
    )
 
 let output_module_interface e all (module_name, fields) =
@@ -434,6 +436,8 @@ let output_init_module_interface e =
      print_ocamldoc e "Database handle which can be used to create and retrieve objects";
      e += "val t : string -> t";
      print_ocamldoc e ~args:"t db_name" ~raises:"Sql_error if a database error is encountered" "open a Sqlite3 database with filename [db_name] and create any tables if they are missing. @return a database handle which can be used to create and retrieve objects in the database.";
+     e += "val db: t -> Sqlite3.db";
+     print_ocamldoc e ~args:"db handle" "@return the underlying Sqlite3 database handle for the connection, for advanced queries.";
   )
 
 let output_sqlaccess_module e =
