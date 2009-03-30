@@ -6,6 +6,7 @@ module Printer = struct
         p: string -> unit;         (* printer function *)
         i: int;                    (* indent level *)
         nl: unit -> unit;          (* new line *)
+        dbg: bool;
     }
 
     let indent e = { e with i = succ e.i; p = e.fn (succ e.i) }
@@ -30,7 +31,7 @@ module Printer = struct
         |None -> failwith "must"
         |Some x -> fn x
 
-    let init_printer ?(msg=None) fout =
+    let init_printer ?(msg=None) ?(debug=false) fout =
         let ind i s = String.make (i * 2) ' ' ^ s in
         let out i s = output_string fout ((ind i s) ^ "\n") in
         may (out 0) msg;
@@ -39,6 +40,7 @@ module Printer = struct
             i = 0;
             p = (out 0);
             nl = (fun (x:unit) -> out 0 "");
+            dbg = debug;
         }
         
     let print_module e n fn =
@@ -64,8 +66,14 @@ module Printer = struct
     
     let (--*) = print_comment
 
-    let (--/) e fmt =
+    let pfn e fmt =
         let xfn s = e.p s in
+        kprintf xfn fmt
+
+    let (-.) = pfn (* XXX doesnt work due to format6 *)
+
+    let dbg e fmt =
+        let xfn s = if e.dbg then pfn e "print_endline (%s);" s in
         kprintf xfn fmt
  
 end
