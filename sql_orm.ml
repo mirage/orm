@@ -130,7 +130,7 @@ let output_module e all (module_name, fields) =
       ) (Schema.filter_out_id fs)) in
       let create_table table sql =
         e += "let sql = \"create table if not exists %s (%s);\" in" $ table $ sql;
-        e += "Sql_access.db_must_ok (fun () -> Sqlite3.exec db.db sql);" in
+        e += "db_must_ok (fun () -> Sqlite3.exec db.db sql);" in
       create_table module_name sqls;
       (* create foreign many-many tables now *)
       List.iter (fun fm -> match fm.Schema.ty with
@@ -176,8 +176,8 @@ let output_module e all (module_name, fields) =
             e += "let sql = \"DELETE FROM %s WHERE id=?\" in" $ module_name;
             e -= "\"%s.delete: \" ^ sql" $ module_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
-            e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
-            e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
+            e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
+            e += "ignore(step_fold stmt (fun _ -> ()));";
             e += "_id <- None"
          );
       );
@@ -203,7 +203,7 @@ let output_module e all (module_name, fields) =
              |false -> sprintf "let v = _%s in %s" 
                (Schema.ocaml_var_name f) (Schema.to_sql_type_wrapper f.Schema.ty) 
              in
-             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" $ !pos $ var;
+             e += "db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" $ !pos $ var;
              incr pos;
           ) fields;
           !pos
@@ -218,7 +218,7 @@ let output_module e all (module_name, fields) =
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           ignore(output_bind_fields e singular_fields);
-          e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e += "ignore(db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "let __id = Sqlite3.last_insert_rowid db.db in";
           e += "_id <- Some __id;";
           e += "__id"
@@ -234,8 +234,8 @@ let output_module e all (module_name, fields) =
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           let pos = output_bind_fields e up_fields in
-          e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
-          e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e += "db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
+          e += "ignore(db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "id";
         );
         e += "in";
@@ -248,17 +248,17 @@ let output_module e all (module_name, fields) =
             e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (Schema.map_table module_name f);
             e -= "\"%s.save: foreign insert: \" ^ sql" $ module_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
-            e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
-            e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
-            e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
+            e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+            e += "db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
+            e += "ignore(step_fold stmt (fun _ -> ()));";
           );
           e += ") _%s;" $ f.Schema.name;
           e += "let ids = String.concat \",\" (List.map (fun x -> match x#id with |None -> assert false |Some x -> Int64.to_string x) _%s) in" $ f.Schema.name;
           e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (Schema.map_table module_name f) $ module_name $ ftable;
           e -= "\"%s.save: foreign drop gc: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
-          e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
-          e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
+          e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+          e += "ignore(step_fold stmt (fun _ -> ()));";
         |_ -> assert false
         ) foreign_fields;
         e += "_curobj_id";
@@ -307,7 +307,7 @@ let output_module e all (module_name, fields) =
       List.iter (fun f ->
          e += "ignore(match %s with |None -> () |Some v ->" $ f.Schema.name;
          e --> (fun e ->
-           e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt !bindpos (%s));" $ (Schema.to_sql_type_wrapper f.Schema.ty);
+           e += "db_must_ok (fun () -> Sqlite3.bind stmt !bindpos (%s));" $ (Schema.to_sql_type_wrapper f.Schema.ty);
            e += "incr bindpos";
          );
          e += ");";
@@ -359,8 +359,8 @@ let output_module e all (module_name, fields) =
                 e -= "\"%s.of_stmt (%s): \" ^ sql'" $ table $ ftable;
                 e += "let stmt' = Sqlite3.prepare db.db sql' in";
                 e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table, "id"));
-                e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
-                e += "List.flatten (Sql_access.step_fold stmt' (fun s ->";
+                e += "db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
+                e += "List.flatten (step_fold stmt' (fun s ->";
                 e --> (fun e ->
                   e += "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
                   e += "%s.get ~id:(Some i) db)" $ (String.capitalize ftable);
@@ -375,7 +375,7 @@ let output_module e all (module_name, fields) =
       of_stmt e module_name;
       e += "in ";
       e --* "execute the SQL query";
-      e += "Sql_access.step_fold stmt of_stmt"
+      e += "step_fold stmt of_stmt"
   
     );
   )
