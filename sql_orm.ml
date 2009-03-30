@@ -195,7 +195,7 @@ let output_module e all (module_name, fields) =
         |_ -> assert false
         ) foreign_fields;
         (* helper function to output the bind statements for a set of fields *)
-        let output_bind_fields fields =
+        let output_bind_fields e fields =
           let pos = ref 1 in
           List.iter (fun f ->
              let var = match f.Schema.opt with
@@ -218,7 +218,7 @@ let output_module e all (module_name, fields) =
           e += "let sql = \"INSERT INTO %s VALUES(NULL,%s)\" in" $ module_name $ values;
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db sql in";
-          ignore(output_bind_fields singular_fields);
+          ignore(output_bind_fields e singular_fields);
           e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "let __id = Sqlite3.last_insert_rowid db in";
           e += "_id <- Some __id;";
@@ -234,7 +234,7 @@ let output_module e all (module_name, fields) =
           e += "let sql = \"UPDATE %s SET %s WHERE id=?\" in" $ module_name $ set_vars;
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db sql in";
-          let pos = output_bind_fields up_fields in
+          let pos = output_bind_fields e up_fields in
           e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
           e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "id";
@@ -246,7 +246,7 @@ let output_module e all (module_name, fields) =
           e += "List.iter (fun f ->";
           e --> (fun e ->
             e += "let _refobj_id = f#save in";
-            e += "let sql = \"insert into %s values(?,?)\" in" $ (Schema.map_table module_name f);
+            e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (Schema.map_table module_name f);
             e -= "\"%s.save: foreign insert: \" ^ sql" $ module_name;
             e += "let stmt = Sqlite3.prepare db sql in";
             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
