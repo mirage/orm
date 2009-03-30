@@ -14,34 +14,34 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Sql_orm
+open Sql_orm.Schema
 
-let all = Schema.make [
+let all = make [
   "attachment" , [
-    Schema.text "file_name";
-    Schema.text "mime_type";
+    text "file_name";
+    text "mime_type";
   ];
 
   "contact" , [
-    Schema.text "first_name";
-    Schema.text "last_name";
-    Schema.text "email";
-    Schema.date "mtime";
-    Schema.foreign ~flags:[`Optional] "attachment" "image";
-    Schema.foreign_many "attachment" "vcards";
-    Schema.foreign_many "attachment" "notes";
+    text "first_name";
+    text "last_name";
+    text "email";
+    date "mtime";
+    foreign ~flags:[`Optional] "attachment" "image";
+    foreign_many "attachment" "vcards";
+    foreign_many "attachment" "notes";
   ];
 
   "entry" , [
-    Schema.text "body";
-    Schema.date "received";
-    Schema.text ~flags:[`Optional] "subject";
-    Schema.foreign "contact" "people_from";
-    Schema.foreign_many "attachment" "atts";
-    Schema.foreign_many "contact" "people_to";
+    text "body";
+    date "received";
+    text ~flags:[`Optional] "subject";
+    foreign "contact" "people_from";
+    foreign_many "attachment" "atts";
+    foreign_many "contact" "people_to";
   ];
 ]
 
 let _ = 
-  generate ~debug:true all "ormtest_debug";
-  generate ~debug:false all "ormtest"
+    Sql_orm.generate ~debug:false all "ormtest";
+    Sql_orm.generate ~debug:true  all "ormtest_debug"

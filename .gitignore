@@ -7,9 +7,11 @@
 *.cmx
 *.cmi
 *.swp
-ormgen
+test_schema_generate
 ormtest
 ormtest.ml
 ormtest.mli
+sql_orm.a
+sql_orm.cmxa
 test.db
 doc/

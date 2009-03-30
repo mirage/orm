@@ -20,14 +20,6 @@ open Printf
 
 let db_name = ref "test.db"
 
-let must = function
-   |None -> assert_failure "must"
-   |Some x -> x
-
-let never = function
-   |Some x -> assert_failure "never"
-   |None -> ()
-
 let open_db ?(rm=false) () =
   if Sys.file_exists !db_name && rm then Sys.remove !db_name;
   Init.t !db_name
@@ -141,23 +133,5 @@ let suite = "SQL ORM test" >::: [
        "test_multiple_foreign_map" >:: test_multiple_foreign_map;
     ]
 
-(* Returns true if the result list contains successes only *)
-let rec was_successful results =
-  match results with
-      [] -> true
-    | RSuccess _::t
-    | RSkip _::t -> was_successful t
-    | RFailure _::_
-    | RError _::_
-    | RTodo _::_ -> false
-
 let _ =
-  let verbose = ref false in
-  let set_verbose _ = verbose := true in
-  Arg.parse
-    [("-verbose", Arg.Unit set_verbose, "Run the tests in verbose mode.");]
-    (fun x -> raise (Arg.Bad ("Bad argument : " ^ x)))
-    ("Usage: " ^ Sys.argv.(0) ^ " [-verbose]");
-
-  if not (was_successful (run_test_tt ~verbose:!verbose suite)) then
-    exit 1
+   run_test_tt_main suite
