@@ -3,6 +3,11 @@ open Printf
 
 exception Sql_error of (Rc.t * string)
 
+type state = {
+    db : db;
+    mutable in_transaction: int;
+}
+
 let raise_sql_error x =
     raise (Sql_error (x, (Rc.to_string x)))
 
@@ -26,11 +31,28 @@ let rec db_busy_retry fn =
        db_busy_retry fn
     |x -> x
 
+(* make sure an OK is returned from the database *)
 let db_must_ok fn =
     match db_busy_retry fn with
     |Rc.OK -> ()
     |x -> raise_sql_error x
 
+(* request a transaction *)
+let transaction db fn =
+    try_finally (fun () ->
+        if db.in_transaction = 0 then (
+           db_must_ok (fun () -> exec db.db "BEGIN TRANSACTION");
+        );
+        db.in_transaction <- db.in_transaction + 1;
+        fn ();
+    ) (fun () ->
+        if db.in_transaction = 1 then (
+           db_must_ok (fun () -> exec db.db "END TRANSACTION");
+        );
+        db.in_transaction <- db.in_transaction - 1
+    )
+
+(* iterate over a result set *)
 let step_fold stmt iterfn =
     let stepfn () = Sqlite3.step stmt in
     let rec fn a = match db_busy_retry stepfn with

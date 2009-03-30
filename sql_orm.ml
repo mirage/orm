@@ -130,7 +130,7 @@ let output_module e all (module_name, fields) =
       ) (Schema.filter_out_id fs)) in
       let create_table table sql =
         e += "let sql = \"create table if not exists %s (%s);\" in" $ table $ sql;
-        e += "Sql_access.db_must_ok (fun () -> Sqlite3.exec db sql);" in
+        e += "Sql_access.db_must_ok (fun () -> Sqlite3.exec db.db sql);" in
       create_table module_name sqls;
       (* create foreign many-many tables now *)
       List.iter (fun fm -> match fm.Schema.ty with
@@ -149,7 +149,7 @@ let output_module e all (module_name, fields) =
        match f.Schema.opt with
        |true -> sprintf "?(%s=None)" f.Schema.name
        |false -> sprintf "~%s" f.Schema.name) fields) in
-    e += "let t %s (db:Sqlite3.db) : t = object" $ label_names;
+    e += "let t %s db : t = object" $ label_names;
     e --> (fun e -> 
       e --* "get functions";
       List.iter (fun f ->
@@ -175,16 +175,15 @@ let output_module e all (module_name, fields) =
             e -= "\"%s.delete: id found, deleting\"" $ module_name;
             e += "let sql = \"DELETE FROM %s WHERE id=?\" in" $ module_name;
             e -= "\"%s.delete: \" ^ sql" $ module_name;
-            e += "let stmt = Sqlite3.prepare db sql in";
+            e += "let stmt = Sqlite3.prepare db.db sql in";
             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
             e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
             e += "_id <- None"
          );
       );
       e.nl ();
-      e += "method save =";
+      e += "method save = transaction db (fun () ->";
       e --> (fun e ->
-        e --* "XXX wrap this in transaction";
         e --* "insert any foreign-one fields into their table and get id";
         List.iter (fun f -> match f.Schema.ty,f.Schema.opt with
         |Schema.Foreign _,false ->
@@ -217,10 +216,10 @@ let output_module e all (module_name, fields) =
           let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
           e += "let sql = \"INSERT INTO %s VALUES(NULL,%s)\" in" $ module_name $ values;
           e -= "\"%s.save: \" ^ sql" $ module_name;
-          e += "let stmt = Sqlite3.prepare db sql in";
+          e += "let stmt = Sqlite3.prepare db.db sql in";
           ignore(output_bind_fields e singular_fields);
           e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
-          e += "let __id = Sqlite3.last_insert_rowid db in";
+          e += "let __id = Sqlite3.last_insert_rowid db.db in";
           e += "_id <- Some __id;";
           e += "__id"
         );
@@ -233,7 +232,7 @@ let output_module e all (module_name, fields) =
           ) up_fields) in
           e += "let sql = \"UPDATE %s SET %s WHERE id=?\" in" $ module_name $ set_vars;
           e -= "\"%s.save: \" ^ sql" $ module_name;
-          e += "let stmt = Sqlite3.prepare db sql in";
+          e += "let stmt = Sqlite3.prepare db.db sql in";
           let pos = output_bind_fields e up_fields in
           e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
           e += "ignore(Sql_access.db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
@@ -248,7 +247,7 @@ let output_module e all (module_name, fields) =
             e += "let _refobj_id = f#save in";
             e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (Schema.map_table module_name f);
             e -= "\"%s.save: foreign insert: \" ^ sql" $ module_name;
-            e += "let stmt = Sqlite3.prepare db sql in";
+            e += "let stmt = Sqlite3.prepare db.db sql in";
             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
             e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
@@ -257,18 +256,19 @@ let output_module e all (module_name, fields) =
           e += "let ids = String.concat \",\" (List.map (fun x -> match x#id with |None -> assert false |Some x -> Int64.to_string x) _%s) in" $ f.Schema.name;
           e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (Schema.map_table module_name f) $ module_name $ ftable;
           e -= "\"%s.save: foreign drop gc: \" ^ sql" $ module_name;
-          e += "let stmt = Sqlite3.prepare db sql in";
+          e += "let stmt = Sqlite3.prepare db.db sql in";
           e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
           e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
         |_ -> assert false
         ) foreign_fields;
         e += "_curobj_id";
       );
+      e.p ")"
     );
     e += "end";
     e.nl ();
     e --* "General get function for any of the columns";
-    e += "let get %s (db:Sqlite3.db) =" $ 
+    e += "let get %s db =" $ 
       (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields));
     e --> (fun e ->
       e --* "assemble the SQL query string";
@@ -301,7 +301,7 @@ let output_module e all (module_name, fields) =
          ) foreign_fields) in
       e += "let q=\"SELECT %s FROM %s %sWHERE \" ^ q in" $ sql_field_names $ module_name $ joins;
       e -= "\"%s.get: \" ^ q" $ module_name;
-      e += "let stmt=Sqlite3.prepare db q in";
+      e += "let stmt=Sqlite3.prepare db.db q in";
       e --* "bind the position variables to the statement";
       e += "let bindpos = ref 1 in";
       List.iter (fun f ->
@@ -357,7 +357,7 @@ let output_module e all (module_name, fields) =
                 e --* "foreign many-many mapping field";
                 e += "let sql' = \"select %s_id from %s where %s_id=?\" in" $ ftable $ (Schema.map_table table f) $ table;
                 e -= "\"%s.of_stmt (%s): \" ^ sql'" $ table $ ftable;
-                e += "let stmt' = Sqlite3.prepare db sql' in";
+                e += "let stmt' = Sqlite3.prepare db.db sql' in";
                 e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table, "id"));
                 e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
                 e += "List.flatten (Sql_access.step_fold stmt' (fun s ->";
@@ -384,7 +384,7 @@ let output_init_module e all =
    print_module e "Init" (fun e ->
      e += "let t db_name =";
      e --> (fun e ->
-       e += "let db = Sqlite3.db_open db_name in";
+       e += "let db = {db=Sqlite3.db_open db_name; in_transaction=0} in";
        List.iter (fun (m,_) ->
          e += "%s.init db;" $ (String.capitalize m);
        ) all;
@@ -396,6 +396,7 @@ let generate ?(debug=false) all =
   let e = init_printer ~msg:(Some "(* autogenerated by sql_orm *)") ~debug stdout in
   e += "exception Sqlite_error of Sqlite3.Rc.t";
   if e.dbg then e += "open Printf";
+  e += "open Sql_access";
   List.iter (output_module e all) all;
   output_init_module e all;
   ()
