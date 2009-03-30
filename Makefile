@@ -14,6 +14,8 @@ SOURCES=printer_utils.ml sql_orm_header.ml sql_orm.ml
 PACKS=unix sqlite3
 RESULT=sql_orm
 
+TRASH=sql_orm_header.ml
+
 include $(OCAMLMAKEFILE)
 
 sql_orm_header.ml: sql_access.ml convert.ml
