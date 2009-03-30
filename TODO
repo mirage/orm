@@ -1,2 +1,3 @@
 - delete leaks foreign map entries - the mapping tabls are updated, but individual objects removed from many->many lists should be explicitly deleted
 - create triggers for cascading deletion
+- specify NULL/NOT NULL constraints in schema creation in the db

@@ -1,0 +1,65 @@
+The Sql_orm package provides an "Object-Relational Mapper" interface
+between a Sqlite3 database and OCaml.
+
+DESCRIPTION
+-----------
+
+You provide a schema of the type of objects you want to store in
+the database, and an OCaml source file is generated with modules
+that:
+
+ * initialize the database with the right schema
+ * retrieve objects from the database by searching from keys
+ * modify fields and save them back to the database.
+
+The schema provides the following types:
+
+ * text: a standard text field
+ * blob: binary data
+ * date: date stored as seconds since 1970
+ * integer: int64
+ * foreign: map another object reference
+ * foreign_many: list of other object references
+
+You can also specify flags, which are currently:
+
+ * `Optional: the field can be NULL in the database
+
+To get started, compile and install the Sql_orm module with:
+
+$ make && sudo make install
+
+It uses Findlib to locate your OCaml installation.  You will also
+need the OCaml-SQLite3 bindings by Markus Mottl, available from:
+
+ * http://www.ocaml.info/home/ocaml_sources.html
+
+USAGE
+-----
+
+Once the library is installed, take a look inside the tests/ directory
+for an example of how to use it.
+
+The test_schema.ml file defines a simple address book schema and
+calls into the Sql_orm generator to output OCaml code.  If you
+execute run_tests.sh in that directory, it will generate the code
+into ormtest.ml (and ormtest.mli), and execute some test cases
+defined in test.ml.
+
+Once the tests have (hopefully successfully) run, you can examine
+the database schema in test.db to see how it maps from the schema
+you defined to SQLite3.
+
+In the generated file, each schema object you define has its own
+module, with a 't' function to instantiate a new one, and 'get' to
+retrieve a list of objects from the database.
+
+Labelled arguments corresponding to the fields are used with native
+OCaml types, and are mapped to the correct SQLite types.
+
+BUGS
+----
+
+Please send bug reports or patches to:
+
+* Anil Madhavapeddy <anil@recoil.org>
