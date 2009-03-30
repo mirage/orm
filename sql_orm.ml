@@ -457,13 +457,9 @@ let output_init_module_interface e =
 
 let output_sqlaccess_module e =
   e += "exception Sql_error of (Sqlite3.Rc.t * string)";
-  let fin = open_in "sql_access.ml" in
   print_module e "Sql_access" (fun e ->
-     (try while true do
-       e.p (input_line fin)
-     done with End_of_file -> ());
+     Sql_orm_header.print_header e;
   );
-  close_in fin;
   e.nl ()
 
 let generate ?(debug=false) all output_basename =

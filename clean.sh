@@ -3,5 +3,6 @@
 set -ex
 
 make clean
-make -f Makefile.ormgen clean
-make -f Makefile.test clean
+
+(cd tests && make clean)
+(cd tests && make -f Makefile.test clean)

@@ -8,11 +8,29 @@ export DEBUG
 OCAMLRUNPARAM=b
 export OCAMLRUNPARAM
 
-SOURCES=printer_utils.ml sql_orm.ml
+DOC_FILES=sql_orm
+
+SOURCES=printer_utils.ml sql_orm_header.ml sql_orm.ml
 PACKS=unix sqlite3
 RESULT=sql_orm
-.PHONY: all
-all: ncl bcl
-	@ :
 
 include $(OCAMLMAKEFILE)
+
+sql_orm_header.ml: sql_access.ml convert.ml
+	ocaml convert.ml
+
+.PHONY: depend
+depend: sql_orm_header.ml
+	@ :
+
+.PHONY: all
+all: depend ncl bcl
+	@ :
+
+.PHONY: install
+install: depend libinstall
+	@ :
+
+.PHONY: uninstall
+uninstall: libuninstall
+	@ :	

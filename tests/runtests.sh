@@ -2,7 +2,8 @@
 
 set -ex
 
-make -f Makefile.ormgen
+make clean
+make
 make -f Makefile.test
 ./ormtest -verbose
 mv ormtest_debug.ml ormtest.ml && touch ormtest.ml

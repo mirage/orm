@@ -1,4 +1,4 @@
-OCAMLMAKEFILE = OCamlMakefile
+OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
 export ANNOTATE
@@ -15,11 +15,13 @@ PACKS=unix sqlite3 ounit
 LIBDIRS=/opt/local/lib
 DOC_FILES=ormtest.mli
 
+TRASH=test.db
+
 PP=./camlp4find $(PACKS)
 export PP
 
 .PHONY: all
-all: dnc
+all: dnc htdoc
 	@ :
 
 include $(OCAMLMAKEFILE)
