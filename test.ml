@@ -28,7 +28,8 @@ let test_init () =
 let gen_contact fname lname db =
    let now = Unix.gettimeofday () in
    Contact.t ~first_name:fname ~last_name:lname
-     ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now db 
+     ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now ~vcards:[]
+     db 
 
 let test_simple_insert_update_delete () =
    let db = open_db ~rm:true () in
@@ -63,6 +64,8 @@ let test_new_foreign_map () =
    let e = Entry.t ~body:"Test Body" ~received:now ~people_from:from
      ~atts:atts ~people_to:cto db in
    let eid = e#save in
+   "entry has an id" @? (e#id <> None);
+   assert_equal (Some eid) e#id;
    ()
 
 let suite = "SQL ORM test" >:::
