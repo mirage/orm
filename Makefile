@@ -16,17 +16,15 @@ RESULT=sql_orm
 
 TRASH=sql_orm_header.ml
 
-include $(OCAMLMAKEFILE)
+.PHONY: all
+all: depend ncl bcl
+	@ :
 
 sql_orm_header.ml: sql_access.ml convert.ml
-	ocaml convert.ml
+	ocaml convert.ml $< $@
 
 .PHONY: depend
 depend: sql_orm_header.ml
-	@ :
-
-.PHONY: all
-all: depend ncl bcl
 	@ :
 
 .PHONY: install
@@ -36,3 +34,5 @@ install: depend libinstall
 .PHONY: uninstall
 uninstall: libuninstall
 	@ :	
+
+include $(OCAMLMAKEFILE)
