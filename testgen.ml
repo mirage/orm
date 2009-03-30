@@ -1,7 +1,7 @@
 open Sql_orm
 
 let all = Schema.make [
-  "attachments" , [
+  "attachment" , [
     Schema.text "file_name";
     Schema.text "mime_type";
   ];
@@ -11,8 +11,9 @@ let all = Schema.make [
     Schema.text "last_name";
     Schema.text "email";
     Schema.date "mtime";
-    Schema.foreign ~flags:[`Optional] "attachments" "image";
-    Schema.foreign_many "attachments" "vcards";
+    Schema.foreign ~flags:[`Optional] "attachment" "image";
+    Schema.foreign_many "attachment" "vcards";
+    Schema.foreign_many "attachment" "notes";
   ];
 
   "entry" , [
@@ -20,7 +21,7 @@ let all = Schema.make [
     Schema.date "received";
     Schema.text ~flags:[`Optional] "subject";
     Schema.foreign "contact" "people_from";
-    Schema.foreign_many "attachments" "atts";
+    Schema.foreign_many "attachment" "atts";
     Schema.foreign_many "contact" "people_to";
   ];
 ]

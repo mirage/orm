@@ -160,7 +160,7 @@ let output_module e all (module_name, fields) =
       e --* "set functions";
       List.iter (fun f ->
           e += "method set_%s v =" $ f.Schema.name;
-          e --> (fun e -> 
+          e --> (fun e ->
             e += "_%s <- v" $ f.Schema.name;
           );
       ) fields;
@@ -253,7 +253,13 @@ let output_module e all (module_name, fields) =
             e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
             e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
           );
-          e += ") %s;" $ f.Schema.name;
+          e += ") _%s;" $ f.Schema.name;
+          e += "let ids = String.concat \",\" (List.map (fun x -> match x#id with |None -> assert false |Some x -> Int64.to_string x) _%s) in" $ f.Schema.name;
+          e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (Schema.map_table module_name f) $ module_name $ ftable;
+          e -= "\"%s.save: foreign drop gc: \" ^ sql" $ module_name;
+          e += "let stmt = Sqlite3.prepare db sql in";
+          e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+          e += "ignore(Sql_access.step_fold stmt (fun _ -> ()));";
         |_ -> assert false
         ) foreign_fields;
         e += "_curobj_id";

@@ -28,7 +28,7 @@ let test_init () =
 let gen_contact fname lname db =
    let now = Unix.gettimeofday () in
    Contact.t ~first_name:fname ~last_name:lname
-     ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now ~vcards:[]
+     ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now ~vcards:[] ~notes:[]
      db 
 
 let test_simple_insert_update_delete () =
@@ -68,10 +68,44 @@ let test_new_foreign_map () =
    assert_equal (Some eid) e#id;
    ()
 
+let test_multiple_foreign_map () =
+   let db = open_db ~rm:true () in
+   let now = Unix.gettimeofday () in
+   let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" db in
+   let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" db in
+   let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" db in
+   let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  db in
+   let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  db in
+   (* contact without an image *)
+   let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:"foobar@example.com"
+     ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in
+   let cid = contact#save in
+   let get_contact_with_id cid =
+     let contact' = Contact.get ~id:(Some cid) db in
+     assert_equal (List.length contact') 1;
+     List.hd contact' in
+   let contact' = get_contact_with_id cid in
+   assert_equal contact#id contact'#id;
+   let vcards = contact#vcards in
+   assert_equal (List.length vcards) 2;
+   let [vcard1';vcard2'] = vcards in
+   assert_equal "vcard1.vcs" vcard1'#file_name;
+   assert_equal "vcard2.vcs" vcard2'#file_name;
+   contact#set_vcards [vcard1; vcard3];
+   let cid = contact#save in
+   let contact' = get_contact_with_id cid in
+   let vcards' = contact'#vcards in
+   "2 vcards back" @? (List.length vcards' = 2);
+   let [vcard3'; vcard1'] = vcards' in
+   "first vcard is same" @? ("vcard1.vcs" = vcard1'#file_name);
+   "second vcard is same" @? ("vcard3.vcs" = vcard3'#file_name);
+   ()
+
 let suite = "SQL ORM test" >:::
     [  "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
        "test_new_foreign_map" >:: test_new_foreign_map;
+       "test_multiple_foreign_map" >:: test_multiple_foreign_map;
     ]
 
 (* Returns true if the result list contains successes only *)
