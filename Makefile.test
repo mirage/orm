@@ -13,6 +13,7 @@ THREADS=yes
 RESULT=ormtest
 PACKS=unix sqlite3 ounit
 LIBDIRS=/opt/local/lib
+DOC_FILES=ormtest.mli
 
 PP=./camlp4find $(PACKS)
 export PP

@@ -8,7 +8,7 @@ export DEBUG
 OCAMLRUNPARAM=b
 export OCAMLRUNPARAM
 
-SOURCES=printer_utils.ml sql_access.ml sql_orm.ml testgen.ml
+SOURCES=printer_utils.ml sql_orm.ml testgen.ml
 THREADS=yes
 RESULT=ormgen
 PACKS=unix sqlite3

@@ -1,8 +1,6 @@
 open Sqlite3
 open Printf
 
-exception Sql_error of (Rc.t * string)
-
 type state = {
     db : db;
     mutable in_transaction: int;

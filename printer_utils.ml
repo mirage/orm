@@ -51,8 +51,7 @@ module Printer = struct
     let print_module_sig e n fn =
         e.p (sprintf "module %s : sig" (String.capitalize n));
         indent_fn e fn;
-        e.p "end";
-        e.nl ()
+        e.p "end"
     
     let print_record e nm fn =
         e.p (sprintf "type %s = {" nm);
@@ -68,12 +67,15 @@ module Printer = struct
 
     let print_comment e x =
         e.p (sprintf "(* %s *)" x)
-    
 
+    let print_ocamldoc e ?(raises="") ?(args="") body =
+        e.p (sprintf "(** %s%s" (match args with "" -> "" |x -> sprintf "[%s] " x)  body);
+        (match raises with "" -> () |r -> e.p (" @raise " ^ r));
+        e.p "  *)"
+    
     let pfn e fmt =
         let xfn s = e.p s in
         kprintf xfn fmt
-
 
     let dbg e fmt =
         let xfn s = if e.dbg then pfn e "print_endline (%s);" s in
