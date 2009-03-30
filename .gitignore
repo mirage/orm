@@ -1,4 +1,5 @@
 ._d/
+._ncdi/
 *.annot
 *.cmo
 *.o
@@ -9,4 +10,5 @@
 ormgen
 ormtest
 ormtest.ml
+ormtest.mli
 test.db

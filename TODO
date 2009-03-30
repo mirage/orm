@@ -1,4 +1,3 @@
 - ocamldoc in generated output
-- merge sql_access.ml into the module
-- mli generation
-- #delete leaks foreign map entries
+- delete leaks foreign map entries - the mapping tabls are updated, but individual objects removed from many->many lists should be explicitly deleted
+- create triggers for cascading deletion
