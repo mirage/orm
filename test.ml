@@ -99,10 +99,29 @@ let test_multiple_foreign_map () =
    let [vcard3'; vcard1'] = vcards' in
    "first vcard is same" @? ("vcard1.vcs" = vcard1'#file_name);
    "second vcard is same" @? ("vcard3.vcs" = vcard3'#file_name);
+   contact'#set_vcards (note1 :: vcards);
+   let cid = contact'#save in
+   let contact = get_contact_with_id cid in
+   let notes = contact#notes in
+   let vcards = contact#vcards in
+   "still 2 notes" @? (List.length notes = 2);
+   "and 3 vcards" @? (List.length vcards = 3);
+   "one vcard has mimetype note" @? (List.length (List.find_all (fun x -> x#mime_type = "note") vcards) = 1);
+   "two vcards have mimetype vcard" @? (List.length (List.find_all (fun x -> x#mime_type = "vcard") vcards) = 2);
+   let contact = get_contact_with_id cid in
+   contact#set_notes [];
+   let cid = contact#save in
+   let contact = get_contact_with_id cid in
+   let notes = contact#notes in
+   let vcards = contact#vcards in
+   "now 0 notes" @? (List.length notes = 0);
+   "and 3 vcards" @? (List.length vcards = 3);
+   "one vcard has mimetype note" @? (List.length (List.find_all (fun x -> x#mime_type = "note") vcards) = 1);
+   "two vcards have mimetype vcard" @? (List.length (List.find_all (fun x -> x#mime_type = "vcard") vcards) = 2);
    ()
 
-let suite = "SQL ORM test" >:::
-    [  "test_init" >:: test_init ;
+let suite = "SQL ORM test" >::: [
+       "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
        "test_new_foreign_map" >:: test_new_foreign_map;
        "test_multiple_foreign_map" >:: test_multiple_foreign_map;
