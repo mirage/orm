@@ -48,6 +48,12 @@ module Printer = struct
         e.p "end";
         e.nl ()
 
+    let print_module_sig e n fn =
+        e.p (sprintf "module %s : sig" (String.capitalize n));
+        indent_fn e fn;
+        e.p "end";
+        e.nl ()
+    
     let print_record e nm fn =
         e.p (sprintf "type %s = {" nm);
         indent_fn e fn;

@@ -19,7 +19,7 @@ export PP
 
 .PHONY: all
 all: dnc
-	./ormgen > ormtest.ml
+	./ormgen
 
 include $(OCAMLMAKEFILE)
 

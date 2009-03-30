@@ -27,4 +27,4 @@ let all = Schema.make [
 ]
 
 let _ = 
-  generate ~debug:true all
+  generate ~debug:true all "ormtest"
