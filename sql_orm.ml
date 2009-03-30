@@ -311,23 +311,25 @@ let output_module e all (module_name, fields) =
           ) fields;
           List.iter (fun f ->
             e += "~%s:(" $ f.Schema.name;
-            match f.Schema.ty with
-            |Schema.Foreign ftable ->
-              e --* "foreign mapping field";
-              of_stmt e ftable;
-              e += ")"
-            |Schema.ForeignMany ftable ->
-              e --* "foreign many-many mapping field";
-              e += "let stmt' = Sqlite3.prepare db \"select %s_id from %s where %s_id=?\" in" $ ftable $ (Schema.map_table table f) $ table;
-              e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table, "id"));
-              e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
-              e += "List.flatten (Sql_access.step_fold stmt' (fun s ->";
-              e --> (fun e ->
-                e += "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
-                e += "%s.get ~id:(Some i) db)" $ (String.capitalize ftable);
-              );
-              e += "))"
-            |_ -> assert false
+            e --> (fun e ->
+              match f.Schema.ty with
+              |Schema.Foreign ftable ->
+                e --* "foreign mapping field";
+                of_stmt e ftable;
+                e += ")"
+              |Schema.ForeignMany ftable ->
+                e --* "foreign many-many mapping field";
+                e += "let stmt' = Sqlite3.prepare db \"select %s_id from %s where %s_id=?\" in" $ ftable $ (Schema.map_table table f) $ table;
+                e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table, "id"));
+                e += "Sql_access.db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
+                e += "List.flatten (Sql_access.step_fold stmt' (fun s ->";
+                e --> (fun e ->
+                  e += "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
+                  e += "%s.get ~id:(Some i) db)" $ (String.capitalize ftable);
+                );
+                e += "))"
+              |_ -> assert false
+            );
           ) foreign_fields;
         );
         e += "db"
