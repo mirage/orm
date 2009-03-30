@@ -15,7 +15,6 @@ module Printer = struct
         let e = indent e in
         fn e
 
-    let (-->) e fn = indent_fn e fn
 
     let list_iter_indent e fn l =
         List.iter (indent_fn e fn) l
@@ -64,19 +63,21 @@ module Printer = struct
     let print_comment e x =
         e.p (sprintf "(* %s *)" x)
     
-    let (--*) = print_comment
 
     let pfn e fmt =
         let xfn s = e.p s in
         kprintf xfn fmt
 
-    let (+=) = pfn 
-    let ($) f x = f x
 
     let dbg e fmt =
         let xfn s = if e.dbg then pfn e "print_endline (%s);" s in
         kprintf xfn fmt
+
+    let (--*) = print_comment
+    let (-->) e fn = indent_fn e fn
+    let (+=) = pfn 
     let (-=) = dbg
+    let ($) f x = f x
  
 end
 
