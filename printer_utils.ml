@@ -70,11 +70,13 @@ module Printer = struct
         let xfn s = e.p s in
         kprintf xfn fmt
 
-    let (-.) = pfn (* XXX doesnt work due to format6 *)
+    let (+=) = pfn 
+    let ($) f x = f x
 
     let dbg e fmt =
         let xfn s = if e.dbg then pfn e "print_endline (%s);" s in
         kprintf xfn fmt
+    let (-=) = dbg
  
 end
 
