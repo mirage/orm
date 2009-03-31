@@ -75,7 +75,13 @@ let test_gets () =
    check (Contact.get ~id:(Some cid) db);
    check (Contact.get ~first_name:(Some "Foo") db);
    check (Contact.get ~last_name:(Some "Bar") db);
-   check (Contact.get ~email:(Some "Foo.Bar@example.com") db)
+   check (Contact.get ~email:(Some "Foo.Bar@example.com") db);
+   let c = gen_contact "Alice" "Bob" db in
+   ignore(c#save);
+   let all = Contact.get db in
+   "2 entries" @? (List.length all = 2);
+   "entries valid" @? (List.sort compare (List.map (fun x -> x#email) all) =
+     ["Alice.Bob@example.com"; "Foo.Bar@example.com"])
 
 let test_new_foreign_map () =
    let db = open_db ~rm:true () in
@@ -111,7 +117,7 @@ let test_multiple_foreign_map () =
    assert_equal contact#id contact'#id;
    let vcards = contact#vcards in
    assert_equal (List.length vcards) 2;
-   let [vcard1';vcard2'] = vcards in
+   let vcard1',vcard2' = match vcards with [a;b] -> a,b |_ -> assert false in
    assert_equal "vcard1.vcs" vcard1'#file_name;
    assert_equal "vcard2.vcs" vcard2'#file_name;
    contact#set_vcards [vcard1; vcard3];
@@ -119,7 +125,7 @@ let test_multiple_foreign_map () =
    let contact' = get_contact_with_id cid in
    let vcards' = contact'#vcards in
    "2 vcards back" @? (List.length vcards' = 2);
-   let [vcard3'; vcard1'] = vcards' in
+   let vcard3',vcard1' = match vcards' with |[a;b] -> a,b |_ -> assert false in
    "first vcard is same" @? ("vcard1.vcs" = vcard1'#file_name);
    "second vcard is same" @? ("vcard3.vcs" = vcard3'#file_name);
    contact'#set_vcards (note1 :: vcards);

@@ -290,7 +290,7 @@ let output_module e all (module_name, fields) =
       e --* "assemble the SQL query string";
       e += "let q = \"\" in";
       e += "let _first = ref true in";
-      e += "let f () = match !_first with |true -> _first := false; \"\" |false -> \" && \" in";
+      e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" && \" in";
       List.iter (fun f ->
         e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
           f.Schema.name $ module_name $ f.Schema.name;
@@ -315,7 +315,7 @@ let output_module e all (module_name, fields) =
            |Schema.ForeignMany ftable -> ""
            |_ -> assert false
          ) foreign_fields) in
-      e += "let q=\"SELECT %s FROM %s %sWHERE \" ^ q in" $ sql_field_names $ module_name $ joins;
+      e += "let q=\"SELECT %s FROM %s %s\" ^ q in" $ sql_field_names $ module_name $ joins;
       e -= "\"%s.get: \" ^ q" $ module_name;
       e += "let stmt=Sqlite3.prepare db.db q in";
       e --* "bind the position variables to the statement";
