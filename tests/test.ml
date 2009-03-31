@@ -60,6 +60,23 @@ let test_simple_insert_update_delete () =
    let id' = contact#save in
    "contact has new id" @? (id' <> id)
 
+let test_gets () =
+   let db = open_db ~rm:true () in
+   let c = gen_contact "Foo" "Bar" db in
+   let check cl = 
+      "one contact" @? (List.length cl = 1);
+      let c = List.hd cl in
+      "contact id" @? (c#id = Some 1L);
+      "contact fname" @? (c#first_name = "Foo");
+      "contact lname" @? (c#last_name = "Bar");
+      "contact email" @? (c#email = "Foo.Bar@example.com")
+   in
+   let cid = c#save in
+   check (Contact.get ~id:(Some cid) db);
+   check (Contact.get ~first_name:(Some "Foo") db);
+   check (Contact.get ~last_name:(Some "Bar") db);
+   check (Contact.get ~email:(Some "Foo.Bar@example.com") db)
+
 let test_new_foreign_map () =
    let db = open_db ~rm:true () in
    let now = Unix.gettimeofday () in
@@ -129,6 +146,7 @@ let test_multiple_foreign_map () =
 let suite = "SQL ORM test" >::: [
        "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
+       "test_gets" >:: test_gets;
        "test_new_foreign_map" >:: test_new_foreign_map;
        "test_multiple_foreign_map" >:: test_multiple_foreign_map;
     ]
