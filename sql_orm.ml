@@ -289,11 +289,11 @@ let output_module e all (module_name, fields) =
     e --> (fun e ->
       e --* "assemble the SQL query string";
       e += "let q = \"\" in";
-      let first = ref true in
+      e += "let _first = ref true in";
+      e += "let f () = match !_first with |true -> _first := false; \"\" |false -> \" && \" in";
       List.iter (fun f ->
-        e += "let q = match %s with |None -> q |Some b -> q ^ \"%s%s.%s=?\" in" $
-          f.Schema.name $ (match !first with true -> "" |false ->" &&") $ module_name $ f.Schema.name;
-        first := false;
+        e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
+          f.Schema.name $ module_name $ f.Schema.name;
       ) native_fields;
       (* get all the field names to select, combination of the foreign keys as well *)
       let col_positions = Hashtbl.create 1 in
