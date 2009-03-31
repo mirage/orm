@@ -16,3 +16,4 @@ sql_orm.cmxa
 test.db
 sql_orm_header.ml
 doc/
+tests/*.db

@@ -290,7 +290,7 @@ let output_module e all (module_name, fields) =
       e --* "assemble the SQL query string";
       e += "let q = \"\" in";
       e += "let _first = ref true in";
-      e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" && \" in";
+      e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" AND \" in";
       List.iter (fun f ->
         e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
           f.Schema.name $ module_name $ f.Schema.name;

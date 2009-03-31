@@ -18,17 +18,15 @@ open OUnit
 open Ormtest
 open Printf
 
-let db_name = ref "test.db"
-
-let open_db ?(rm=false) () =
-  if Sys.file_exists !db_name && rm then Sys.remove !db_name;
-  Init.t !db_name
+let open_db ?(rm=false) name =
+  if Sys.file_exists name && rm then Sys.remove name;
+  Init.t name
 
 let test_init () =
    (* do two inits, should be idempotent *)
-   let _ = open_db () in
-   let _ = open_db () in
-   let _ = open_db ~rm:true () in
+   let _ = open_db "test.db" in
+   let _ = open_db "test.db" in
+   let _ = open_db ~rm:true "test.db" in
    ()
 
 let gen_contact fname lname db =
@@ -38,7 +36,7 @@ let gen_contact fname lname db =
      db 
 
 let test_simple_insert_update_delete () =
-   let db = open_db ~rm:true () in
+   let db = open_db ~rm:true "test_insert.db" in
    let contact = gen_contact "John" "Smith" db in
    let id = contact#save in
    "contact has id" @? (contact#id <> None);
@@ -61,7 +59,7 @@ let test_simple_insert_update_delete () =
    "contact has new id" @? (id' <> id)
 
 let test_gets () =
-   let db = open_db ~rm:true () in
+   let db = open_db ~rm:true "test_gets.db" in
    let c = gen_contact "Foo" "Bar" db in
    let check cl = 
       "one contact" @? (List.length cl = 1);
@@ -81,10 +79,13 @@ let test_gets () =
    let all = Contact.get db in
    "2 entries" @? (List.length all = 2);
    "entries valid" @? (List.sort compare (List.map (fun x -> x#email) all) =
-     ["Alice.Bob@example.com"; "Foo.Bar@example.com"])
+     ["Alice.Bob@example.com"; "Foo.Bar@example.com"]);
+   let c = Contact.get ~first_name:(Some "Foo") ~last_name:(Some "Bar") db in
+   "multiple field get 1 result" @? (List.length c = 1);
+   "correct id" @? ((List.hd c)#id = Some cid)
 
 let test_new_foreign_map () =
-   let db = open_db ~rm:true () in
+   let db = open_db ~rm:true "test_new_foreign.db" in
    let now = Unix.gettimeofday () in
    let from = gen_contact "John" "Smith" db in
    let cto = List.map (fun (a,b) -> gen_contact a b db) [
@@ -98,7 +99,7 @@ let test_new_foreign_map () =
    ()
 
 let test_multiple_foreign_map () =
-   let db = open_db ~rm:true () in
+   let db = open_db ~rm:true "test_multiple_foreign.db"  in
    let now = Unix.gettimeofday () in
    let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" db in
    let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" db in
