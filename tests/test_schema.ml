@@ -43,5 +43,5 @@ let all = make [
 ]
 
 let _ = 
-    Sql_orm.generate ~debug:false all "ormtest";
+    Sql_orm.generate ~debug:false all "ormtest_normal";
     Sql_orm.generate ~debug:true  all "ormtest_debug"

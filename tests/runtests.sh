@@ -4,9 +4,11 @@ set -ex
 
 make clean
 make
-make -f Makefile.test
+mv ormtest_debug.ml ormtest.ml
+mv ormtest_debug.mli ormtest.mli
+make -Bf Makefile.test
 ./ormtest -verbose
-mv ormtest_debug.ml ormtest.ml && touch ormtest.ml
-mv ormtest_debug.mli ormtest.mli && touch ormtest.mli
+mv ormtest_normal.ml ormtest.ml
+mv ormtest_normal.mli ormtest.mli
 make -Bf Makefile.test
 ./ormtest -verbose
