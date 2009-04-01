@@ -8,9 +8,11 @@
 *.cmi
 *.swp
 test_schema_generate
-ormtest
-ormtest.ml
-ormtest.mli
+/tests/ormtest
+/tests/ormtest.ml
+/tests/ormtest.mli
+/tests/foreign.ml
+/tests/foreign.mli
 sql_orm.a
 sql_orm.cmxa
 test.db

@@ -2,13 +2,18 @@
 
 set -ex
 
+SCHEMA="ormtest foreign"
 make clean
 make
-mv ormtest_debug.ml ormtest.ml
-mv ormtest_debug.mli ormtest.mli
+for i in ${SCHEMA}; do
+  mv ${i}_debug.ml ${i}.ml
+  mv ${i}_debug.mli ${i}.mli
+done
 make -Bf Makefile.test
 ./ormtest -verbose
-mv ormtest_normal.ml ormtest.ml
-mv ormtest_normal.mli ormtest.mli
+for i in ${SCHEMA}; do
+  mv ${i}_normal.ml ${i}.ml
+  mv ${i}_normal.mli ${i}.mli
+done
 make -Bf Makefile.test
 ./ormtest -verbose

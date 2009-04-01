@@ -42,6 +42,29 @@ let all = make [
   ];
 ]
 
+let complex_foreign = make [
+  "base" , [
+    text "field1";
+    date "date1";
+    integer "int1";
+  ];
+
+  "middle" , [
+    foreign "base" "f1";
+    foreign "base" "f2";
+    foreign_many "base" "f3";
+    foreign_many "base" "f4";
+  ];
+
+  "last", [
+    foreign "middle" "f1";
+    foreign "base" "f2"
+  ]
+]
+
 let _ = 
     Sql_orm.generate ~debug:false all "ormtest_normal";
-    Sql_orm.generate ~debug:true  all "ormtest_debug"
+    Sql_orm.generate ~debug:true  all "ormtest_debug";
+    Sql_orm.generate ~debug:false complex_foreign "foreign_normal";
+    Sql_orm.generate ~debug:true  complex_foreign "foreign_debug"
+  

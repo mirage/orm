@@ -8,7 +8,7 @@ export DEBUG
 OCAMLRUNPARAM=b
 export OCAMLRUNPARAM
 
-SOURCES=ormtest.mli ormtest.ml test.ml
+SOURCES=foreign.mli foreign.ml ormtest.mli ormtest.ml test.ml
 THREADS=yes
 RESULT=ormtest
 PACKS=unix sqlite3 ounit
