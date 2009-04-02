@@ -215,7 +215,7 @@ module Foreign = struct
     ]
 end
 
-let suite = "SQL ORM test" >::: (Foreign.suite)
+let suite = "SQL ORM test" >::: (Basic.suite @ Foreign.suite)
 
 let _ =
    run_test_tt_main suite
