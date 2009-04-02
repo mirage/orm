@@ -1,5 +1,5 @@
 module Schema : sig
-    type options = [ `Optional ]
+    type options = [ `Optional | `Unique | `Index ]
     type s
     val text : ?flags:options list -> string -> s
     val blob : ?flags:options list -> string -> s

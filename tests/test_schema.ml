@@ -18,7 +18,7 @@ open Sql_orm.Schema
 
 let all = make [
   "attachment" , [
-    text "file_name";
+    text ~flags:[`Unique; `Index] "file_name";
     text "mime_type";
   ];
 
@@ -51,14 +51,14 @@ let complex_foreign = make [
 
   "middle" , [
     foreign "base" "f1";
-    foreign "base" "f2";
+    foreign ~flags:[`Index] "base" "f2";
     foreign_many "base" "f3";
     foreign_many "base" "f4";
   ];
 
   "last", [
-    foreign "middle" "l1";
-    foreign ~flags:[`Optional] "middle" "l2";
+    foreign ~flags:[`Index] "middle" "l1";
+    foreign ~flags:[`Optional; `Unique; `Index] "middle" "l2";
   ]
 ]
 

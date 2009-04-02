@@ -26,16 +26,20 @@ module Schema = struct
     |Date
 
     type options = [
-      `Optional
+      |`Optional
+      |`Unique
+      |`Index
     ]
 
     type s = {
         name: string;
         ty: t;
         opt: bool;
+        uniq: bool;
+        idx: bool;
     }
 
-    let base ~flags ty n = {name=n; ty=ty; opt=(List.mem `Optional flags)}
+    let base ~flags ty n = {name=n; ty=ty; opt=(List.mem `Optional flags); uniq=(List.mem `Unique flags); idx=(List.mem `Index flags)}
     let text ?(flags=[]) = base ~flags Text
     let blob ?(flags=[]) = base ~flags Blob
     let date ?(flags=[]) = base ~flags Date
@@ -162,6 +166,15 @@ let output_module e all (module_name, fields) =
           create_table table_name sqls;
         |_ -> assert false
       ) fsmany;
+      (* create indices *)
+      List.iter (fun f -> 
+        if f.Schema.idx then (
+          let uniq = if f.Schema.uniq then "UNIQUE " else "" in
+          let idx = sprintf "%s_%s_idx" module_name f.Schema.name in
+          e += "let sql = \"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s) \" in" $ uniq $ idx $ module_name $ (Schema.sql_var_name f);
+          e += "db_must_ok (fun () -> Sqlite3.exec db.db sql);";
+        )
+      ) fields;
       e += "()";
        
     );
