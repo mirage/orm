@@ -2,6 +2,9 @@
 
 set -ex
 
+OCAMLRUNPARAM=b
+export OCAMLRUNPARAM
+
 SCHEMA="ormtest foreign"
 make clean
 make

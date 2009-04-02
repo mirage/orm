@@ -57,8 +57,8 @@ let complex_foreign = make [
   ];
 
   "last", [
-    foreign "middle" "f1";
-    foreign "base" "f2"
+    foreign "middle" "l1";
+    foreign ~flags:[`Optional] "middle" "l2";
   ]
 ]
 

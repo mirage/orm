@@ -174,12 +174,48 @@ module Foreign = struct
        let _ = open_db ~rm:true "foreign.db" in
        ()
 
+    let test_mid_insert () =
+       let db = open_db ~rm:true "foreign.db" in
+       let now = Unix.gettimeofday () in
+       let base1 = Base.t ~field1:"field1 text" ~date1:now ~int1:100L db in
+       let base2 = Base.t ~field1:"field2 text" ~date1:now ~int1:200L db in
+       let base3 = Base.t ~field1:"field3 text" ~date1:now ~int1:300L db in
+       let mid1 = Middle.t ~f1:base1 ~f2:base2 ~f3:[base1;base3] ~f4:[base2;base3] db in
+       let mid1_id = mid1#save in
+       let mid1' = Middle.get ~id:(Some mid1_id) db in
+       "mid1 single element" @? (List.length mid1' = 1);
+       let mid1' = List.hd mid1' in
+       "mid1 f4 correct" @? (List.sort compare (List.map (fun x -> x#int1) mid1'#f4) = [200L; 300L]);
+       "mid1 f3 correct" @? (List.sort compare (List.map (fun x -> x#int1) mid1'#f3) = [100L; 300L]);
+       "mid1 f1 correct" @? (mid1'#f1#field1 = "field1 text")
+
+    let test_last_insert () =
+       let db = open_db ~rm:true "foreign_full.db" in
+       let now = Unix.gettimeofday () in
+       let base1 = Base.t ~field1:"field1 text" ~date1:now ~int1:100L db in
+       let base2 = Base.t ~field1:"field2 text" ~date1:now ~int1:200L db in
+       let base3 = Base.t ~field1:"field3 text" ~date1:now ~int1:300L db in
+       let mid1 = Middle.t ~f1:base1 ~f2:base2 ~f3:[base1;base3] ~f4:[base2;base3] db in
+       let last1 = Last.t ~l1:mid1 db in
+       let lastid = last1#save in
+       let last1' = Last.get ~id:(Some lastid) db in
+       "one last result" @? (List.length last1' = 1);
+       let last1' = List.hd last1' in
+       "last1 middle base1 f1" @? (last1'#l1#f1#field1= "field1 text");
+       "last1 middle base1 f2" @? (last1'#l1#f2#field1= "field2 text");
+       "last1 middle base1 date1" @? (Int64.of_float (last1'#l1#f2#date1) = Int64.of_float(now));
+       "last1 middle base1 int1" @? (last1'#l1#f2#int1= 200L);
+       ()
+ 
+       
     let suite = [
-       "test_init" >:: test_init;
+       "foreign_init" >:: test_init;
+       "foreign_mid_insert" >:: test_mid_insert;
+       "foreign_last_insert" >:: test_last_insert;
     ]
 end
 
-let suite = "SQL ORM test" >::: (Basic.suite @ Foreign.suite)
+let suite = "SQL ORM test" >::: (Foreign.suite)
 
 let _ =
    run_test_tt_main suite

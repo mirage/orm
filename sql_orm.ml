@@ -83,10 +83,10 @@ module Schema = struct
     |ForeignMany _ -> assert false
     |Date -> "Sqlite3.Data.INT (Int64.of_float v)"
 
-    let convert_from_sql = function
+    let convert_from_sql alias f = match f.ty with
     |Text -> "Sqlite3.Data.to_string x"
     |Blob -> "Sqlite3.Data.to_string x"
-    |Int -> "match x with |Sqlite3.Data.INT i -> i |x -> Int64.of_string (Sqlite3.Data.to_string x)"
+    |Int -> sprintf "match x with |Sqlite3.Data.INT i -> i |x -> (try Int64.of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
     |Foreign x -> "false (* XX *)"
     |ForeignMany _ -> assert false
     |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
@@ -98,6 +98,10 @@ module Schema = struct
     let ocaml_var_name f = f.name ^ match f.ty with
     |Foreign _ -> "_id"
     |_ -> ""
+
+    let to_sql_table_alias f table = match f.ty with
+    |Foreign ftable -> sprintf "%s_%s" ftable f.name
+    |_ -> table
 
     let sql_var_name = ocaml_var_name 
 
@@ -114,15 +118,17 @@ module Schema = struct
     let filter_singular_fields f =
        List.filter (fun f -> match f.ty with ForeignMany _ -> false |_ -> true) f
 
-    let rec foreign_table_names all table =
-      let fs = get_table_fields all table in
-      List.fold_left (fun a b ->
-        match b.ty with 
-        |Foreign x ->
-           (foreign_table_names all x) @ (x::a)
-        |_ -> a
-      ) [] fs
-
+    let foreign_table_fields all table =
+      let rec fn table acc =
+         let fs = get_table_fields all table in
+         List.fold_left (fun a f ->
+            match f.ty with
+            |Foreign ftable ->
+               let alias = sprintf "%s_%s" acc f.name in
+               (fn ftable alias) @ ((ftable, alias, acc, f) :: a)
+            |_ -> a
+         ) [] fs
+      in fn table table
 end
 
 open Printer_utils.Printer
@@ -293,28 +299,31 @@ let output_module e all (module_name, fields) =
       e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" AND \" in";
       List.iter (fun f ->
         e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
-          f.Schema.name $ module_name $ f.Schema.name;
+          f.Schema.name $ (Schema.to_sql_table_alias f module_name) $ f.Schema.name;
       ) native_fields;
-      (* get all the field names to select, combination of the foreign keys as well *)
+      (* select_tables keeps track of foreign tables we have joined on, for SELECTing later *)
+      let select_tables = Hashtbl.create 1 in
+      (* list of transitive foreign tables from this table which we need to LEFT JOIN on *)
+      let foreign_table_fields = Schema.foreign_table_fields all module_name in
+      (* calculate all the joins needed by foreign keys *)
+      let joins = String.concat "" (List.rev_map (fun (table, table_alias, prefix, f) ->
+           Hashtbl.add select_tables table table_alias;
+           sprintf "LEFT JOIN %s AS %s ON (%s.id = %s.%s_id) " table table_alias table_alias prefix f.Schema.name
+         ) foreign_table_fields) in
+      Hashtbl.add select_tables module_name module_name;
+      (* get all the field names to select, combination of the transitive foreign keys as well *)
       let col_positions = Hashtbl.create 1 in
-      let pos = ref 0 in
-      let sql_field_names = String.concat ", " ( 
-        List.concat (
-          List.map (fun table -> 
-             List.map (fun f ->
-               Hashtbl.add col_positions (table,f.Schema.name) !pos;
-               incr pos;
-               sprintf "%s.%s" table (Schema.sql_var_name f)
-             ) (Schema.filter_singular_fields (Schema.get_table_fields all table))
-          ) (module_name :: (Schema.foreign_table_names all module_name))
-        )
+      let sql_field_names_list = List.flatten (
+         Hashtbl.fold (fun table table_alias a ->
+            let fields = Schema.filter_singular_fields (Schema.get_table_fields all table) in
+            List.map (fun f ->
+                sprintf "%s.%s" table_alias (Schema.sql_var_name f)
+            ) fields :: a;
+         ) select_tables [];
       ) in
-      let joins = String.concat "" (List.map (fun f ->
-           match f.Schema.ty with 
-           |Schema.Foreign ftable -> sprintf "LEFT JOIN %s ON (%s.id = %s.%s_id) " ftable ftable module_name f.Schema.name
-           |Schema.ForeignMany ftable -> ""
-           |_ -> assert false
-         ) foreign_fields) in
+      let pos = ref 0 in
+      List.iter (fun s -> Hashtbl.add col_positions s !pos; incr pos) sql_field_names_list;
+      let sql_field_names = String.concat ", " sql_field_names_list in
       e += "let q=\"SELECT %s FROM %s %s\" ^ q in" $ sql_field_names $ module_name $ joins;
       e -= "\"%s.get: \" ^ q" $ module_name;
       e += "let stmt=Sqlite3.prepare db.db q in";
@@ -331,7 +340,7 @@ let output_module e all (module_name, fields) =
 
       e --* "convert statement into an ocaml object";
       e += "let of_stmt stmt =";
-      let rec of_stmt e table =
+      let rec of_stmt e table table_alias =
         let foreign_fields, fields = Schema.partition_table_fields all table in
         (if table = module_name then 
            e += "t" 
@@ -339,9 +348,9 @@ let output_module e all (module_name, fields) =
            e += "%s.t" $ (String.capitalize table));
         e --> (fun e ->
           e --* "native fields";
-          List.iter (fun f ->
-             let col_pos = Hashtbl.find col_positions (table, f.Schema.name) in
-             let from_sql = Schema.convert_from_sql f.Schema.ty in
+          let render_native_field_get e f =
+             let col_pos = Hashtbl.find col_positions (table_alias ^ "." ^ f.Schema.name) in
+             let from_sql = Schema.convert_from_sql table_alias f in
              e += "~%s:(" $ f.Schema.name;
              (match f.Schema.opt with
              |false ->
@@ -357,24 +366,26 @@ let output_module e all (module_name, fields) =
                );
              );
              e += ")"
-          ) fields;
+          in List.iter (render_native_field_get e) fields;
+          e --* "foreign fields";
           List.iter (fun f ->
             e += "~%s:(" $ f.Schema.name;
             e --> (fun e ->
               match f.Schema.ty,f.Schema.opt with
               |Schema.Foreign ftable,false ->
-                of_stmt e ftable;
+                of_stmt e ftable (sprintf "%s_%s" table_alias f.Schema.name);
                 e += ")"
               |Schema.Foreign ftable,true ->
+                e += "(try";
                 e += "Some (";
-                of_stmt e ftable;
-                e += "))"
+                of_stmt e ftable (sprintf "%s_%s" table_alias f.Schema.name);
+                e += ") with _ -> None))"
               |Schema.ForeignMany ftable,_ ->
                 e --* "foreign many-many mapping field";
                 e += "let sql' = \"select %s_id from %s where %s_id=?\" in" $ ftable $ (Schema.map_table table f) $ table;
                 e -= "\"%s.of_stmt (%s): \" ^ sql'" $ table $ ftable;
                 e += "let stmt' = Sqlite3.prepare db.db sql' in";
-                e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table, "id"));
+                e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table_alias ^ ".id"));
                 e += "db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
                 e += "List.flatten (step_fold stmt' (fun s ->";
                 e --> (fun e ->
@@ -388,7 +399,7 @@ let output_module e all (module_name, fields) =
         );
         e += "db"
       in
-      of_stmt e module_name;
+      of_stmt e module_name module_name;
       e += "in ";
       e --* "execute the SQL query";
       e += "step_fold stmt of_stmt"

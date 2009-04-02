@@ -1,3 +1,4 @@
 
 0.1-dev:
+* Many bug fixes for foreign operations and new tests.  [01 Apr 2009]
 * Initial release.  [30 Mar 2009]
