@@ -33,7 +33,7 @@ module Basic = struct
     let gen_contact fname lname db =
        let now = Unix.gettimeofday () in
        Contact.t ~first_name:fname ~last_name:lname
-         ~email:(sprintf "%s.%s@example.com" fname lname) ~mtime:now ~vcards:[] ~notes:[]
+         ~email:(Some (sprintf "%s.%s@example.com" fname lname)) ~mtime:now ~vcards:[] ~notes:[]
          db 
 
     let test_simple_insert_update_delete () =
@@ -68,7 +68,7 @@ module Basic = struct
           "contact id" @? (c#id = Some 1L);
           "contact fname" @? (c#first_name = "Foo");
           "contact lname" @? (c#last_name = "Bar");
-          "contact email" @? (c#email = "Foo.Bar@example.com")
+          "contact email" @? (match c#email with Some x -> x = "Foo.Bar@example.com" |None -> false)
        in
        let cid = c#save in
        check (Contact.get ~id:(Some cid) db);
@@ -79,7 +79,7 @@ module Basic = struct
        ignore(c#save);
        let all = Contact.get db in
        "2 entries" @? (List.length all = 2);
-       "entries valid" @? (List.sort compare (List.map (fun x -> x#email) all) =
+       "entries valid" @? (List.sort compare (List.map (fun x -> match x#email with Some x -> x|None -> assert_failure "bad email") all) =
          ["Alice.Bob@example.com"; "Foo.Bar@example.com"]);
        let c = Contact.get ~first_name:(Some "Foo") ~last_name:(Some "Bar") db in
        "multiple field get 1 result" @? (List.length c = 1);
@@ -108,7 +108,7 @@ module Basic = struct
        let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  db in
        let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  db in
        (* contact without an image *)
-       let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:"foobar@example.com"
+       let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:(Some "foobar@example.com")
          ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in
        let cid = contact#save in
        let get_contact_with_id cid =
@@ -149,7 +149,59 @@ module Basic = struct
        "and 3 vcards" @? (List.length vcards = 3);
        "one vcard has mimetype note" @? (List.length (List.find_all (fun x -> x#mime_type = "note") vcards) = 1);
        "two vcards have mimetype vcard" @? (List.length (List.find_all (fun x -> x#mime_type = "vcard") vcards) = 2);
-       ()
+       let image = contact#image in
+       "image should be None" @? (image = None)
+
+   let test_special_gets () =
+       let db = open_db ~rm:true "test_special_gets.db"  in
+       let now = Unix.gettimeofday () in
+       let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" db in
+       let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" db in
+       let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" db in
+       let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  db in
+       let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  db in
+       (* contact without an image *)
+       let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:(Some "foobar@example.com")
+         ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in
+       let cid = contact#save in
+       let r = Contact.get_by_id ~id:(Some cid) db in
+       "one result" @? (List.length r = 1);
+       let r = List.hd r in
+       let r' = Contact.get_by_id ~id:(Some cid) db in
+       "one result" @? (List.length r' = 1);
+       let r' = List.hd r' in
+       "get_by_id fname same as get" @? (r'#first_name = r#first_name);
+       "get_by_id lname same as get" @? (r'#last_name = r#last_name);
+       "get_by_id email same as get" @? (r'#email = r#email);
+       "get_by_id vcards same as get" @? (List.map (fun x -> x#file_name) r'#vcards = (List.map (fun x -> x#file_name) r#vcards));
+       let r = Contact.get_first_name_image_vcards_by_email ~email:(Some "foobar@example.com") db in
+       "one result" @? (List.length r = 1);
+       let fname, image, vcards = List.hd r in
+       "get_complex_by_email fname" @? (fname = "Foo");
+       "get_complex_by_email image" @? (image = None);
+       "get_complex_by_email vcards" @? (List.map (fun x -> x#file_name) r'#vcards = (List.map (fun x -> x#file_name) vcards));
+       let x = Contact.get_mtime_id_by_first_name ~first_name:"Foo" db in
+       "one result" @? (List.length x = 1);
+       let mtime, xid = List.hd x in
+       assert_equal (Int64.of_float mtime) (Int64.of_float now);
+       assert_equal xid (Some cid);
+       (* try out multiple by fields *)
+       let x = Contact.get_by_first_name_last_name ~first_name:"Foo" ~last_name:"Bar" db in
+       "one res" @? (List.length x = 1);
+       let x = List.hd x in
+       "fname is correct" @? (x#first_name = "Foo");
+       "lname is correct" @? (x#last_name = "Bar");
+       (* try incorrect get *)
+       let x = Contact.get_by_first_name_last_name ~first_name:"Foo" ~last_name:"XXX" db in
+       "no res" @? (List.length x = 0);
+       (* entry get *)
+       let entry = Entry.t ~body:"Body of text" ~received:now ~people_from:contact ~atts:[vcard1;vcard2;vcard3] ~people_to:[contact] db in
+       let _ = entry#save in
+       let e = Entry.get_people_from_atts_by_body ~body:"Body of text" db in
+       "1 res" @? (List.length e = 1);
+       let frm,atts = List.hd e in
+       "frm same" @? (frm#first_name = "Foo");
+       "atts same" @? (List.sort compare (List.map (fun x -> x#file_name) atts) = ["vcard1.vcs"; "vcard2.vcs"; "vcard3.vcs"])
 
    let suite = [
        "test_init" >:: test_init ;
@@ -157,6 +209,7 @@ module Basic = struct
        "test_gets" >:: test_gets;
        "test_new_foreign_map" >:: test_new_foreign_map;
        "test_multiple_foreign_map" >:: test_multiple_foreign_map;
+       "test_special_gets" >:: test_special_gets;
    ]
 end
 

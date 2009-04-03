@@ -20,16 +20,23 @@ let all = make [
   "attachment" , [
     text ~flags:[`Unique; `Index] "file_name";
     text "mime_type";
+  ] , [
+    ["file_name"],["id"] 
   ];
 
   "contact" , [
     text "first_name";
     text "last_name";
-    text "email";
+    text ~flags:[`Optional] "email";
     date "mtime";
     foreign ~flags:[`Optional] "attachment" "image";
     foreign_many "attachment" "vcards";
     foreign_many "attachment" "notes";
+  ], [
+    ["first_name"; "image"; "vcards"],["email"];
+    ["mtime";"id"],["first_name"];
+    [],["id"];
+    [],["first_name";"last_name"]
   ];
 
   "entry" , [
@@ -39,6 +46,8 @@ let all = make [
     foreign "contact" "people_from";
     foreign_many "attachment" "atts";
     foreign_many "contact" "people_to";
+  ], [
+    ["people_from"; "atts"], ["body"]
   ];
 ]
 
@@ -47,19 +56,19 @@ let complex_foreign = make [
     text "field1";
     date "date1";
     integer "int1";
-  ];
+  ], [];
 
   "middle" , [
     foreign "base" "f1";
     foreign ~flags:[`Index] "base" "f2";
     foreign_many "base" "f3";
     foreign_many "base" "f4";
-  ];
+  ], [];
 
   "last", [
     foreign ~flags:[`Index] "middle" "l1";
     foreign ~flags:[`Optional; `Unique; `Index] "middle" "l2";
-  ]
+  ], [];
 ]
 
 let _ = 
