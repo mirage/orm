@@ -81,8 +81,9 @@ module Printer = struct
         e.p ">";
         e.nl ()
 
-    let print_comment e x =
-        e.p (sprintf "(* %s *)" x)
+    let print_comment e fmt =
+        let xfn s = e.p ("(* " ^ s ^ " *)") in
+        kprintf xfn fmt
 
     let print_ocamldoc e ?(raises="") ?(args="") body =
         e.p (sprintf "(** %s%s" (match args with "" -> "" |x -> sprintf "[%s] " x)  body);
