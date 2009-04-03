@@ -137,20 +137,16 @@ end
 
 open Printer_utils.Printer
 
-let output_get_fn e all (module_name, fields) =
-    let foreign_fields, native_fields = Schema.partition_table_fields all module_name in
-    e --* "General get function for any of the columns";
-    e += "let get %s db =" $ 
-      (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields));
-    e --> (fun e ->
-      e --* "assemble the SQL query string";
-      e += "let q = \"\" in";
-      e += "let _first = ref true in";
-      e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" AND \" in";
-      List.iter (fun f ->
-        e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
-          f.Schema.name $ (Schema.to_sql_table_alias f module_name) $ f.Schema.name;
-      ) native_fields;
+let output_get_fn_sqlbind e all module_name want_fields =
+      (* filter the full all structure to remove fields in the first level to just those we want *)
+      let all = List.rev (List.fold_left (fun a (mname, mfields) ->
+        if mname = module_name then begin
+           let fs = List.filter (fun f -> List.mem f want_fields) mfields in
+           (mname, fs) :: a
+        end else (mname, mfields) :: a
+      ) [] all) in
+      let _, native_fields = Schema.partition_table_fields all module_name in
+      let native_fields = List.filter (fun f -> List.mem f want_fields) native_fields in
       (* select_tables keeps track of foreign tables we have joined on, for SELECTing later *)
       let select_tables = Hashtbl.create 1 in
       (* list of transitive foreign tables from this table which we need to LEFT JOIN on *)
@@ -174,9 +170,52 @@ let output_get_fn e all (module_name, fields) =
       let pos = ref 0 in
       List.iter (fun s -> Hashtbl.add col_positions s !pos; incr pos) sql_field_names_list;
       let sql_field_names = String.concat ", " sql_field_names_list in
-      e += "let q=\"SELECT %s FROM %s %s\" ^ q in" $ sql_field_names $ module_name $ joins;
+      e += "let sql=\"SELECT %s FROM %s %s\" ^ q in" $ sql_field_names $ module_name $ joins;
       e -= "\"%s.get: \" ^ q" $ module_name;
-      e += "let stmt=Sqlite3.prepare db.db q in";
+      e += "let stmt=Sqlite3.prepare db.db sql in";
+      native_fields, col_positions
+
+let output_get_fn_partial e all module_name by_fields want_fields =
+    if List.length by_fields < 1 then failwith "by_fields must be > 1";
+    let by_name = String.concat "_" (List.map (fun f -> f.Schema.name) by_fields) in
+    let want_name = String.concat "" (List.map (fun f -> "_" ^ f.Schema.name) want_fields) in
+    let func_name = sprintf "get%s_by_%s" want_name by_name in
+    let func_fields = String.concat " " (List.map (fun f -> sprintf "~%s" f.Schema.name) by_fields) in
+    e --* "Specialized get function to retrieve %s by filtering on %s" $ want_name $ by_name;
+    e += "let %s %s db =" $ func_name $ func_fields;
+    e --> (fun e ->
+      let first = ref true in
+      e += "let q = \"%s\" in" $ String.concat "" (List.map (fun f ->
+          let prefix = match !first with
+          |true -> first := false; "WHERE "
+          |false -> " AND " in
+          sprintf "%s%s.%s=?" prefix (Schema.to_sql_table_alias f module_name) f.Schema.name
+        ) by_fields);
+      let bind_fields, col_positions = output_get_fn_sqlbind e all module_name want_fields in
+      let pos = ref 1 in
+      List.iter (fun f ->
+         e += "db_must_ok (fun () -> let v = %s in Sqlite3.bind stmt %d (%s));" $ f.Schema.name $ !pos $ (Schema.to_sql_type_wrapper f.Schema.ty);
+         incr pos;
+      ) bind_fields;
+      e += "()"
+    )
+
+let output_get_fn e all module_name =
+    let foreign_fields, native_fields = Schema.partition_table_fields all module_name in
+    let fields = native_fields @ foreign_fields in
+    e --* "General get function for any of the columns";
+    e += "let get %s db =" $ 
+      (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.Schema.name) native_fields));
+    e --> (fun e ->
+      e --* "assemble the SQL query string";
+      e += "let q = \"\" in";
+      e += "let _first = ref true in";
+      e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" AND \" in";
+      List.iter (fun f ->
+        e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
+          f.Schema.name $ (Schema.to_sql_table_alias f module_name) $ f.Schema.name;
+      ) native_fields;
+      let bind_fields, col_positions = output_get_fn_sqlbind e all module_name fields in
       e --* "bind the position variables to the statement";
       e += "let bindpos = ref 1 in";
       List.iter (fun f ->
@@ -186,8 +225,7 @@ let output_get_fn e all (module_name, fields) =
            e += "incr bindpos";
          );
          e += ");";
-      ) native_fields;
-
+      ) bind_fields;
       e --* "convert statement into an ocaml object";
       e += "let of_stmt stmt =";
       let rec of_stmt e table table_alias =
@@ -420,7 +458,10 @@ let output_module e all (module_name, fields) =
     );
     e += "end";
     e.nl ();
-    output_get_fn e all (module_name, fields);
+    output_get_fn e all module_name;
+    e.nl ();
+    let idf = List.filter (fun f -> f.Schema.name = "id") fields in
+    output_get_fn_partial e all module_name idf idf
   )
 
 let output_init_module e all =
