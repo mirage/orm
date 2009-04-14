@@ -201,7 +201,10 @@ module Basic = struct
        "1 res" @? (List.length e = 1);
        let frm,atts = List.hd e in
        "frm same" @? (frm#first_name = "Foo");
-       "atts same" @? (List.sort compare (List.map (fun x -> x#file_name) atts) = ["vcard1.vcs"; "vcard2.vcs"; "vcard3.vcs"])
+       "atts same" @? (List.sort compare (List.map (fun x -> x#file_name) atts) = ["vcard1.vcs"; "vcard2.vcs"; "vcard3.vcs"]);
+       let all_files = Attachment.get_file_name db in
+       List.iter print_endline all_files;
+       "all_filenames" @? (List.sort compare all_files = ["note1.txt";"note2.txt";"vcard1.vcs";"vcard2.vcs";"vcard3.vcs"])
 
    let suite = [
        "test_init" >:: test_init ;

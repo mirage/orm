@@ -262,12 +262,14 @@ let output_get_fn_of_stmt e all module_name col_positions =
   e += "step_fold stmt of_stmt"
 
 let get_func_name g =
-  let by_name = String.concat "_" (List.map (fun f -> f.name) g.by) in
+  let by_name = match g.by with
+  |[] -> ""
+  |by -> "_by_" ^ (String.concat "_" (List.map (fun f -> f.name) by))
+  in
   let want = if g.want_id then g.want else filter_out_id g.want in
-  let want_name = if g.want_all
-    then "" else 
+  let want_name = if g.want_all then "" else 
     String.concat "" (List.map (fun f -> "_" ^ f.name) want) in
-  sprintf "get%s_by_%s" want_name by_name 
+  sprintf "get%s%s" want_name by_name 
 
 let output_get_fn_partial e all module_name g =
   let all = match g.want_all with
@@ -282,7 +284,6 @@ let output_get_fn_partial e all module_name g =
         (mname, fs, o) :: a
       end else (mname, mfields, o) :: a
     ) [] all) in
-  if List.length g.by < 1 then failwith "by_fields < 1";
   let func_name = get_func_name g in
   let func_fields = String.concat " " (List.map (fun f -> sprintf "~%s" f.name) g.by) in
   e += "let %s %s db =" $ func_name $ func_fields;

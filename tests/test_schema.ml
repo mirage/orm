@@ -21,7 +21,8 @@ let all = make [
     text ~flags:[`Unique; `Index] "file_name";
     text "mime_type";
   ] , [
-    ["file_name"],["id"] 
+    ["file_name"],["id"];
+    ["file_name"],[]
   ];
 
   "contact" , [
