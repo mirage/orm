@@ -17,10 +17,22 @@
 open Sqlite3
 open Printf
 
+type transaction_mode = [
+    |`Deferred
+    |`Immediate
+    |`Exclusive
+]
+
 type state = {
     db : db;
     mutable in_transaction: int;
+    busyfn: db -> unit;
+    mode: transaction_mode;
 }
+
+let default_busyfn (db:Sqlite3.db) =
+    print_endline "WARNING: busy";
+    Thread.delay (Random.float 1.)
 
 let raise_sql_error x =
     raise (Sql_error (x, (Rc.to_string x)))
@@ -37,39 +49,40 @@ let try_finally fn finalfn =
     end
 
 (* retry until a non-BUSY error code is returned *)
-let rec db_busy_retry fn =
+let rec db_busy_retry db fn =
     match fn () with
     |Rc.BUSY -> 
-       print_endline "WARNING: busy";
-       Thread.delay (Random.float 1.);
-       db_busy_retry fn
+       db.busyfn db.db;
+       db_busy_retry db fn;
     |x -> x
 
 (* make sure an OK is returned from the database *)
-let db_must_ok fn =
-    match db_busy_retry fn with
+let db_must_ok db fn =
+    match db_busy_retry db fn with
     |Rc.OK -> ()
     |x -> raise_sql_error x
 
 (* request a transaction *)
 let transaction db fn =
+    let m = match db.mode with
+    |`Deferred -> "DEFERRED" |`Immediate -> "IMMEDIATE" |`Exclusive -> "EXCLUSIVE" in
     try_finally (fun () ->
         if db.in_transaction = 0 then (
-           db_must_ok (fun () -> exec db.db "BEGIN TRANSACTION");
+           db_must_ok db (fun () -> exec db.db (sprintf "BEGIN %s TRANSACTION" m));
         );
         db.in_transaction <- db.in_transaction + 1;
         fn ();
     ) (fun () ->
         if db.in_transaction = 1 then (
-           db_must_ok (fun () -> exec db.db "END TRANSACTION");
+           db_must_ok db (fun () -> exec db.db "END TRANSACTION");
         );
         db.in_transaction <- db.in_transaction - 1
     )
 
 (* iterate over a result set *)
-let step_fold stmt iterfn =
+let step_fold db stmt iterfn =
     let stepfn () = Sqlite3.step stmt in
-    let rec fn a = match db_busy_retry stepfn with
+    let rec fn a = match db_busy_retry db stepfn with
     |Sqlite3.Rc.ROW -> fn (iterfn stmt :: a)
     |Sqlite3.Rc.DONE -> a
     |x -> raise_sql_error x

@@ -19,7 +19,7 @@ open Printf
 
 module Basic = struct
    open Ormtest
-    let open_db ?(rm=false) name =
+    let open_db ?(rm=false) ?(mode=`Immediate) name =
        if Sys.file_exists name && rm then Sys.remove name;
        Init.t name
 
@@ -60,7 +60,7 @@ module Basic = struct
        "contact has new id" @? (id' <> id)
 
     let test_gets () =
-       let db = open_db ~rm:true "test_gets.db" in
+       let db = open_db ~rm:true ~mode:`Deferred "test_gets.db" in
        let c = gen_contact "Foo" "Bar" db in
        let check cl = 
           "one contact" @? (List.length cl = 1);
@@ -86,7 +86,7 @@ module Basic = struct
        "correct id" @? ((List.hd c)#id = Some cid)
 
     let test_new_foreign_map () =
-       let db = open_db ~rm:true "test_new_foreign.db" in
+       let db = open_db ~rm:true ~mode:`Exclusive "test_new_foreign.db" in
        let now = Unix.gettimeofday () in
        let from = gen_contact "John" "Smith" db in
        let cto = List.map (fun (a,b) -> gen_contact a b db) [
@@ -203,7 +203,6 @@ module Basic = struct
        "frm same" @? (frm#first_name = "Foo");
        "atts same" @? (List.sort compare (List.map (fun x -> x#file_name) atts) = ["vcard1.vcs"; "vcard2.vcs"; "vcard3.vcs"]);
        let all_files = Attachment.get_file_name db in
-       List.iter print_endline all_files;
        "all_filenames" @? (List.sort compare all_files = ["note1.txt";"note2.txt";"vcard1.vcs";"vcard2.vcs";"vcard3.vcs"])
 
    let suite = [

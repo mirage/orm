@@ -242,8 +242,8 @@ let output_get_fn_of_stmt e all module_name col_positions =
                 e -= "\"%s.of_stmt (%s): \" ^ sql'" $ table $ ftable;
                 e += "let stmt' = Sqlite3.prepare db.db sql' in";
                 e += "let %s__id = Sqlite3.column stmt %d in" $ table $ (Hashtbl.find col_positions (table_alias ^ ".id"));
-                e += "db_must_ok (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
-                e += "List.flatten (step_fold stmt' (fun s ->";
+                e += "db_must_ok db (fun () -> Sqlite3.bind stmt' 1 %s__id);" $ table; 
+                e += "List.flatten (step_fold db stmt' (fun s ->";
                 e --> (fun e ->
                   e += "let i = match Sqlite3.column s 0 with |Sqlite3.Data.INT i -> i |_ -> assert false in";
                   e += "%s.get ~id:(Some i) db)" $ (String.capitalize ftable);
@@ -259,7 +259,7 @@ let output_get_fn_of_stmt e all module_name col_positions =
   of_stmt e module_name module_name;
   e += "in ";
   e --* "execute the SQL query";
-  e += "step_fold stmt of_stmt"
+  e += "step_fold db stmt of_stmt"
 
 let get_func_name g =
   let by_name = match g.by with
@@ -299,9 +299,9 @@ let output_get_fn_partial e all module_name g =
     let pos = ref 1 in
     List.iter (fun f ->
       (match f.opt with
-      |false -> e += "db_must_ok (fun () -> let v = %s in Sqlite3.bind stmt %d (%s));" $
+      |false -> e += "db_must_ok db (fun () -> let v = %s in Sqlite3.bind stmt %d (%s));" $
         f.name $ !pos $ (to_sql_type_wrapper f.ty);
-      |true -> e += "db_must_ok (fun () -> Sqlite3.bind stmt %d (match %s with |None -> Sqlite3.Data.NONE |Some v -> %s));" $
+      |true -> e += "db_must_ok db (fun () -> Sqlite3.bind stmt %d (match %s with |None -> Sqlite3.Data.NONE |Some v -> %s));" $
         !pos $ f.name $ (to_sql_type_wrapper f.ty);
       );
       incr pos;
@@ -333,7 +333,7 @@ let output_get_fn e all module_name =
     List.iter (fun f ->
       e += "ignore(match %s with |None -> () |Some v ->" $ f.name;
       e --> (fun e ->
-        e += "db_must_ok (fun () -> Sqlite3.bind stmt !bindpos (%s));" $ (to_sql_type_wrapper f.ty);
+        e += "db_must_ok db (fun () -> Sqlite3.bind stmt !bindpos (%s));" $ (to_sql_type_wrapper f.ty);
         e += "incr bindpos";
       );
       e += ");";
@@ -360,7 +360,7 @@ let output_module e all module_name fields gets =
       ) (filter_out_id fs)) in
       let create_table table sql =
         e += "let sql = \"create table if not exists %s (%s);\" in" $ table $ sql;
-        e += "db_must_ok (fun () -> Sqlite3.exec db.db sql);" in
+        e += "db_must_ok db (fun () -> Sqlite3.exec db.db sql);" in
       create_table module_name sqls;
       (* create foreign many-many tables now *)
       List.iter (fun fm -> match fm.ty with
@@ -376,7 +376,7 @@ let output_module e all module_name fields gets =
           let uniq = if f.uniq then "UNIQUE " else "" in
           let idx = sprintf "%s_%s_idx" module_name f.name in
           e += "let sql = \"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s) \" in" $ uniq $ idx $ module_name $ (sql_var_name f);
-          e += "db_must_ok (fun () -> Sqlite3.exec db.db sql);";
+          e += "db_must_ok db (fun () -> Sqlite3.exec db.db sql);";
         )
       ) fields;
       e += "()";
@@ -415,8 +415,8 @@ let output_module e all module_name fields gets =
             e += "let sql = \"DELETE FROM %s WHERE id=?\" in" $ module_name;
             e -= "\"%s.delete: \" ^ sql" $ module_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
-            e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
-            e += "ignore(step_fold stmt (fun _ -> ()));";
+            e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
+            e += "ignore(step_fold db stmt (fun _ -> ()));";
             e += "_id <- None"
          );
       );
@@ -442,7 +442,7 @@ let output_module e all module_name fields gets =
              |false -> sprintf "let v = _%s in %s" 
                (ocaml_var_name f) (to_sql_type_wrapper f.ty) 
              in
-             e += "db_must_ok (fun () -> Sqlite3.bind stmt %d (%s));" $ !pos $ var;
+             e += "db_must_ok db (fun () -> Sqlite3.bind stmt %d (%s));" $ !pos $ var;
              incr pos;
           ) fields;
           !pos
@@ -457,7 +457,7 @@ let output_module e all module_name fields gets =
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           ignore(output_bind_fields e singular_fields);
-          e += "ignore(db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e += "ignore(db_busy_retry db (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "let __id = Sqlite3.last_insert_rowid db.db in";
           e += "_id <- Some __id;";
           e += "__id"
@@ -473,8 +473,8 @@ let output_module e all module_name fields gets =
           e -= "\"%s.save: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           let pos = output_bind_fields e up_fields in
-          e += "db_must_ok (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
-          e += "ignore(db_busy_retry (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
+          e += "db_must_ok db (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
+          e += "ignore(db_busy_retry db (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
           e += "id";
         );
         e += "in";
@@ -487,17 +487,17 @@ let output_module e all module_name fields gets =
             e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (map_table module_name f);
             e -= "\"%s.save: foreign insert: \" ^ sql" $ module_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
-            e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
-            e += "db_must_ok (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
-            e += "ignore(step_fold stmt (fun _ -> ()));";
+            e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+            e += "db_must_ok db (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
+            e += "ignore(step_fold db stmt (fun _ -> ()));";
           );
           e += ") _%s;" $ f.name;
           e += "let ids = String.concat \",\" (List.map (fun x -> match x#id with |None -> assert false |Some x -> Int64.to_string x) _%s) in" $ f.name;
           e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (map_table module_name f) $ module_name $ ftable;
           e -= "\"%s.save: foreign drop gc: \" ^ sql" $ module_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
-          e += "db_must_ok (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
-          e += "ignore(step_fold stmt (fun _ -> ()));";
+          e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
+          e += "ignore(step_fold db stmt (fun _ -> ()));";
         |_ -> assert false
         ) foreign_fields;
         e += "_curobj_id";
@@ -518,9 +518,10 @@ let output_init_module e all =
    e += "exception Sql_error of (Sqlite3.Rc.t * string)";
    print_module e "Init" (fun e ->
      e += "type t = state";
-     e += "let t db_name =";
+     e += "type transaction_mode = [`Exclusive |`Deferred |`Immediate ]";
+     e += "let t ?(busyfn=default_busyfn) ?(mode=`Immediate) db_name =";
      e --> (fun e ->
-       e += "let db = {db=Sqlite3.db_open db_name; in_transaction=0} in";
+       e += "let db = {db=Sqlite3.db_open db_name; in_transaction=0; mode=mode; busyfn=busyfn } in";
        List.iter (fun (m,_,_) ->
          e += "%s.init db;" $ (String.capitalize m);
        ) all;
@@ -563,8 +564,8 @@ let output_module_interface e all module_name fields gets =
    print_ocamldoc e ~raises "Used to retrieve objects from the database.  If an argument is specified, it is included in the search criteria (all fields are ANDed together).";
    e.nl ();
    List.iter (fun g ->
-      e += "val %s :" $ (get_func_name g);
-      e --> (fun e ->
+     e += "val %s :" $ (get_func_name g);
+     e --> (fun e ->
         List.iter (fun f ->
           e += "%s:%s -> " $ f.name $ (to_ocaml_type f)
         ) g.by;
@@ -581,16 +582,21 @@ let output_module_interface e all module_name fields gets =
           else
             e += "%s list" $ (List.hd otype)
         end
-      );
-      e.nl ()
+     );
+     e.nl ()
    ) gets;
   )
 
 let output_init_module_interface e =
   print_module_sig e "Init" (fun e ->
      e += "type t";
+     e += "type transaction_mode = [`Exclusive |`Deferred |`Immediate ]";
      print_ocamldoc e "Database handle which can be used to create and retrieve objects";
-     e += "val t : string -> t";
+     e += "val t :";
+     e --> (fun e ->
+       e += "?busyfn:(Sqlite3.db -> unit) -> ?mode:transaction_mode ->";
+       e += "string -> t";
+     );
      print_ocamldoc e ~args:"t db_name" ~raises:"Sql_error if a database error is encountered" "open a Sqlite3 database with filename [db_name] and create any tables if they are missing. @return a database handle which can be used to create and retrieve objects in the database.";
      e += "val db: t -> Sqlite3.db";
      print_ocamldoc e ~args:"db handle" "@return the underlying Sqlite3 database handle for the connection, for advanced queries.";
