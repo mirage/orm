@@ -203,8 +203,17 @@ module Basic = struct
        "frm same" @? (frm#first_name = "Foo");
        "atts same" @? (List.sort compare (List.map (fun x -> x#file_name) atts) = ["vcard1.vcs"; "vcard2.vcs"; "vcard3.vcs"]);
        let all_files = Attachment.get_file_name db in
-       "all_filenames" @? (List.sort compare all_files = ["note1.txt";"note2.txt";"vcard1.vcs";"vcard2.vcs";"vcard3.vcs"])
-
+       "all_filenames" @? (List.sort compare all_files = ["note1.txt";"note2.txt";"vcard1.vcs";"vcard2.vcs";"vcard3.vcs"]);
+       (* test custom where *)
+       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE 'vcard%'",[]) db in
+       "all_vcard_filenames" @? (List.sort compare all_files = ["vcard1.vcs";"vcard2.vcs";"vcard3.vcs"]);
+       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"]) db in
+       "all_vcard_filenames" @? (List.sort compare all_files = ["note1.txt";"vcard1.vcs"]);
+       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE ? OR attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"; Sqlite3.Data.TEXT "%2%"]) db in
+       "all_vcard_filenames" @? (List.sort compare all_files = ["note1.txt"; "note2.txt"; "vcard1.vcs"; "vcard2.vcs"]);
+       let all_files = Attachment.get ~custom_where:("attachment.file_name LIKE ? OR attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"; Sqlite3.Data.TEXT "%3%"]) db in
+       "all_vcard_filenames" @? (List.sort compare (List.map (fun x -> x#file_name) all_files) = ["note1.txt";"vcard1.vcs"; "vcard3.vcs"])
+       
    let suite = [
        "test_init" >:: test_init ;
        "test_simple_insert" >:: test_simple_insert_update_delete; 
