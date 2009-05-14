@@ -35,4 +35,8 @@ install: depend libinstall
 uninstall: libuninstall
 	@ :	
 
+.PHONY: realclean
+realclean: clean
+	cd tests && $(MAKE) clean && make -f Makefile.test clean && rm -rf tests/doc doc
+
 include $(OCAMLMAKEFILE)

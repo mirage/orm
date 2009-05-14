@@ -6,7 +6,7 @@ export ANNOTATE
 SOURCES=test_schema.ml
 RESULT=test_schema_generate
 PACKS=unix sql_orm
-TRASH=ormtest.ml ormtest.mli 
+TRASH=ormtest.ml ormtest.mli foreign.ml foreign.mli ormtest.ml ormtest.mli *.db
 
 .PHONY: all
 all: dnc
