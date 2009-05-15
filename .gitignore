@@ -13,6 +13,8 @@ test_schema_generate
 /tests/ormtest.mli
 /tests/foreign.ml
 /tests/foreign.mli
+/tests/foreign_normal.*
+/tests/ormtest_normal.*
 sql_orm.a
 sql_orm.cmxa
 test.db
