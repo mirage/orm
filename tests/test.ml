@@ -102,11 +102,11 @@ module Basic = struct
     let test_multiple_foreign_map () =
        let db = open_db ~rm:true "test_multiple_foreign.db"  in
        let now = Unix.gettimeofday () in
-       let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" db in
-       let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" db in
-       let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" db in
-       let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  db in
-       let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  db in
+       let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" ~size:1.2 db in
+       let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" ~size:1.3 db in
+       let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" ~size:1.1 db in
+       let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  ~size:0.1 db in
+       let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  ~size:0.11 db in
        (* contact without an image *)
        let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:(Some "foobar@example.com")
          ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in
@@ -150,16 +150,19 @@ module Basic = struct
        "one vcard has mimetype note" @? (List.length (List.find_all (fun x -> x#mime_type = "note") vcards) = 1);
        "two vcards have mimetype vcard" @? (List.length (List.find_all (fun x -> x#mime_type = "vcard") vcards) = 2);
        let image = contact#image in
-       "image should be None" @? (image = None)
+       "image should be None" @? (image = None);
+       (* test float ordering *)
+       let atts = Attachment.get db in
+       "float ordering" @? (List.sort compare (List.map (fun x -> int_of_float (x#size *. 100.)) atts) = [10;11;110;120;130])
 
    let test_special_gets () =
        let db = open_db ~rm:true "test_special_gets.db"  in
        let now = Unix.gettimeofday () in
-       let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" db in
-       let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" db in
-       let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" db in
-       let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  db in
-       let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  db in
+       let vcard1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" ~size:0. db in
+       let vcard2 = Attachment.t ~file_name:"vcard2.vcs" ~mime_type:"vcard" ~size:0. db in
+       let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" ~size:0. db in
+       let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  ~size:0. db in
+       let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  ~size:0. db in
        (* contact without an image *)
        let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:(Some "foobar@example.com")
          ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in

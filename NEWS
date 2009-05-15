@@ -1,4 +1,8 @@
+0.2:
+* Add a 'real' function for floating point datatypes. [16 May 2009]
 
-0.1-dev:
+0.1:
+* Add support for custom WHERE clauses in queries. [10 May 2009]
+* Custom busy functions and control over the SQL transaction type [20 Apr 2009]
 * Many bug fixes for foreign operations and new tests.  [01 Apr 2009]
 * Initial release.  [30 Mar 2009]

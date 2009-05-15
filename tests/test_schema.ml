@@ -20,6 +20,7 @@ let all = make [
   "attachment" , [
     text ~flags:[`Unique; `Index] "file_name";
     text "mime_type";
+    real "size";
   ] , [
     ["file_name"],["id"];
     ["file_name"],[]

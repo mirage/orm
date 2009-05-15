@@ -5,6 +5,7 @@ module Schema : sig
 
     val text : ?flags:options list -> string -> s
     val blob : ?flags:options list -> string -> s
+    val real : ?flags:options list -> string -> s
     val date : ?flags:options list -> string -> s
     val integer : ?flags:options list -> string -> s
     val foreign : ?flags:options list -> string -> string -> s

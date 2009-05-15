@@ -21,6 +21,7 @@ module Schema = struct
     |Text
     |Blob
     |Int
+    |Float
     |Foreign of string
     |ForeignMany of string
     |Date
@@ -49,6 +50,7 @@ module Schema = struct
 
     let base ~flags ty n = {name=n; ty=ty; opt=(List.mem `Optional flags); uniq=(List.mem `Unique flags); idx=(List.mem `Index flags)}
     let text ?(flags=[]) = base ~flags Text
+    let real ?(flags=[]) = base ~flags Float
     let blob ?(flags=[]) = base ~flags Blob
     let date ?(flags=[]) = base ~flags Date
     let integer ?(flags=[]) = base ~flags Int
@@ -83,6 +85,8 @@ module Schema = struct
       |_,Text,true -> "string option"
       |_,Blob,false -> "string" (* watch out for 16MB limit *)
       |_,Blob,true -> "string option"
+      |_,Float,false -> "float"
+      |_,Float,true -> "float option"
       |_,Int,false -> "int64"
       |_,Int,true -> "int64 option"
       |_,Date,false -> "float"
@@ -94,6 +98,7 @@ module Schema = struct
     let to_sql_type = function
     |Text -> "text"
     |Blob -> "blob"
+    |Float -> "real"
     |Int -> "integer"
     |Foreign _ -> "integer"
     |ForeignMany _ -> assert false
@@ -102,6 +107,7 @@ module Schema = struct
     let to_sql_type_wrapper = function
     |Text -> "Sqlite3.Data.TEXT v"
     |Blob -> "Sqlite3.Data.BLOB v"
+    |Float -> "Sqlite3.Data.FLOAT v"
     |Int -> "Sqlite3.Data.INT v"
     |Foreign _ -> "Sqlite3.Data.INT v"
     |ForeignMany _ -> assert false
@@ -111,6 +117,7 @@ module Schema = struct
     |Text -> "Sqlite3.Data.to_string x"
     |Blob -> "Sqlite3.Data.to_string x"
     |Int -> sprintf "match x with |Sqlite3.Data.INT i -> i |x -> (try Int64.of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
+    |Float -> sprintf "match x with |Sqlite3.Data.FLOAT i -> i|x -> (try float_of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
     |Foreign x -> "false (* XX *)"
     |ForeignMany _ -> assert false
     |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
