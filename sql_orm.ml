@@ -107,12 +107,10 @@ module Schema = struct
       |_,Text,true -> "string option"
       |_,Blob,false -> "string" (* watch out for 16MB limit *)
       |_,Blob,true -> "string option"
-      |_,Float,false -> "float"
-      |_,Float,true -> "float option"
+      |_,(Float|Date),false -> "float"
+      |_,(Float|Date),true -> "float option"
       |_,Int,false -> "int64"
       |_,Int,true -> "int64 option"
-      |_,Date,false -> "float"
-      |_,Date,true -> "float option"
       |_,Foreign x,false -> sprintf "%s.t" (String.capitalize x)
       |_,Foreign x,true -> sprintf "%s.t option" (String.capitalize x)
       |_,ForeignMany x,_ -> sprintf "%s.t list" (String.capitalize x)
@@ -120,29 +118,26 @@ module Schema = struct
     let to_sql_type = function
     |Text -> "text"
     |Blob -> "blob"
-    |Float -> "real"
+    |Float|Date -> "real"
     |Int -> "integer"
     |Foreign _ -> "integer"
     |ForeignMany _ -> assert false
-    |Date -> "integer"
 
     let to_sql_type_wrapper = function
     |Text -> "Sqlite3.Data.TEXT v"
     |Blob -> "Sqlite3.Data.BLOB v"
-    |Float -> "Sqlite3.Data.FLOAT v"
+    |Float|Date -> "Sqlite3.Data.FLOAT v"
     |Int -> "Sqlite3.Data.INT v"
     |Foreign _ -> "Sqlite3.Data.INT v"
     |ForeignMany _ -> assert false
-    |Date -> "Sqlite3.Data.INT (Int64.of_float v)"
 
     let convert_from_sql alias f = match f.ty with
     |Text -> "Sqlite3.Data.to_string x"
     |Blob -> "Sqlite3.Data.to_string x"
     |Int -> sprintf "match x with |Sqlite3.Data.INT i -> i |x -> (try Int64.of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
-    |Float -> sprintf "match x with |Sqlite3.Data.FLOAT i -> i|x -> (try float_of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
+    |Float|Date -> sprintf "match x with |Sqlite3.Data.FLOAT i -> i|x -> (try float_of_string (Sqlite3.Data.to_string x) with _ -> failwith \"error: %s %s\")" alias f.name
     |Foreign x -> "false (* XX *)"
     |ForeignMany _ -> assert false
-    |Date -> "match x with |Sqlite3.Data.INT i -> Int64.to_float i|_ -> float_of_string (Sqlite3.Data.to_string x)"
 
     let map_table t f = match f.ty with
     |ForeignMany ft -> sprintf "map_%s_%s_%s" f.name t ft
