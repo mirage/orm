@@ -26,12 +26,17 @@ module Schema = struct
     |ForeignMany of string
     |Date
 
-    type options = [
+    type field_options = [
       |`Optional
       |`Unique
       |`Index
     ]
 
+    type table_options = {
+        unique: string list list; (* list of unique field indices *)
+    }
+
+    (* an individual field definition *)
     type s = {
         name: string;
         ty: t;
@@ -48,7 +53,15 @@ module Schema = struct
         want_all: bool; (* just get the entire object *)
     }
 
-    let base ~flags ty n = {name=n; ty=ty; opt=(List.mem `Optional flags); uniq=(List.mem `Unique flags); idx=(List.mem `Index flags)}
+
+    let base ~flags ty n = 
+      { name=n; 
+        ty=ty; 
+        opt=(List.mem `Optional flags);
+        uniq=(List.mem `Unique flags);
+        idx=(List.mem `Index flags)
+      }
+
     let text ?(flags=[]) = base ~flags Text
     let real ?(flags=[]) = base ~flags Float
     let blob ?(flags=[]) = base ~flags Blob
@@ -58,11 +71,20 @@ module Schema = struct
     let foreign_many ?(flags=[]) f = base ~flags (ForeignMany f)
     let id () = integer ~flags:[`Optional] "id"
 
-    type collection = (string * s list * g list) list
+    type table = {
+       table_name : string;
+       fields: s list;
+       gets: g list;
+       table_opts : table_options
+    }
+
+    type collection = table list
+
+    let default_opts = { unique = [] }
 
     (* add in an id field *)
     let make f : collection = 
-       List.map (fun (n,v,gets) ->
+       List.map (fun (n,v,gets,topts) ->
          (* add an id field to every one of the gets *)
          let v = id () :: v in
          let gets = List.map (fun (ws,bs) -> 
@@ -75,7 +97,7 @@ module Schema = struct
            else 
              {want=id () :: wsf; want_id=false; by=bsf; want_all=wall}
          ) gets in
-         (n, v, gets)
+         {table_name=n; fields=v; gets=gets; table_opts=topts}
        ) f
 
     let to_ocaml_type ?(always_opt=false) f =
@@ -137,8 +159,8 @@ module Schema = struct
     let sql_var_name = ocaml_var_name 
 
     let get_table_fields (c:collection) table = 
-       let _,fs,_ = List.find (fun (n,_,_) -> n = table) c in
-       fs
+       let x = List.find (fun n -> n.table_name = table) c in
+       x.fields
 
     let partition_table_fields c table =
        List.partition (fun f -> match f.ty with ForeignMany _|Foreign _ -> true |_ -> false)
@@ -278,18 +300,18 @@ let get_func_name g =
     String.concat "" (List.map (fun f -> "_" ^ f.name) want) in
   sprintf "get%s%s" want_name by_name 
 
-let output_get_fn_partial e all module_name g =
+let output_get_fn_partial e (all:collection) module_name g =
   let all = match g.want_all with
   |true ->
     (* all the fields have been requested, so return a full object *)
     all
   |false ->
     (* filter the full all structure to remove fields in the first level to just those we want *)
-    List.rev (List.fold_left (fun a (mname, mfields, o) ->
-      if mname = module_name then begin
-        let fs = List.filter (fun f -> f.name = "id" || (List.mem f g.want)) mfields in
-        (mname, fs, o) :: a
-      end else (mname, mfields, o) :: a
+    List.rev (List.fold_left (fun a t ->
+      if t.table_name = module_name then begin
+        let fs = List.filter (fun f -> f.name = "id" || (List.mem f g.want)) t.fields in
+        {t with fields=fs} :: a
+      end else t :: a
     ) [] all) in
   let func_name = get_func_name g in
   let func_fields = String.concat " " (List.map (fun f -> sprintf "~%s" f.name) g.by) in
@@ -372,19 +394,19 @@ let output_get_fn e all module_name =
     output_get_fn_of_stmt e all module_name col_positions;
   )
 
-let output_module e all module_name fields gets =
-  let foreign_fields, native_fields = partition_table_fields all module_name in
-  print_module e module_name (fun e ->
+let output_module e all t =
+  let foreign_fields, native_fields = partition_table_fields all t.table_name in
+  print_module e t.table_name (fun e ->
     print_object e "t" (fun e ->
       List.iter (fun f ->
           e += "%s : %s;" $ f.name $ (to_ocaml_type f);
           e += "set_%s : %s -> unit;" $ f.name $ (to_ocaml_type f);
-      ) fields;
+      ) t.fields;
       e += "save: int64; delete: unit";
     );
     e += "let init db =";
     e --> (fun e ->
-      let fs,fsmany = List.partition (fun x -> match x.ty with |ForeignMany _ -> false |_ -> true) fields in
+      let fs,fsmany = List.partition (fun x -> match x.ty with |ForeignMany _ -> false |_ -> true) t.fields in
       let pid = "id integer primary key autoincrement" in
       let sqls = String.concat "," (pid :: List.map (fun f ->
         sprintf "%s %s" (ocaml_var_name f) (to_sql_type f.ty)
@@ -392,12 +414,12 @@ let output_module e all module_name fields gets =
       let create_table table sql =
         e += "let sql = \"create table if not exists %s (%s);\" in" $ table $ sql;
         e += "db_must_ok db (fun () -> Sqlite3.exec db.db sql);" in
-      create_table module_name sqls;
+      create_table t.table_name sqls;
       (* create foreign many-many tables now *)
       List.iter (fun fm -> match fm.ty with
         |ForeignMany ftable ->
-          let table_name = map_table module_name fm in
-          let sqls = sprintf "%s_id integer, %s_id integer, primary key(%s_id, %s_id)" module_name ftable module_name ftable in
+          let table_name = map_table t.table_name fm in
+          let sqls = sprintf "%s_id integer, %s_id integer, primary key(%s_id, %s_id)" t.table_name ftable t.table_name ftable in
           create_table table_name sqls;
         |_ -> assert false
       ) fsmany;
@@ -405,11 +427,18 @@ let output_module e all module_name fields gets =
       List.iter (fun f -> 
         if f.idx then (
           let uniq = if f.uniq then "UNIQUE " else "" in
-          let idx = sprintf "%s_%s_idx" module_name f.name in
-          e += "let sql = \"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s) \" in" $ uniq $ idx $ module_name $ (sql_var_name f);
+          let idx = sprintf "%s_%s_idx" t.table_name f.name in
+          e += "let sql = \"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s) \" in" $ uniq $ idx $ t.table_name $ (sql_var_name f);
           e += "db_must_ok db (fun () -> Sqlite3.exec db.db sql);";
         )
-      ) fields;
+      ) t.fields;
+      (* create addition unique index groups *)
+      List.iter (fun ts ->
+        let vars = String.concat "," ts in
+        let idx = sprintf "%s_grp_%s_idx" t.table_name (String.concat "__" ts) in
+        e += "let sql = \"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s) \" in" $ idx $ t.table_name $ vars;
+        e += "db_must_ok db (fun () -> Sqlite3.exec db.db sql);";
+      ) t.table_opts.unique;
       e += "()";
        
     );
@@ -418,14 +447,14 @@ let output_module e all module_name fields gets =
     let label_names = String.concat " " (List.map (fun f ->
        match f.opt with
        |true -> sprintf "?(%s=None)" f.name
-       |false -> sprintf "~%s" f.name) fields) in
+       |false -> sprintf "~%s" f.name) t.fields) in
     e += "let t %s db : t = object" $ label_names;
     e --> (fun e -> 
       e --* "get functions";
       List.iter (fun f ->
           e += "val mutable _%s = %s" $ f.name $ f.name;
           e += "method %s : %s = _%s" $ f.name $ (to_ocaml_type f) $ f.name;
-      ) fields;
+      ) t.fields;
       e.nl ();
       e --* "set functions";
       List.iter (fun f ->
@@ -433,7 +462,7 @@ let output_module e all module_name fields gets =
           e --> (fun e ->
             e += "_%s <- v" $ f.name;
           );
-      ) fields;
+      ) t.fields;
       e.nl ();
       e --* "admin functions";
       e += "method delete =";
@@ -442,9 +471,9 @@ let output_module e all module_name fields gets =
          e += "|None -> ()";
          e += "|Some id ->";
          e --> (fun e ->
-            e -= "\"%s.delete: id found, deleting\"" $ module_name;
-            e += "let sql = \"DELETE FROM %s WHERE id=?\" in" $ module_name;
-            e -= "\"%s.delete: \" ^ sql" $ module_name;
+            e -= "\"%s.delete: id found, deleting\"" $ t.table_name;
+            e += "let sql = \"DELETE FROM %s WHERE id=?\" in" $ t.table_name;
+            e -= "\"%s.delete: \" ^ sql" $ t.table_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
             e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT id));";
             e += "ignore(step_fold db stmt (fun _ -> ()));";
@@ -481,11 +510,11 @@ let output_module e all module_name fields gets =
         e += "let _curobj_id = match _id with";
         e += "|None -> (* insert new record *)";
         e --> (fun e ->
-          e -= "\"%s.save: inserting new record\"" $ module_name;
-          let singular_fields = filter_out_id (filter_singular_fields fields) in
+          e -= "\"%s.save: inserting new record\"" $ t.table_name;
+          let singular_fields = filter_out_id (filter_singular_fields t.fields) in
           let values = String.concat "," (List.map (fun f -> "?") singular_fields) in
-          e += "let sql = \"INSERT INTO %s VALUES(NULL,%s)\" in" $ module_name $ values;
-          e -= "\"%s.save: \" ^ sql" $ module_name;
+          e += "let sql = \"INSERT INTO %s VALUES(NULL,%s)\" in" $ t.table_name $ values;
+          e -= "\"%s.save: \" ^ sql" $ t.table_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           ignore(output_bind_fields e singular_fields);
           e += "ignore(db_busy_retry db (fun () -> Sqlite3.step stmt)); (* XXX add error check *)";
@@ -495,13 +524,13 @@ let output_module e all module_name fields gets =
         );
         e += "|Some id -> (* update *)";
         e --> (fun e ->
-          e -= "sprintf \"%s.save: id %%Lu exists, updating\" id" $ module_name;
-          let up_fields = filter_out_id ( filter_singular_fields fields) in
+          e -= "sprintf \"%s.save: id %%Lu exists, updating\" id" $ t.table_name;
+          let up_fields = filter_out_id ( filter_singular_fields t.fields) in
           let set_vars = String.concat "," (List.map (fun f ->
             sprintf "%s%s=?" f.name (match f.ty with |Foreign _ -> "_id" |_ -> "")
           ) up_fields) in
-          e += "let sql = \"UPDATE %s SET %s WHERE id=?\" in" $ module_name $ set_vars;
-          e -= "\"%s.save: \" ^ sql" $ module_name;
+          e += "let sql = \"UPDATE %s SET %s WHERE id=?\" in" $ t.table_name $ set_vars;
+          e -= "\"%s.save: \" ^ sql" $ t.table_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           let pos = output_bind_fields e up_fields in
           e += "db_must_ok db (fun () -> Sqlite3.bind stmt %d (Sqlite3.Data.INT id));" $ pos;
@@ -515,8 +544,8 @@ let output_module e all module_name fields gets =
           e += "List.iter (fun f ->";
           e --> (fun e ->
             e += "let _refobj_id = f#save in";
-            e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (map_table module_name f);
-            e -= "\"%s.save: foreign insert: \" ^ sql" $ module_name;
+            e += "let sql = \"INSERT OR IGNORE INTO %s VALUES(?,?)\" in" $ (map_table t.table_name f);
+            e -= "\"%s.save: foreign insert: \" ^ sql" $ t.table_name;
             e += "let stmt = Sqlite3.prepare db.db sql in";
             e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
             e += "db_must_ok db (fun () -> Sqlite3.bind stmt 2 (Sqlite3.Data.INT _refobj_id));";
@@ -524,8 +553,8 @@ let output_module e all module_name fields gets =
           );
           e += ") _%s;" $ f.name;
           e += "let ids = String.concat \",\" (List.map (fun x -> match x#id with |None -> assert false |Some x -> Int64.to_string x) _%s) in" $ f.name;
-          e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (map_table module_name f) $ module_name $ ftable;
-          e -= "\"%s.save: foreign drop gc: \" ^ sql" $ module_name;
+          e += "let sql = \"DELETE FROM %s WHERE %s_id=? AND (%s_id NOT IN (\" ^ ids ^ \"))\" in" $ (map_table t.table_name f) $ t.table_name $ ftable;
+          e -= "\"%s.save: foreign drop gc: \" ^ sql" $ t.table_name;
           e += "let stmt = Sqlite3.prepare db.db sql in";
           e += "db_must_ok db (fun () -> Sqlite3.bind stmt 1 (Sqlite3.Data.INT _curobj_id));";
           e += "ignore(step_fold db stmt (fun _ -> ()));";
@@ -537,12 +566,12 @@ let output_module e all module_name fields gets =
     );
     e += "end";
     e.nl ();
-    output_get_fn e all module_name;
+    output_get_fn e all t.table_name;
     e.nl ();
     List.iter (fun g ->
-      output_get_fn_partial e all module_name g;
+      output_get_fn_partial e all t.table_name g;
       e.nl ();
-    ) gets
+    ) t.gets
   )
 
 let output_init_module e all =
@@ -553,8 +582,8 @@ let output_init_module e all =
      e += "let t ?(busyfn=default_busyfn) ?(mode=`Immediate) db_name =";
      e --> (fun e ->
        e += "let db = {db=Sqlite3.db_open db_name; in_transaction=0; mode=mode; busyfn=busyfn } in";
-       List.iter (fun (m,_,_) ->
-         e += "%s.init db;" $ (String.capitalize m);
+       List.iter (fun t ->
+         e += "%s.init db;" $ (String.capitalize t.table_name);
        ) all;
        e += "db";
      );
@@ -562,15 +591,15 @@ let output_init_module e all =
      e += "let db handle = handle.db"
    )
 
-let output_module_interface e all module_name fields gets =
+let output_module_interface e all t =
   let raises = "Sql_error if a database error is encountered" in
-  let foreign_fields, native_fields = partition_table_fields all module_name in
-  print_module_sig e module_name (fun e ->
+  let foreign_fields, native_fields = partition_table_fields all t.table_name in
+  print_module_sig e t.table_name (fun e ->
     print_object e "t" (fun e ->
       List.iter (fun f ->
           e += "%s : %s;" $ f.name $ (to_ocaml_type f);
           e += "set_%s : %s -> unit;" $ f.name $ (to_ocaml_type f);
-      ) fields;
+      ) t.fields;
       e += "save: int64; delete: unit";
     );
     print_ocamldoc e "An object which can be stored in the database with the [save] method call, or removed by calling [delete].  Fields can be accessed via the approriate named method and set via the [set_] methods.  Changes are not committed to the database until [save] is invoked.";
@@ -580,7 +609,7 @@ let output_module_interface e all module_name fields gets =
     e --> (fun e ->
       List.iter (fun f ->
         e += "%s%s:%s ->" $ (if f.opt then "?" else "") $ f.name $ (to_ocaml_type f)
-      ) fields;
+      ) t.fields;
       e += "Init.t -> t";
     );
     print_ocamldoc e ~raises "Can be used to construct a new object.  If [id] is not specified, it will be automatically assigned the first time [save] is called on the object.  The object is not committed to the database until [save] is invoked.  The [save] method will also return the [id] assigned to the object.";
@@ -615,7 +644,7 @@ let output_module_interface e all module_name fields gets =
         end
      );
      e.nl ()
-   ) gets;
+   ) t.gets;
   )
 
 let output_init_module_interface e =
@@ -646,7 +675,7 @@ let generate ?(debug=false) (all:collection) output_basename =
   if e.dbg then e += "open Printf";
   output_sqlaccess_module e;
   e += "open Sql_access";
-  List.iter (fun (name, fields, gets) -> output_module e all name fields gets) all;
+  List.iter (output_module e all) all;
   output_init_module e all;
   close_out mlout;
   let mliout = open_out (output_basename ^ ".mli") in
@@ -654,6 +683,6 @@ let generate ?(debug=false) (all:collection) output_basename =
   print_ocamldoc e "Use the [[Init]] module to open a new database handle.  Each object type has its own module with functions to create, modify, save and destroy objects of that type into the SQLite database";
   e += "exception Sql_error of (Sqlite3.Rc.t * string)";
   output_init_module_interface e;
-  List.iter (fun (name, fields, gets) -> output_module_interface e all name fields gets) all;
+  List.iter (output_module_interface e all) all;
   close_out mliout
    
