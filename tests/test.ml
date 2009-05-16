@@ -107,6 +107,10 @@ module Basic = struct
        let vcard3 = Attachment.t ~file_name:"vcard3.vcs" ~mime_type:"vcard" ~size:1.1 db in
        let note1 =  Attachment.t ~file_name:"note1.txt"  ~mime_type:"note"  ~size:0.1 db in
        let note2 =  Attachment.t ~file_name:"note2.txt"  ~mime_type:"note"  ~size:0.11 db in
+       (* try to violate the filename/mimetype unique index *)
+       ignore(vcard1#save);
+       let dup1 = Attachment.t ~file_name:"vcard1.vcs" ~mime_type:"vcard" ~size:100.0 db in
+       (try ignore(dup1#save) with Sqlite3.Error "CONSTRAINT" -> ());
        (* contact without an image *)
        let contact = Contact.t ~first_name:"Foo" ~last_name:"Bar" ~email:(Some "foobar@example.com")
          ~mtime:now ~vcards:[vcard1;vcard2] ~notes:[note1;note2] db in

@@ -35,7 +35,7 @@ let default_busyfn (db:Sqlite3.db) =
     Thread.delay (Random.float 1.)
 
 let raise_sql_error x =
-    raise (Sql_error (x, (Rc.to_string x)))
+    raise (Sqlite3.Error (Rc.to_string x))
 
 let try_finally fn finalfn =
     try
@@ -43,7 +43,7 @@ let try_finally fn finalfn =
       finalfn ();
       r
     with e -> begin
-      print_endline "WARNING: exception";
+      print_endline (sprintf "WARNING: exception: %s" (Printexc.to_string e));
       finalfn ();
       raise e
     end
@@ -61,6 +61,12 @@ let db_must_ok db fn =
     match db_busy_retry db fn with
     |Rc.OK -> ()
     |x -> raise_sql_error x
+
+(* make sure a DONE is returned from the database *)
+let db_must_done db fn = 
+   match db_busy_retry db fn with
+   |Rc.DONE -> ()
+   |x -> raise_sql_error x
 
 (* request a transaction *)
 let transaction db fn =

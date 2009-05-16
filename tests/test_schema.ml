@@ -24,7 +24,7 @@ let all = make [
   ] , [
     ["file_name"],["id"];
     ["file_name"],[]
-  ];
+  ], { unique = [ ["file_name"; "mime_type" ] ] };
 
   "contact" , [
     text "first_name";
@@ -39,7 +39,7 @@ let all = make [
     ["mtime";"id"],["first_name"];
     [],["id"];
     [],["first_name";"last_name"]
-  ];
+  ], default_opts;
 
   "entry" , [
     text "body";
@@ -50,7 +50,7 @@ let all = make [
     foreign_many "contact" "people_to";
   ], [
     ["people_from"; "atts"], ["body"]
-  ];
+  ], default_opts;
 ]
 
 let complex_foreign = make [
@@ -58,19 +58,19 @@ let complex_foreign = make [
     text "field1";
     date "date1";
     integer "int1";
-  ], [];
+  ], [], default_opts;
 
   "middle" , [
     foreign "base" "f1";
     foreign ~flags:[`Index] "base" "f2";
     foreign_many "base" "f3";
     foreign_many "base" "f4";
-  ], [];
+  ], [], default_opts;
 
   "last", [
     foreign ~flags:[`Index] "middle" "l1";
     foreign ~flags:[`Optional; `Unique; `Index] "middle" "l2";
-  ], [];
+  ], [], default_opts;
 ]
 
 let _ = 
