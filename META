@@ -1,5 +1,5 @@
 name = "sql_orm"
-version = "0.1"
+version = "0.2"
 description = "An Object-Relational Mapping generator for SQLite3 databases" 
 requires = "unix sqlite3"
 archive(byte) = "sql_orm.cma"
