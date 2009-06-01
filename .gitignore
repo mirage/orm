@@ -7,6 +7,7 @@
 *.cmx
 *.cmi
 *.swp
+*.opt
 test_schema_generate
 /tests/ormtest
 /tests/ormtest.ml
