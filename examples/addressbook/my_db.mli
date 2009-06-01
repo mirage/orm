@@ -52,4 +52,9 @@ module Person : sig
    @raise Sql_error if a database error is encountered
     *)
 
+  val get_name_by_age :
+    age:int64 option -> 
+    ?custom_where:string * Sqlite3.Data.t list -> Init.t -> 
+    string list
+
 end

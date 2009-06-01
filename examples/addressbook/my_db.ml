@@ -257,6 +257,41 @@ module Person = struct
     (* execute the SQL query *)
     step_fold db stmt of_stmt
 
+  let get_name_by_age ~age ?(custom_where=("",[])) db =
+    let q = "WHERE person.age=?" in
+    let q = match custom_where with |"",_ -> q |w,_ -> q ^ " AND  (" ^ w ^ ")" in
+    let sql="SELECT person.id, person.name FROM person " ^ q in
+    print_endline ("person.get: " ^ sql);
+    let stmt=Sqlite3.prepare db.db sql in
+    db_must_ok db (fun () -> Sqlite3.bind stmt 1 (match age with |None -> Sqlite3.Data.NONE |Some v -> Sqlite3.Data.INT v));
+    ignore(match custom_where with |_,[] -> () |_,eb ->
+      let pos = ref 2 in
+      List.iter (fun b ->
+        db_must_ok db (fun () -> Sqlite3.bind stmt !pos b);
+        print_endline ("bind: " ^ (Sqlite3.Data.to_string b));
+        incr pos;
+      ) eb);
+    let t ~id ~name db = (name) in
+    (* convert statement into an ocaml object *)
+    let of_stmt stmt =
+    t
+      (* native fields *)
+      ~id:(
+      (match Sqlite3.column stmt 0 with
+        |Sqlite3.Data.NULL -> None
+        |x -> Some (match x with |Sqlite3.Data.INT i -> i |x -> (try Int64.of_string (Sqlite3.Data.to_string x) with _ -> failwith "error: person id")))
+      )
+      ~name:(
+      (match Sqlite3.column stmt 1 with
+        |Sqlite3.Data.NULL -> failwith "null of_stmt"
+        |x -> Sqlite3.Data.to_string x)
+      )
+      (* foreign fields *)
+    db
+    in 
+    (* execute the SQL query *)
+    step_fold db stmt of_stmt
+
 end
 
 module Init = struct

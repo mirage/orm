@@ -6,7 +6,9 @@ let all = make [
     integer ~flags:[`Optional] "age";
     text "email";
   ] ,
-  [ ],
+  [ 
+    ["name"], ["age"]
+  ],
   default_opts
 ] ;;
 
