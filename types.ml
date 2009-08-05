@@ -85,8 +85,8 @@ type interface = typedefs list * exc list * func list * mode
 
 let rec string_of_typ = function
   |Record (_, rl) ->
-    sprintf "{ %s }" (String.concat "; " 
-      (List.map (fun f -> sprintf "%s=%s" f.f_id (string_of_typ f.f_typ)) rl))
+    Printf.sprintf "{ %s }" (String.concat "; " 
+      (List.map (fun f -> Printf.sprintf "%s=%s" f.f_id (string_of_typ f.f_typ)) rl))
   |Var (_,x) -> "(var " ^ x ^ ")"
   |Int _ -> "int"
   |Int32 _ -> "int32"
@@ -96,15 +96,17 @@ let rec string_of_typ = function
   |Char _ -> "char"
   |String _ -> "string"
   |Tuple (_, rl) ->
-    sprintf "( %s )" (String.concat ", " (List.map string_of_typ rl))
+    Printf.sprintf "( %s )" (String.concat ", " (List.map string_of_typ rl))
   |List (_,l) -> (string_of_typ l) ^ " list"
   |Arrow (_, _, _) -> " arrow"
-  |Apply (_, ido, id, tys) -> sprintf "apply (%s, %s)" id (String.concat "," (List.map string_of_typ tys))
+  |Apply (_, ido, id, tys) -> Printf.sprintf "apply (%s, %s)" id (String.concat "," (List.map string_of_typ tys))
   |Ref (_, _) -> "ref"
   |Option (_, _) -> "opt"
   |Array (_, _) -> "arr"
   |Variant (_, _) -> "variant"
   |Unit _ -> "unit"
+  |PolyVar _ -> "polyvar"
+  |Abstract _ -> "abstract"
 
 let loc_of_typ = function
   | Abstract loc -> loc
