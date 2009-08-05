@@ -69,6 +69,14 @@ let rec parse_type t =
         | t -> ctyp_error t "expected TySem or TyCol" in
       Record (loc, fields fs)
 
+    | <:ctyp@loc< < $fs$ > >> ->
+      let rec fields = function
+        | <:ctyp< $t1$; $t2$ >> -> fields t1 @ fields t2
+        | <:ctyp< $lid:id$ : mutable $t$ >> -> [ { f_id = id; f_mut = true; f_typ = parse_type t } ]
+        | <:ctyp< $lid:id$ : $t$ >> -> [ { f_id = id; f_mut = false; f_typ = parse_type t } ]
+        | t -> ctyp_error t "expected TySem or TyCol" in
+      Object (loc, fields fs)
+
     (* syntax for TySum? *)
     | TySum (loc, ams) ->
         let rec arms = function

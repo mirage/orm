@@ -35,6 +35,7 @@ type typ =
     | String of Loc.t
     | Tuple of Loc.t * typ list
     | Record of Loc.t * field list
+    | Object of Loc.t * field list
     | Variant of Loc.t * (ident * (typ list)) list
     | PolyVar of Loc.t * polyvar_kind * polyvar_arm list
     | Array of Loc.t * typ
@@ -87,6 +88,9 @@ let rec string_of_typ = function
   |Record (_, rl) ->
     Printf.sprintf "{ %s }" (String.concat "; " 
       (List.map (fun f -> Printf.sprintf "%s=%s" f.f_id (string_of_typ f.f_typ)) rl))
+  |Object (_, rl) ->
+    Printf.sprintf "< %s >" (String.concat "; " 
+      (List.map (fun f -> Printf.sprintf "%s=%s" f.f_id (string_of_typ f.f_typ)) rl))
   |Var (_,x) -> "(var " ^ x ^ ")"
   |Int _ -> "int"
   |Int32 _ -> "int32"
@@ -121,6 +125,7 @@ let loc_of_typ = function
   | String loc -> loc
   | Tuple (loc, _) -> loc
   | Record (loc, _) -> loc
+  | Object (loc, _) -> loc
   | Variant (loc, _) -> loc
   | PolyVar (loc, _, _) -> loc
   | Array (loc, _) -> loc
@@ -146,6 +151,7 @@ let rec strip_locs_typ = function
   | String _ -> String g
   | Tuple (_, parts) -> Tuple (g, List.map strip_locs_typ parts)
   | Record (_, fields) -> Record (g, List.map (fun f -> { f with f_typ = strip_locs_typ f.f_typ }) fields)
+  | Record (_, fields) -> Object (g, List.map (fun f -> { f with f_typ = strip_locs_typ f.f_typ }) fields)
   | Variant (_, arms) -> Variant (g, List.map (fun (id,ts) -> (id, List.map strip_locs_typ ts)) arms)
   | PolyVar (_, kind, arms) ->
       let arms =
