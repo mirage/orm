@@ -151,7 +151,7 @@ let rec strip_locs_typ = function
   | String _ -> String g
   | Tuple (_, parts) -> Tuple (g, List.map strip_locs_typ parts)
   | Record (_, fields) -> Record (g, List.map (fun f -> { f with f_typ = strip_locs_typ f.f_typ }) fields)
-  | Record (_, fields) -> Object (g, List.map (fun f -> { f with f_typ = strip_locs_typ f.f_typ }) fields)
+  | Object (_, fields) -> Object (g, List.map (fun f -> { f with f_typ = strip_locs_typ f.f_typ }) fields)
   | Variant (_, arms) -> Variant (g, List.map (fun (id,ts) -> (id, List.map strip_locs_typ ts)) arms)
   | PolyVar (_, kind, arms) ->
       let arms =
