@@ -36,47 +36,88 @@ open Types
 open Parse
 open Error
 
-(* Inspect the OCaml type and map it to a SQLite data type *)
-let sql_type_of_ocaml nm = function
-| Int _ | Int32 _ | Int64 _ -> Schema.integer nm
-| Float _ -> Schema.real nm
-| Bool _ -> Schema.integer nm
-| Char _ -> Schema.integer nm
-| String _ -> Schema.text nm
+(* helper to pretty print AST fragments while debugging *)
+module PP = Camlp4.Printers.OCaml.Make(Syntax)
+let pp = new PP.printer ()
+let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
 
-(* Inspect the OCaml type declaration and come up with a table
-   name *)
-let sql_table_name_of_ocaml t =
-   (* work out the top level table name *)
-   let tname = match t.td_typ with
-   |Record _  | Object _ -> ""
-   in
-   ()
-
-(* *)
-let mk_pp ty =
-   let x = { Sql_orm.Schema.unique = [] } in
-   let _loc = Loc.ghost in
-   let t = parse_typedef _loc ty in
-   (* Work out the top-level names for the record *)
+(* Given a field in a record, figure out the schema type *)
+let schema_field_of_ocaml_field f =
+  let nm = f.f_id in
+  match f.f_typ with
+  | Int _ | Int32 _ | Int64 _ -> Schema.integer nm
+  | Float _ -> Schema.real nm
+  | Bool _ -> Schema.integer nm
+  | Char _ -> Schema.integer nm
+  | String _ -> Schema.text nm
+  | _ -> Schema.blob nm
    
-   let s = String.concat " || " (List.map (fun t -> string_of_typ t.td_typ) t) in
-     <:str_item<
-       $str:s$
-   >>
+(* Make a Sql_orm.schema from an OCaml record type definition *)
+let schema_of_ocaml_record_types t =
+  match t.td_typ with
+  |Record (_,fl) |Object (_,fl) -> 
+     let table_name = t.td_id in
+     let contents = List.map schema_field_of_ocaml_field fl in
+     (table_name, contents, [], Schema.default_opts)
+  |_ -> failwith "unsupported"
+
+(* Return the fields of a record/object type *)
+let fields_of_record t =
+  match t.td_typ with
+  |Record (_,fl) |Object (_,fl) ->  fl
+  |_ -> failwith "fields_of_record: unexpected type"
+
+exception Unsupported_type of string
+let unsupported ty = raise (Unsupported_type (Types.string_of_typ ty))
+
+let ctyp_of_typedef _loc f =
+  let id = f.f_id in
+  let ty = match f.f_typ with
+  |Int _ -> <:ctyp< int >> 
+  |Int32 _ -> <:ctyp< int32 >>
+  |Int64 _ -> <:ctyp< int64 >>
+  |Float _ -> <:ctyp< float >>
+  |Bool _ -> <:ctyp< bool >>
+  |Char _ -> <:ctyp< char >>
+  |String _ -> <:ctyp< string >>
+  |Apply (_loc, _, id, _) -> <:ctyp< $lid:id$ >>
+  |x -> unsupported x
+  in <:ctyp< $lid:id$ : $ty$ >>
+
+let and_fold_ctypes _loc = function
+  |hd::tl ->
+    List.fold_left (fun a b -> <:ctyp< $a$ and $b$ >>) hd tl
+  |[] ->
+    failwith "and_fold_ctypes: empty list"
+
+let mk_pp ty =
+   let _ = { Sql_orm.Schema.unique = [] } in
+   let _loc = Loc.ghost in
+   let ts = parse_typedef _loc ty in
+   let schema = List.map schema_of_ocaml_record_types ts in
+   let collection = Schema.make schema in
+   prerr_endline (Schema.collection_to_string collection);
+   let fields = Ast.tyAnd_of_list (List.map (fun td ->
+     let ts_name = td.td_id ^ "_persist" in
+     let ts_fields = fields_of_record td in
+     let fs = List.map (ctyp_of_typedef _loc) ts_fields in
+     Ast.TyDcl (_loc, ts_name, [], <:ctyp< < $list:fs$ > >>, [])
+   ) ts) in
+   <:str_item< type $fields$ >> 
 
 (* Register the keyword with type-conv *)
 let () =
   add_generator_with_arg
     "persist"
     sql_parms
-    (fun typ arg ->
+    (fun tds args ->
       prerr_endline "in add_generator_with_arg: persist";
-      match typ, arg with
+      match tds, args with
       |_, None ->
-        Loc.raise (Ast.loc_of_ctyp typ) (Stream.Error "pa_sql_orm: arg required")
+        Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_sql_orm: arg required")
       |_, Some name ->
         let _loc = Loc.ghost in
-        <:str_item<$mk_pp typ$>>
+        <:str_item<
+          $mk_pp tds$
+        >>
       )
-
