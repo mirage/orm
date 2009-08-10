@@ -18,6 +18,7 @@ module Schema : sig
     type collection
     val make : (string * s list * ((string list * string list) list) * table_options) list -> collection
     val default_opts : table_options
+    val collection_to_string : collection -> string
 
   end
 val generate : ?debug:bool -> Schema.collection -> string -> unit

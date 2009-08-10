@@ -53,7 +53,6 @@ module Schema = struct
         want_all: bool; (* just get the entire object *)
     }
 
-
     let base ~flags ty n = 
       { name=n; 
         ty=ty; 
@@ -79,6 +78,19 @@ module Schema = struct
     }
 
     type collection = table list
+
+    let collection_to_string c =
+       String.concat "\n" (List.map (fun t ->
+           sprintf "table: %s , fields: %s" t.table_name (String.concat ", " (List.map (fun f ->
+             sprintf "[%s (%s)]" f.name (match f.ty with
+               |Text -> "text"
+               |Blob -> "blob"
+               |Int -> "int"
+               |Float -> "float"
+               |Foreign f -> "foreign " ^ f
+               |ForeignMany f -> "foreignmany" ^ f
+               |Date -> "date")) t.fields))
+         ) c)
 
     let default_opts = { unique = [] }
 
