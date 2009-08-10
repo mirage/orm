@@ -71,8 +71,7 @@ exception Unsupported_type of string
 let unsupported ty = raise (Unsupported_type (Types.string_of_typ ty))
 
 let ctyp_of_typedef _loc f =
-  let id = f.f_id in
-  let ty = match f.f_typ with
+  match f.f_typ with
   |Int _ -> <:ctyp< int >> 
   |Int32 _ -> <:ctyp< int32 >>
   |Int64 _ -> <:ctyp< int64 >>
@@ -82,13 +81,17 @@ let ctyp_of_typedef _loc f =
   |String _ -> <:ctyp< string >>
   |Apply (_loc, _, id, _) -> <:ctyp< $lid:id$ >>
   |x -> unsupported x
-  in <:ctyp< $lid:id$ : $ty$ >>
 
-let and_fold_ctypes _loc = function
-  |hd::tl ->
-    List.fold_left (fun a b -> <:ctyp< $a$ and $b$ >>) hd tl
-  |[] ->
-    failwith "and_fold_ctypes: empty list"
+let accessor_funcs_of_typedef _loc f =
+  let ty = ctyp_of_typedef _loc f in
+  let id = f.f_id in
+  let set_id = sprintf "set_%s" id in
+  let acc = <:ctyp< $lid:id$ : $ty$ >> in
+  let set_acc = <:ctyp< $lid:set_id$ : $ty$ -> unit >> in
+  [ acc; set_acc ]
+
+let declare_type _loc name ty =
+  Ast.TyDcl (_loc, name, [], ty, [])
 
 let mk_pp ty =
    let _ = { Sql_orm.Schema.unique = [] } in
@@ -97,13 +100,15 @@ let mk_pp ty =
    let schema = List.map schema_of_ocaml_record_types ts in
    let collection = Schema.make schema in
    prerr_endline (Schema.collection_to_string collection);
-   let fields = Ast.tyAnd_of_list (List.map (fun td ->
+   let object_decls = Ast.tyAnd_of_list (List.map (fun td ->
      let ts_name = td.td_id ^ "_persist" in
      let ts_fields = fields_of_record td in
-     let fs = List.map (ctyp_of_typedef _loc) ts_fields in
-     Ast.TyDcl (_loc, ts_name, [], <:ctyp< < $list:fs$ > >>, [])
+     let fields = List.flatten (List.map (accessor_funcs_of_typedef _loc) ts_fields) in
+     let other_fields = List.map (fun i -> <:ctyp< $lid:i$ : unit >>) ["save"; "delete"] in
+     let all_fields = fields @ other_fields in
+     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >>;
    ) ts) in
-   <:str_item< type $fields$ >> 
+   <:str_item< type $object_decls$ >> 
 
 (* Register the keyword with type-conv *)
 let () =
