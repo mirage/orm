@@ -41,6 +41,11 @@ module PP = Camlp4.Printers.OCaml.Make(Syntax)
 let pp = new PP.printer ()
 let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
 
+(* convenience function to wrap the TyDcl constructor since I cant
+   find an appropriate quotation to use for this *)
+let declare_type _loc name ty =
+  Ast.TyDcl (_loc, name, [], ty, [])
+
 (* Given a field in a record, figure out the schema type *)
 let schema_field_of_ocaml_field f =
   let nm = f.f_id in
@@ -67,6 +72,9 @@ let fields_of_record t =
   |Record (_,fl) |Object (_,fl) ->  fl
   |_ -> failwith "fields_of_record: unexpected type"
 
+(* Convert an OCaml type into the value exposed in the persist object.
+   Not just directly passing through the original type so we can throw
+   an error explicitly if its not supported *)
 exception Unsupported_type of string
 let unsupported ty = raise (Unsupported_type (Types.string_of_typ ty))
 
@@ -82,6 +90,8 @@ let ctyp_of_typedef _loc f =
   |Apply (_loc, _, id, _) -> <:ctyp< $lid:id$ >>
   |x -> unsupported x
 
+(* Return the accessor typedefs (the method/set_method) for a 
+   particular OCaml type *)
 let accessor_funcs_of_typedef _loc f =
   let ty = ctyp_of_typedef _loc f in
   let id = f.f_id in
@@ -90,10 +100,9 @@ let accessor_funcs_of_typedef _loc f =
   let set_acc = <:ctyp< $lid:set_id$ : $ty$ -> unit >> in
   [ acc; set_acc ]
 
-let declare_type _loc name ty =
-  Ast.TyDcl (_loc, name, [], ty, [])
-
-let mk_pp ty =
+(* declare the types of the _persist objects used to pass SQL
+   objects back and forth*)
+let construct_typedefs ty =
    let _ = { Sql_orm.Schema.unique = [] } in
    let _loc = Loc.ghost in
    let ts = parse_typedef _loc ty in
@@ -110,7 +119,7 @@ let mk_pp ty =
    ) ts) in
    <:str_item< type $object_decls$ >> 
 
-(* Register the keyword with type-conv *)
+(* Register the persist keyword with type-conv *)
 let () =
   add_generator_with_arg
     "persist"
@@ -123,6 +132,6 @@ let () =
       |_, Some name ->
         let _loc = Loc.ghost in
         <:str_item<
-          $mk_pp tds$
+          $construct_typedefs tds$
         >>
       )
