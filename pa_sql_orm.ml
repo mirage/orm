@@ -31,7 +31,6 @@ END
 
 (* Begin implementation *)
 
-open Sql_orm
 open Types
 open Parse
 open Error
@@ -46,26 +45,28 @@ let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
 let declare_type _loc name ty =
   Ast.TyDcl (_loc, name, [], ty, [])
 
-(* Given a field in a record, figure out the schema type *)
-let schema_field_of_ocaml_field f =
-  let nm = f.f_id in
-  match f.f_typ with
-  | Int _ | Int32 _ | Int64 _ -> Schema.integer nm
-  | Float _ -> Schema.real nm
-  | Bool _ -> Schema.integer nm
-  | Char _ -> Schema.integer nm
-  | String _ -> Schema.text nm
-  | _ -> Schema.blob nm
-   
-(* Make a Sql_orm.schema from an OCaml record type definition *)
-let schema_of_ocaml_record_types t =
-  match t.td_typ with
-  |Record (_,fl) |Object (_,fl) -> 
-     let table_name = t.td_id in
-     let contents = List.map schema_field_of_ocaml_field fl in
-     (table_name, contents, [], Schema.default_opts)
-  |_ -> failwith "unsupported"
-
+(* defines the Ast.binding for a function of form: 
+   let fun_name ?(opt_arg1) ?(opt_arg2) final_ident = function_body ...
+   XXX: figure out the quotation magic for this, if such exists
+*)
+let function_with_label_args _loc ~fun_name ~final_ident ~function_body ~return_type opt_args =
+   let opt_args = opt_args @ [ <:patt< $lid:final_ident$ >> ] in
+   let rec fn _loc = function  
+   |hd::tl ->
+     Ast.ExFun(_loc,
+       Ast.McArr(_loc, 
+         hd, 
+         (Ast.ExNil _loc),
+         (fn _loc tl)
+       )
+     )
+   |[] -> <:expr< ( $function_body$ : $return_type$ ) >>
+   in
+   Ast.BiEq (_loc, 
+     <:patt< $lid:fun_name$ >>,
+     (fn _loc opt_args)
+   )
+     
 (* Return the fields of a record/object type *)
 let fields_of_record t =
   match t.td_typ with
@@ -128,12 +129,10 @@ let construct_typedefs tds =
 let construct_funs tds =
   let _loc = Loc.ghost in
   let ts = parse_typedef _loc tds in
-  (* assemble the SQL schema from the OCaml typedefs *)
-  let schema = List.map schema_of_ocaml_record_types ts in
-  let collection = Schema.make schema in
-  prerr_endline (Schema.collection_to_string collection);
   (* output the function bindings *)
   let fn_bindings = Ast.biAnd_of_list (List.map (fun td ->
+    (* init function to initalize sqlite database *)
+    let type_name = sprintf "%s_persist" td.td_id in
     let fun_name = sprintf "%s_init_db" td.td_id in
     let pid = "id INTEGER PRIMARY KEY AUTOINCREMENT" in
     let fields = fields_of_record td in
@@ -145,7 +144,42 @@ let construct_funs tds =
         let sql = $str:create_sql$ in
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
      >> in
-    <:binding< $lid:fun_name$ db = $ex$ >>
+    let init_db_binding = <:binding< $lid:fun_name$ db = $ex$ >> in
+
+    (* new function to create object of the type *)
+    let fun_name = sprintf "%s_new" td.td_id in
+    let opt_args = <:patt< ?(id=None) >> :: (List.map (fun f ->
+        <:patt< ~ $lid:f.f_id$ >>
+      ) fields) in
+    let new_get_set_functions = List.flatten (List.map (fun f ->
+       let internal_var_name = sprintf "_%s" f.f_id in
+       let external_var_name = f.f_id in
+       [ 
+         <:class_str_item< value mutable $lid:internal_var_name$ = $lid:external_var_name$ >>;
+         <:class_str_item< method $lid:external_var_name$ = $lid:internal_var_name$ >>;
+         <:class_str_item< method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) >>;
+       ]
+    ) fields) in
+    let new_admin_functions =
+       [
+         <:class_str_item< method delete = prerr_endline "delete" >>;
+         <:class_str_item< method save   = prerr_endline "save" >>;
+       ] in
+    let new_functions = new_get_set_functions @ new_admin_functions in
+    let new_body = <:expr<
+        object
+         $Ast.crSem_of_list new_functions$;
+        end
+      >> in
+    let new_binding = function_with_label_args _loc 
+      ~fun_name 
+      ~final_ident:"db"
+      ~function_body:new_body
+      ~return_type:<:ctyp< $lid:type_name$ >>
+      opt_args in
+
+    (* return single binding of all the functions for this type *)
+    Ast.biAnd_of_list [init_db_binding; new_binding]
   ) ts) in
   <:str_item< value $fn_bindings$ >>
 
