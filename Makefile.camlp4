@@ -5,7 +5,7 @@ USE_CAMLP4=Yes
 SOURCES= error.ml types.ml parse.ml pa_sql_orm.ml
 LIB_PACK_NAME = orm
 PACKS = type-conv
-RESULT = orm
+RESULT = pa_sql_orm
 
 
 .PHONY: p-%
