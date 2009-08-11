@@ -90,6 +90,16 @@ let ctyp_of_typedef _loc f =
   |Apply (_loc, _, id, _) -> <:ctyp< $lid:id$ >>
   |x -> unsupported x
 
+(* convert a simple ocaml type into a sql type *)
+let sql_type_of_ocaml_type f = 
+  match f.f_typ with
+  |Int _ | Int32 _ | Int64 _ -> "INTEGER"
+  |Float _ -> "REAL"
+  |Bool _ -> "INTEGER"
+  |Char _ -> "INTEGER"
+  |String _ -> "TEXT"
+  |x -> unsupported x
+
 (* Return the accessor typedefs (the method/set_method) for a 
    particular OCaml type *)
 let accessor_funcs_of_typedef _loc f =
@@ -102,22 +112,42 @@ let accessor_funcs_of_typedef _loc f =
 
 (* declare the types of the _persist objects used to pass SQL
    objects back and forth*)
-let construct_typedefs ty =
-   let _ = { Sql_orm.Schema.unique = [] } in
-   let _loc = Loc.ghost in
-   let ts = parse_typedef _loc ty in
-   let schema = List.map schema_of_ocaml_record_types ts in
-   let collection = Schema.make schema in
-   prerr_endline (Schema.collection_to_string collection);
-   let object_decls = Ast.tyAnd_of_list (List.map (fun td ->
-     let ts_name = td.td_id ^ "_persist" in
-     let ts_fields = fields_of_record td in
-     let fields = List.flatten (List.map (accessor_funcs_of_typedef _loc) ts_fields) in
-     let other_fields = List.map (fun i -> <:ctyp< $lid:i$ : unit >>) ["save"; "delete"] in
-     let all_fields = fields @ other_fields in
-     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >>;
-   ) ts) in
-   <:str_item< type $object_decls$ >> 
+let construct_typedefs tds =
+  let _loc = Loc.ghost in
+  let ts = parse_typedef _loc tds in
+  let object_decls = Ast.tyAnd_of_list (List.map (fun td ->
+    let ts_name = td.td_id ^ "_persist" in
+    let ts_fields = fields_of_record td in
+    let fields = List.flatten (List.map (accessor_funcs_of_typedef _loc) ts_fields) in
+    let other_fields = List.map (fun i -> <:ctyp< $lid:i$ : unit >>) ["save"; "delete"] in
+    let all_fields = fields @ other_fields in
+    declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >>;
+  ) ts) in
+  <:str_item< type $object_decls$ >> 
+
+let construct_funs tds =
+  let _loc = Loc.ghost in
+  let ts = parse_typedef _loc tds in
+  (* assemble the SQL schema from the OCaml typedefs *)
+  let schema = List.map schema_of_ocaml_record_types ts in
+  let collection = Schema.make schema in
+  prerr_endline (Schema.collection_to_string collection);
+  (* output the function bindings *)
+  let fn_bindings = Ast.biAnd_of_list (List.map (fun td ->
+    let fun_name = sprintf "%s_init_db" td.td_id in
+    let pid = "id INTEGER PRIMARY KEY AUTOINCREMENT" in
+    let fields = fields_of_record td in
+    let sqls = String.concat ", " (pid :: List.map (fun f ->
+        sprintf "%s %s" f.f_id (sql_type_of_ocaml_type f)
+      ) fields) in
+    let create_sql = sprintf "CREATE TABLE IF NOT EXISTS %s (%s);" td.td_id sqls in
+    let ex = <:expr<
+        let sql = $str:create_sql$ in
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
+     >> in
+    <:binding< $lid:fun_name$ db = $ex$ >>
+  ) ts) in
+  <:str_item< value $fn_bindings$ >>
 
 (* Register the persist keyword with type-conv *)
 let () =
@@ -132,6 +162,7 @@ let () =
       |_, Some name ->
         let _loc = Loc.ghost in
         <:str_item<
-          $construct_typedefs tds$
+          $construct_typedefs tds$ ;
+          $construct_funs tds$
         >>
       )
