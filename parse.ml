@@ -1,4 +1,4 @@
-(*pp camlp4orf *)
+(*pp camlp4of *)
 (*
  * This file is part of orpc, OCaml signature to ONC RPC generator
  * Copyright (C) 2008-9 Skydeck, Inc
