@@ -45,27 +45,16 @@ let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
 let declare_type _loc name ty =
   Ast.TyDcl (_loc, name, [], ty, [])
 
-(* defines the Ast.binding for a function of form: 
-   let fun_name ?(opt_arg1) ?(opt_arg2) final_ident = function_body ...
-   XXX: figure out the quotation magic for this, if such exists
+(* defines the Ast.binding for a function of form:
+let fun_name ?(opt_arg1) ?(opt_arg2) final_ident = function_body ...
 *)
 let function_with_label_args _loc ~fun_name ~final_ident ~function_body ~return_type opt_args =
    let opt_args = opt_args @ [ <:patt< $lid:final_ident$ >> ] in
-   let rec fn _loc = function  
-   |hd::tl ->
-     Ast.ExFun(_loc,
-       Ast.McArr(_loc, 
-         hd, 
-         (Ast.ExNil _loc),
-         (fn _loc tl)
-       )
-     )
-   |[] -> <:expr< ( $function_body$ : $return_type$ ) >>
-   in
-   Ast.BiEq (_loc, 
-     <:patt< $lid:fun_name$ >>,
-     (fn _loc opt_args)
-   )
+   <:binding< $lid:fun_name$ = 
+      $List.fold_right (fun b a ->
+        <:expr<fun $b$ -> $a$ >>
+       ) opt_args <:expr< ( $function_body$ : $return_type$ ) >>
+      $ >>
    
 (* Return the fields of a record/object type *)
 let fields_of_record t =
