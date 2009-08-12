@@ -103,7 +103,7 @@ let rec string_of_typ = function
     Printf.sprintf "( %s )" (String.concat ", " (List.map string_of_typ rl))
   |List (_,l) -> (string_of_typ l) ^ " list"
   |Arrow (_, _, _) -> " arrow"
-  |Apply (_, ido, id, tys) -> Printf.sprintf "apply (%s, %s)" id (String.concat "," (List.map string_of_typ tys))
+  |Apply (_, ido, id, tys) -> Printf.sprintf "apply ([%s], %s, [%s])" (String.concat "," ido) id (String.concat "," (List.map string_of_typ tys))
   |Ref (_, _) -> "ref"
   |Option (_, _) -> "opt"
   |Array (_, _) -> "arr"
