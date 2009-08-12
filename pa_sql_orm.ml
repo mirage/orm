@@ -66,7 +66,7 @@ let function_with_label_args _loc ~fun_name ~final_ident ~function_body ~return_
      <:patt< $lid:fun_name$ >>,
      (fn _loc opt_args)
    )
-     
+   
 (* Return the fields of a record/object type *)
 let fields_of_record t =
   match t.td_typ with
@@ -77,34 +77,61 @@ let fields_of_record t =
    Not just directly passing through the original type so we can throw
    an error explicitly if its not supported *)
 exception Unsupported_type of string
-let unsupported ty = raise (Unsupported_type (Types.string_of_typ ty))
+let unsupported ty = raise (Unsupported_type ty)
 
-let ctyp_of_typedef _loc f =
+type sql_type = {
+  s_opt: bool;     (* is this type optional *)
+  s_foreign: bool; (* is this type a foreign key *)
+  s_list: bool;    (* is this type a list *)
+}
+
+let classify_type _loc f =
+  let simple_classify _loc sty = function
+    |Int _ ->    f, sty, <:ctyp< int >>
+    |Int32 _ ->  f, sty, <:ctyp< int32 >>
+    |Int64 _ ->  f, sty, <:ctyp< int64 >>
+    |Float _ ->  f, sty, <:ctyp< float >>
+    |Bool _ ->   f, sty, <:ctyp< bool >>
+    |Char _ ->   f, sty, <:ctyp< char >>
+    |String _ -> f, sty, <:ctyp< string >>
+    |Apply (_loc, _, id, _) -> 
+      let sty = { sty with s_foreign=true } in
+      f, sty, <:ctyp< $lid:id$ >>
+    |x -> unsupported (Types.string_of_typ x)
+  in
+  (* decompose a list or option type into the basic type and set options *)
+  let base = { s_opt=false; s_foreign=false; s_list=false } in
   match f.f_typ with
-  |Int _ -> <:ctyp< int >> 
-  |Int32 _ -> <:ctyp< int32 >>
-  |Int64 _ -> <:ctyp< int64 >>
-  |Float _ -> <:ctyp< float >>
-  |Bool _ -> <:ctyp< bool >>
-  |Char _ -> <:ctyp< char >>
-  |String _ -> <:ctyp< string >>
-  |Apply (_loc, _, id, _) -> <:ctyp< $lid:id$ >>
-  |x -> unsupported x
-
+  |Option (_, ty) -> simple_classify _loc { base with s_opt=true } ty
+  |List (_, ty) ->   simple_classify _loc { base with s_list=true } ty
+  |ty ->             simple_classify _loc base ty
+  
 (* convert a simple ocaml type into a sql type *)
-let sql_type_of_ocaml_type f = 
-  match f.f_typ with
-  |Int _ | Int32 _ | Int64 _ -> "INTEGER"
-  |Float _ -> "REAL"
-  |Bool _ -> "INTEGER"
-  |Char _ -> "INTEGER"
-  |String _ -> "TEXT"
-  |x -> unsupported x
+let sql_type_of_ocaml_type = function
+  | <:ctyp< int >> 
+  | <:ctyp< int32 >> 
+  | <:ctyp< int64 >>  -> "INTEGER"
+  | <:ctyp< float >>  -> "REAL"
+  | <:ctyp< bool >> 
+  | <:ctyp< char >>   -> "INTEGER"
+  | <:ctyp< string >> -> "TEXT"
+  | x -> unsupported  "sql_type_of_ocaml_type:"
+
+(* get the basic fields (i.e. not lists, options, foreign) from a list *)
+let get_basic_fields _loc fl =
+  let cltys = List.map (classify_type _loc) fl in
+  List.filter (fun (_,s,_) -> s.s_foreign = false && s.s_list = false) cltys
 
 (* Return the accessor typedefs (the method/set_method) for a 
    particular OCaml type *)
 let accessor_funcs_of_typedef _loc f =
-  let ty = ctyp_of_typedef _loc f in
+  prerr_endline (Types.string_of_typ f.f_typ);
+  let f, sty, ty = classify_type _loc f in
+  prerr_endline (sprintf "%s: opt=%b list=%b for=%b" f.f_id sty.s_opt sty.s_list sty.s_foreign);
+  let ty = match sty with
+    |{ s_opt = true } -> <:ctyp< option $ty$ >>
+    |{ s_list = true } -> <:ctyp< list $ty$ >>
+  |_ -> ty in
   let id = f.f_id in
   let set_id = sprintf "set_%s" id in
   let acc = <:ctyp< $lid:id$ : $ty$ >> in
@@ -136,9 +163,10 @@ let construct_funs tds =
     let fun_name = sprintf "%s_init_db" td.td_id in
     let pid = "id INTEGER PRIMARY KEY AUTOINCREMENT" in
     let fields = fields_of_record td in
-    let sqls = String.concat ", " (pid :: List.map (fun f ->
-        sprintf "%s %s" f.f_id (sql_type_of_ocaml_type f)
-      ) fields) in
+    let basic_fields = get_basic_fields _loc fields in
+    let sqls = String.concat ", " (pid :: List.map (fun (f,_,oty) ->
+        sprintf "%s %s" f.f_id (sql_type_of_ocaml_type oty)
+      ) basic_fields) in
     let create_sql = sprintf "CREATE TABLE IF NOT EXISTS %s (%s);" td.td_id sqls in
     let ex = <:expr<
         let sql = $str:create_sql$ in
