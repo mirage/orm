@@ -106,10 +106,28 @@ let sql_type_of_ocaml_type = function
   | <:ctyp< string >> -> "TEXT"
   | x -> unsupported  "sql_type_of_ocaml_type:"
 
+let filter_fields _loc fn fl =
+  let cltys = List.map (classify_type _loc) fl in
+  List.filter (fun (_,s,_) -> fn s) cltys
+  
 (* get the basic fields (i.e. not lists, options, foreign) from a list *)
 let get_basic_fields _loc fl =
-  let cltys = List.map (classify_type _loc) fl in
-  List.filter (fun (_,s,_) -> s.s_foreign = false && s.s_list = false) cltys
+  filter_fields _loc (fun s -> s.s_foreign = false && s.s_list = false) fl
+
+let get_foreign_fields _loc fl =
+  filter_fields _loc (fun s -> s.s_foreign = true || s.s_list = true) fl
+
+let get_non_list_foreign_fields _loc fl =
+  filter_fields _loc (fun s -> s.s_foreign = true && s.s_list = false) fl
+ 
+let get_list_foreign_fields _loc fl =
+  filter_fields _loc (fun s -> s.s_list = true) fl
+
+let is_basic_type _loc ty =
+  let _,s,_ = classify_type _loc ty in
+  match s with
+  |{s_opt=false; s_list=false; s_foreign=false } -> true
+  |_ -> false 
 
 (* Return the accessor typedefs (the method/set_method) for a 
    particular OCaml type *)
@@ -142,26 +160,59 @@ let construct_typedefs tds =
   ) ts) in
   <:str_item< type $object_decls$ >> 
 
+let table_name_of n = "table_" ^ n
+let list_table_name_of t f = sprintf "table_%s__list_%s" t f
+
 let construct_funs tds =
   let _loc = Loc.ghost in
   let ts = parse_typedef _loc tds in
   (* output the function bindings *)
   let fn_bindings = Ast.biAnd_of_list (List.map (fun td ->
+
     (* init function to initalize sqlite database *)
     let type_name = sprintf "%s_persist" td.td_id in
     let fun_name = sprintf "%s_init_db" td.td_id in
-    let pid = "id INTEGER PRIMARY KEY AUTOINCREMENT" in
+
     let fields = fields_of_record td in
     let basic_fields = get_basic_fields _loc fields in
-    let sqls = String.concat ", " (pid :: List.map (fun (f,_,oty) ->
-        sprintf "%s %s" f.f_id (sql_type_of_ocaml_type oty)
-      ) basic_fields) in
-    let create_sql = sprintf "CREATE TABLE IF NOT EXISTS %s (%s);" td.td_id sqls in
-    let ex = <:expr<
-        let sql = $str:create_sql$ in
+    let non_list_foreign_fields = get_non_list_foreign_fields _loc fields in
+    let list_foreign_fields = get_list_foreign_fields _loc fields in
+
+    let pid = "id INTEGER PRIMARY KEY AUTOINCREMENT" in
+    let sql_decls =  (* the list of sql create statements *)
+         pid  (* the id key *)
+      :: (List.map (fun (f,_,oty) ->
+          sprintf "%s %s" f.f_id (sql_type_of_ocaml_type oty)
+        ) basic_fields) (* basic field decls *)
+      @ (* also include any non-list foreign mappings in this table *)
+        (List.map (fun (f,sql_ty,oty) ->
+          sprintf "%s_id INTEGER" (table_name_of f.f_id)
+          ) non_list_foreign_fields
+        )
+    in
+    let basic_sql = sprintf "CREATE TABLE IF NOT EXISTS %s (%s);"
+      (table_name_of td.td_id) (String.concat ", " sql_decls) in
+    let foreign_many_sql = List.map (fun (f,sql_ty,oty) ->
+        let td_tname = table_name_of td.td_id in
+        match sql_ty with
+        |{ s_foreign=true } ->
+          let fl_tname = table_name_of f.f_id in
+          sprintf "CREATE TABLE IF NOT EXISTS %s (%s_id INTEGER, %s_id INTEGER, PRIMARY KEY(%s_id, %s_id));" 
+            td_tname td_tname fl_tname td_tname fl_tname
+        |{ s_list=true; s_foreign=false }  ->
+          let td_list_tname = list_table_name_of td.td_id f.f_id in
+          sprintf "CREATE TABLE IF NOT EXISTS %s (%s_id INTEGER PRIMARY KEY, %s %s);"
+            td_list_tname td_tname f.f_id (sql_type_of_ocaml_type oty)
+        |_ -> failwith "unknown foreign case"
+      ) list_foreign_fields in
+    let all_create_sql = basic_sql :: foreign_many_sql in
+    (* fragment to create table in db *)
+    let create_table sql_text = <:expr<
+        let sql = $str:sql_text$ in
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
      >> in
-    let init_db_binding = <:binding< $lid:fun_name$ db = $ex$ >> in
+    let create_statements = Ast.exSem_of_list (List.map create_table all_create_sql) in
+    let init_db_binding = <:binding< $lid:fun_name$ db = $create_statements$ >> in
 
     (* new function to create object of the type *)
     let fun_name = sprintf "%s_new" td.td_id in
