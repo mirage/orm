@@ -413,6 +413,22 @@ let output_get_fn e all module_name =
     output_get_fn_of_stmt e all module_name col_positions;
   )
 
+let output_aggreg_fn e all module_name =
+  let foreign_fields, native_fields = partition_table_fields all module_name in
+  e --* "General aggregate function for any of the columns";
+  e += "let aggreg ~init ~step ~marshall ~unmarshall db =";
+  let count = ref (-1) in
+  e --> (fun e ->
+    e += "let step accu a = step accu %s in" $ 
+      (String.concat " " 
+        (List.map (fun x -> incr count; sprintf "~%s:(let x = a.(%i) in %s)" x.name !count (convert_from_sql module_name x))
+        native_fields))
+    );
+    e += "Sqlite3.Aggregate.create_funN db.db \"aggreg_fn\" ~init ~step ~final:marshall;";
+    e += "let sql = \"SELECT aggreg_fn(%s) FROM %s\" in" $ (String.concat "," (List.map (fun x -> x.name) native_fields)) $ module_name;
+    e += "let stmt = Sqlite3.prepare db.db sql in";
+    e += "(match step_fold db stmt unmarshall with [x] -> Some x  | [] -> None | _ -> assert false)"
+
 let output_module e all t =
   let foreign_fields, native_fields = partition_table_fields all t.table_name in
   print_module e t.table_name (fun e ->
@@ -587,6 +603,8 @@ let output_module e all t =
     e.nl ();
     output_get_fn e all t.table_name;
     e.nl ();
+    output_aggreg_fn e all t.table_name;
+    e.nl ();
     List.iter (fun g ->
       output_get_fn_partial e all t.table_name g;
       e.nl ();
@@ -641,6 +659,15 @@ let output_module_interface e all t =
     e +=  "Init.t -> t list";
     );
    print_ocamldoc e ~raises "Used to retrieve objects from the database.  If an argument is specified, it is included in the search criteria (all fields are ANDed together).";
+   e.nl ();
+   e += "val aggreg :";
+   e --> (fun e ->
+     e += "init: 'a ->";
+     e += "step: ('a -> %s -> 'a) ->" $ (String.concat " -> " (List.map (fun x -> x.name^":"^to_ocaml_type ~never_opt:true x) native_fields));
+     e += "marshall:('a -> Sqlite3.Data.t) ->";
+     e += "unmarshall:(Sqlite3.stmt -> 'a) ->";
+     e += "Init.t -> 'a option";
+   );
    e.nl ();
    List.iter (fun g ->
      e += "val %s :" $ (get_func_name g);
