@@ -212,13 +212,13 @@ module Basic = struct
        let all_files = Attachment.get_file_name db in
        "all_filenames" @? (List.sort compare all_files = ["note1.txt";"note2.txt";"vcard1.vcs";"vcard2.vcs";"vcard3.vcs"]);
        (* test custom where *)
-       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE 'vcard%'",[]) db in
+       let all_files = Attachment.get_file_name ~custom_where:(fun ~file_name -> Str.string_match (Str.regexp "vcard.*") file_name 0) db in
        "all_vcard_filenames" @? (List.sort compare all_files = ["vcard1.vcs";"vcard2.vcs";"vcard3.vcs"]);
-       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"]) db in
+       let all_files = Attachment.get_file_name ~custom_where:(fun ~file_name -> Str.string_match (Str.regexp ".*1.*") file_name 0) db in
        "all_vcard_filenames" @? (List.sort compare all_files = ["note1.txt";"vcard1.vcs"]);
-       let all_files = Attachment.get_file_name ~custom_where:("attachment.file_name LIKE ? OR attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"; Sqlite3.Data.TEXT "%2%"]) db in
+       let all_files = Attachment.get_file_name ~custom_where:(fun ~file_name -> Str.string_match (Str.regexp ".*1.*\\|.*2.*") file_name 0) db in
        "all_vcard_filenames" @? (List.sort compare all_files = ["note1.txt"; "note2.txt"; "vcard1.vcs"; "vcard2.vcs"]);
-       let all_files = Attachment.get ~custom_where:("attachment.file_name LIKE ? OR attachment.file_name LIKE ?",[Sqlite3.Data.TEXT "%1%"; Sqlite3.Data.TEXT "%3%"]) db in
+       let all_files = Attachment.get ~custom_where:(fun ~id ~file_name ~mime_type ~size -> Str.string_match (Str.regexp ".*1.*\\|.*3.*") file_name 0) db in
        "all_vcard_filenames" @? (List.sort compare (List.map (fun x -> x#file_name) all_files) = ["note1.txt";"vcard1.vcs"; "vcard3.vcs"])
        
    let suite = [
