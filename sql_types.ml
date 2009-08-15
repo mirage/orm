@@ -129,6 +129,14 @@ let rec process env t ml_field =
     ) tyl env
   |Types.Option (_,ty) ->
     process env t { ml_field with Types.f_typ=ty }
+  |Types.Variant (loc, itl) -> 
+    (* Just unoptimised with a unique set of columns per branch at the moment *)
+    let env = replace_table env { t_name=n; t_fields=[] } in
+    let env = add_field env n { f_name="_idx"; f_typ=Int } in
+    List.fold_right (fun (id,tyl) env ->
+       let n' = sprintf "%s_%s" n id in
+       process env n { ml_field with Types.f_id=id; f_typ=Types.Tuple(loc, tyl) }
+    ) itl env
   (* types we dont handle for the moment *)
   |Types.Var _
   |Types.Abstract _ 
