@@ -112,8 +112,8 @@ module Schema = struct
          {table_name=n; fields=v; gets=gets; table_opts=topts}
        ) f
 
-    let to_ocaml_type ?(always_opt=false) f =
-      let opt = if always_opt then true else f.opt in
+    let to_ocaml_type ?(always_opt=false) ?(never_opt=false) f =
+      let opt = if always_opt then true else if never_opt then false else f.opt in
       match f.name,f.ty,opt with
       |_,Text,false -> "string"
       |_,Text,true -> "string option"
@@ -169,12 +169,20 @@ module Schema = struct
        let x = List.find (fun n -> n.table_name = table) c in
        x.fields
 
+    let is_foreign f = match f.ty with ForeignMany _|Foreign _ -> true |_ -> false
+
     let partition_table_fields c table =
-       List.partition (fun f -> match f.ty with ForeignMany _|Foreign _ -> true |_ -> false)
-          (get_table_fields c table)
+       List.partition is_foreign (get_table_fields c table)
 
     let filter_out_id fields =
        List.filter (fun f -> f.name <> "id") fields
+
+    let native_fields want_id fields =
+	  let _, native_fields = List.partition is_foreign fields in
+      if want_id then
+        native_fields
+      else
+        filter_out_id native_fields
 
     let filter_singular_fields f =
        List.filter (fun f -> match f.ty with ForeignMany _ -> false |_ -> true) f
@@ -245,6 +253,32 @@ let render_native_field_get e col_positions table_alias f =
      );
   )
  
+let render_custom_where e module_name fields with_id =
+  let native_fields = native_fields with_id fields in
+  if native_fields <> [] then begin
+    e += "let q = match custom_where with";
+    e --> (fun e -> 
+      e += "| None -> q";
+      e += "| Some caml_fn ->";
+      e --> (fun e ->
+        let count = ref (-1) in
+        e += "let custom_fn a = if caml_fn %s then Sqlite3.Data.INT 1L else Sqlite3.Data.INT 0L in" $ 
+          (String.concat " " 
+            (List.map (fun x -> incr count; sprintf "~%s:(let x = a.(%i) in %s)" x.name !count (convert_from_sql module_name x))
+            native_fields))
+      );
+    );
+    e += "Sqlite3.create_funN db.db \"custom_fn\" custom_fn;";
+    e += "let add q = q ^ (if q = \"\" then \" WHERE \" else \" AND \") in";
+    e += "add q ^ \"(custom_fn(%s))\" in" $ (String.concat "," (List.map (fun x -> x.name) native_fields));
+  end  
+
+let render_custom_where_sig e fields with_id =
+  let native_fields = native_fields with_id fields in
+  if native_fields <> [] then
+    e += "?custom_where:(%s -> bool) ->" $
+      (String.concat " -> " (List.map (fun x -> x.name^":"^to_ocaml_type ~never_opt:true x) native_fields))
+
 let output_get_fn_of_stmt e all module_name col_positions =
   let rec of_stmt e table table_alias =
     let foreign_fields, fields = partition_table_fields all table in
@@ -322,7 +356,7 @@ let output_get_fn_partial e (all:collection) module_name g =
     ) [] all) in
   let func_name = get_func_name g in
   let func_fields = String.concat " " (List.map (fun f -> sprintf "~%s" f.name) g.by) in
-  e += "let %s %s ?(custom_where=(\"\",[])) db =" $ func_name $ func_fields;
+  e += "let %s %s %sdb =" $ func_name $ func_fields $ (if native_fields g.want_id (g.want @ g.by) <> [] then "?custom_where " else "");
   e --> (fun e ->
     let first = ref true in
     let firststr () = match !first with
@@ -331,7 +365,7 @@ let output_get_fn_partial e (all:collection) module_name g =
     e += "let q = \"%s\" in" $ String.concat "" (List.map (fun f ->
       sprintf "%s%s.%s=?" (firststr ()) (to_sql_table_alias f module_name) f.name
     ) g.by);
-    e += "let q = match custom_where with |\"\",_ -> q |w,_ -> q ^ \"%s (\" ^ w ^ \")\" in" $ (firststr ());
+    render_custom_where e module_name (g.want @ g.by) g.want_id;
     let _, col_positions = output_get_fn_sqlbind e all module_name in
     let pos = ref 1 in
     List.iter (fun f ->
@@ -343,17 +377,6 @@ let output_get_fn_partial e (all:collection) module_name g =
       );
       incr pos;
     ) g.by;
-    e += "ignore(match custom_where with |_,[] -> () |_,eb ->";
-    e --> (fun e ->
-       e += "let pos = ref %d in" $ !pos;
-       e += "List.iter (fun b ->";
-       e --> (fun e ->
-          e += "db_must_ok db (fun () -> Sqlite3.bind stmt !pos b);";
-          e -= "\"bind: \" ^ (Sqlite3.Data.to_string b)";
-          e += "incr pos;";
-       );
-       e += ") eb);"
-    );
     let ret_fields = String.concat " " (List.map (fun f -> sprintf "~%s" f.name) g.want) in
     let want_fields = if g.want_id then g.want else List.filter (fun f -> f.name <> "id") g.want in
     let ret_fields' = String.concat "," (List.map (fun f -> f.name) want_fields) in
@@ -364,18 +387,17 @@ let output_get_fn_partial e (all:collection) module_name g =
 let output_get_fn e all module_name =
   let foreign_fields, native_fields = partition_table_fields all module_name in
   e --* "General get function for any of the columns";
-  e += "let get %s ?(custom_where=(\"\",[])) db =" $ 
+  e += "let get %s ?custom_where db =" $ 
     (String.concat " " (List.map (fun f -> sprintf "?(%s=None)" f.name) native_fields));
   e --> (fun e ->
     e --* "assemble the SQL query string";
     e += "let q = \"\" in";
-    e += "let _first = ref true in";
-    e += "let f () = match !_first with |true -> _first := false; \" WHERE \" |false -> \" AND \" in";
+    e += "let add q = q ^ (if q = \"\" then \" WHERE \" else \" AND \") in";
     List.iter (fun f ->
-      e += "let q = match %s with |None -> q |Some b -> q ^ (f()) ^ \"%s.%s=?\" in" $
+      e += "let q = match %s with None -> q | Some b -> add q ^ \"%s.%s=?\" in" $
         f.name $ (to_sql_table_alias f module_name) $ f.name;
     ) native_fields;
-    e += "let q = match custom_where with |\"\",_ -> q |w,_ -> q ^ (f()) ^ \"(\" ^ w ^ \")\" in";
+    render_custom_where e module_name native_fields true;
     let bind_fields, col_positions = output_get_fn_sqlbind e all module_name in
     e --* "bind the position variables to the statement";
     e += "let bindpos = ref 1 in";
@@ -388,18 +410,32 @@ let output_get_fn e all module_name =
       );
       e += ");";
     ) bind_fields;
-    e += "ignore(match custom_where with |_,[] -> () |_,eb ->";
-    e --> (fun e ->
-       e += "List.iter (fun b ->";
-       e --> (fun e ->
-          e += "db_must_ok db (fun () -> Sqlite3.bind stmt !bindpos b);";
-          e -= "\"bind: \" ^ (Sqlite3.Data.to_string b)";
-          e += "incr bindpos";
-       );
-       e += ") eb);"
-    );
     output_get_fn_of_stmt e all module_name col_positions;
   )
+
+let output_aggreg_fn e all module_name =
+  let foreign_fields, native_fields = partition_table_fields all module_name in
+  e --* "General aggregate function for any of the columns";
+  e += "let aggreg ~init ~f db =";
+  let count = ref (-1) in
+  e --> (fun e ->
+    e += "let step accu a = f accu %s in" $ 
+      (String.concat " " 
+        (List.map (fun x -> incr count; sprintf "~%s:(let x = a.(%i) in %s)" x.name !count (convert_from_sql module_name x))
+        native_fields))
+    );
+    e += "Sqlite3.Aggregate.create_funN db.db \"aggreg_fn\" ~init ~step ~final:(fun x -> Sqlite3.Data.BLOB (Marshal.to_string x []));";
+    e += "let sql = \"SELECT aggreg_fn(%s) FROM %s\" in" $ (String.concat "," (List.map (fun x -> x.name) native_fields)) $ module_name;
+    e += "let stmt = Sqlite3.prepare db.db sql in";
+    e += "(match step_fold db stmt";
+    e --> (fun e -> 
+      e += "(fun x -> match Sqlite3.column x 0 with";
+      e --> (fun e ->
+        e += "| Sqlite3.Data.BLOB b -> Marshal.from_string b 0";
+        e += "|_ -> assert false);";
+      );
+      e += "with [x] -> Some x  | [] -> None | _ -> assert false)";
+    )
 
 let output_module e all t =
   let foreign_fields, native_fields = partition_table_fields all t.table_name in
@@ -575,6 +611,8 @@ let output_module e all t =
     e.nl ();
     output_get_fn e all t.table_name;
     e.nl ();
+    output_aggreg_fn e all t.table_name;
+    e.nl ();
     List.iter (fun g ->
       output_get_fn_partial e all t.table_name g;
       e.nl ();
@@ -625,9 +663,17 @@ let output_module_interface e all t =
       List.iter (fun f ->
         e += "?%s:%s ->" $ f.name $ (to_ocaml_type ~always_opt:true f)
       ) native_fields;
-      e += "?custom_where:string * Sqlite3.Data.t list -> Init.t -> t list";
+    render_custom_where_sig e native_fields true;
+    e +=  "Init.t -> t list";
     );
    print_ocamldoc e ~raises "Used to retrieve objects from the database.  If an argument is specified, it is included in the search criteria (all fields are ANDed together).";
+   e.nl ();
+   e += "val aggreg :";
+   e --> (fun e ->
+     e += "init: 'a ->";
+     e += "f: ('a -> %s -> 'a) ->" $ (String.concat " -> " (List.map (fun x -> x.name^":"^to_ocaml_type ~never_opt:true x) native_fields));
+     e += "Init.t -> 'a option";
+   );
    e.nl ();
    List.iter (fun g ->
      e += "val %s :" $ (get_func_name g);
@@ -635,7 +681,8 @@ let output_module_interface e all t =
         List.iter (fun f ->
           e += "%s:%s -> " $ f.name $ (to_ocaml_type f)
         ) g.by;
-        e += "?custom_where:string * Sqlite3.Data.t list -> Init.t -> ";
+        render_custom_where_sig e (g.want @ g.by) g.want_id;
+        e += "Init.t -> ";
         match g.want_all with
         |true ->  e += "t list"
         |false -> begin 

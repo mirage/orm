@@ -11,7 +11,7 @@ export OCAMLRUNPARAM
 SOURCES=foreign.mli foreign.ml ormtest.mli ormtest.ml test.ml
 THREADS=yes
 RESULT=ormtest
-PACKS=unix sqlite3 ounit
+PACKS=unix sqlite3 oUnit str
 LIBDIRS=/opt/local/lib
 DOC_FILES=ormtest.mli
 
