@@ -416,18 +416,26 @@ let output_get_fn e all module_name =
 let output_aggreg_fn e all module_name =
   let foreign_fields, native_fields = partition_table_fields all module_name in
   e --* "General aggregate function for any of the columns";
-  e += "let aggreg ~init ~step ~marshall ~unmarshall db =";
+  e += "let aggreg ~init ~f db =";
   let count = ref (-1) in
   e --> (fun e ->
-    e += "let step accu a = step accu %s in" $ 
+    e += "let step accu a = f accu %s in" $ 
       (String.concat " " 
         (List.map (fun x -> incr count; sprintf "~%s:(let x = a.(%i) in %s)" x.name !count (convert_from_sql module_name x))
         native_fields))
     );
-    e += "Sqlite3.Aggregate.create_funN db.db \"aggreg_fn\" ~init ~step ~final:marshall;";
+    e += "Sqlite3.Aggregate.create_funN db.db \"aggreg_fn\" ~init ~step ~final:(fun x -> Sqlite3.Data.BLOB (Marshal.to_string x []));";
     e += "let sql = \"SELECT aggreg_fn(%s) FROM %s\" in" $ (String.concat "," (List.map (fun x -> x.name) native_fields)) $ module_name;
     e += "let stmt = Sqlite3.prepare db.db sql in";
-    e += "(match step_fold db stmt unmarshall with [x] -> Some x  | [] -> None | _ -> assert false)"
+    e += "(match step_fold db stmt";
+    e --> (fun e -> 
+      e += "(fun x -> match Sqlite3.column x 0 with";
+      e --> (fun e ->
+        e += "| Sqlite3.Data.BLOB b -> Marshal.from_string b 0";
+        e += "|_ -> assert false);";
+      );
+      e += "with [x] -> Some x  | [] -> None | _ -> assert false)";
+    )
 
 let output_module e all t =
   let foreign_fields, native_fields = partition_table_fields all t.table_name in
@@ -663,9 +671,7 @@ let output_module_interface e all t =
    e += "val aggreg :";
    e --> (fun e ->
      e += "init: 'a ->";
-     e += "step: ('a -> %s -> 'a) ->" $ (String.concat " -> " (List.map (fun x -> x.name^":"^to_ocaml_type ~never_opt:true x) native_fields));
-     e += "marshall:('a -> Sqlite3.Data.t) ->";
-     e += "unmarshall:(Sqlite3.stmt -> 'a) ->";
+     e += "f: ('a -> %s -> 'a) ->" $ (String.concat " -> " (List.map (fun x -> x.name^":"^to_ocaml_type ~never_opt:true x) native_fields));
      e += "Init.t -> 'a option";
    );
    e.nl ();
