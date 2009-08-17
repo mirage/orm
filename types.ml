@@ -107,7 +107,10 @@ let rec string_of_typ = function
   |Ref (_, _) -> "ref"
   |Option (_, _) -> "opt"
   |Array (_, _) -> "arr"
-  |Variant (_, _) -> "variant"
+  |Variant (_, l) -> Printf.sprintf "variant (%s)" (String.concat "| " 
+    (List.map (fun (i,ts) ->
+       Printf.sprintf "%s of %s" i 
+         (String.concat "," (List.map string_of_typ ts))) l))
   |Unit _ -> "unit"
   |PolyVar _ -> "polyvar"
   |Abstract _ -> "abstract"
