@@ -2,14 +2,14 @@ OCAMLMAKEFILE=OCamlMakefile
 
 ANNOTATE=Yes
 USE_CAMLP4=Yes
-SOURCES= error.ml types.ml parse.ml pa_sql_orm.ml
+SOURCES= error.ml types.ml parse.ml sql_types.ml pa_sql_orm.ml
 PACKS = type-conv
 RESULT = pa_sql_orm
 
 
 .PHONY: p-%
 p-%: pa_sql_orm.cma
-	camlp4of -I`ocamlc -where`/site-lib/type-conv pa_type_conv.cmo -parser pa_sql_orm.cma $*.ml
+	camlp4orf -I`ocamlc -where`/site-lib/type-conv pa_type_conv.cmo -parser pa_sql_orm.cma $*.ml
 
 r-%: pa_sql_orm.cma %.ml
 	ocamlfind ocamlc -verbose -o $@ -custom -package unix,sqlite3 -pp "camlp4orf -I `ocamlfind query type-conv` pa_type_conv.cmo pa_sql_orm.cma " unix.cma sqlite3.cma sql_access.cma $*.ml
