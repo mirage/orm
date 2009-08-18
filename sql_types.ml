@@ -123,31 +123,45 @@ let exposed_tables env =
      t.t_type = Exposed
    ) env.e_tables
 
-(* list of fields suitable for external ocaml interface *)
-let exposed_fields env t =
+(* helper fn to lookup a table in the env and apply a function to it *)
+let with_table fn env t =
   match find_table env t with
   |None -> 
     failwith (sprintf "internal error: exposed fields table '%s' not found" t)
   |Some table ->
+    fn env table
+
+(* list of fields suitable for external ocaml interface *)
+let exposed_fields =
+  with_table (fun env table ->
     List.fold_left (fun a f ->
       match f.f_ctyp with 
       |None -> a
       |Some ctyp -> (ctyp, f) :: a
     ) [] table.t_fields
+  )
 
 (* list of fields suitable for SQL statements *)
-let sql_fields env t =
-  match find_table env t with
-  |None ->
-    failwith (sprintf "internal error: exposed fields table '%s' not found" t)
-  |Some table -> begin
-    List.fold_left (fun a f ->
-      match f.f_typ with 
-      |Hidden_list -> a
-      |_ -> f :: a
-    ) [] table.t_fields
-  end
- 
+let sql_fields =
+  with_table (fun env table ->
+    List.filter (fun f -> f.f_typ <> Hidden_list) table.t_fields
+  )
+
+(* get the foreign single fields (ie foreign tables which arent lists) *)
+let foreign_single_fields =
+  with_table (fun env table ->
+    List.filter (fun f ->
+      match f.f_typ with
+      |Foreign _ -> true
+      |_ -> false
+    ) table.t_fields
+  )
+
+let foreign_id_of_field f =
+  match f.f_typ with
+  |Foreign id -> id
+  |_ -> failwith "foreign_id_of_field not got Foreign"
+
 (* --- Process functions to convert OCaml types into SQL *)
 
 exception Type_not_allowed of string
