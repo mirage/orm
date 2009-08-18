@@ -119,10 +119,46 @@ let construct_funs env =
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
      >> in
     let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
-    let init_db_binding = <:binding< $lid:fun_name$ db = $create_statements$ >> in
-   
+    (* the final init_db binding for the SQL creation function *)
+    let init_db_binding = <:binding< $lid:fun_name$ db = do { $create_statements$ } >> in
+  
+    (* the _new creation function to spawn objects of the SQL type *)
+    let fun_name = sprintf "%s_new" t.t_name in
+    let fields = exposed_fields env t.t_name in
+    let fun_args = List.map (fun (_,f) ->
+      match f.f_opt with
+      |true -> <:patt< ?($lid:f.f_name$ = None) >>
+      |false -> <:patt< ~ $lid:f.f_name$ >>
+    ) fields in 
+    let new_get_set_functions = List.flatten (List.map (fun (_,f) ->
+      let internal_var_name = sprintf "_%s" f.f_name in
+      let external_var_name = f.f_name in
+      [ 
+        <:class_str_item< value mutable $lid:internal_var_name$ = $lid:external_var_name$ >>;
+        <:class_str_item< method $lid:external_var_name$ = $lid:internal_var_name$ >>;
+        <:class_str_item< method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) >>;
+      ]
+    ) fields) in
+    let new_admin_functions =
+       [
+         <:class_str_item< method delete = failwith "delete not implemented" >>;
+         <:class_str_item< method save   = failwith "save not implemented" >>;
+       ] in
+    let new_functions = new_get_set_functions @ new_admin_functions in
+    let new_body = <:expr<
+        object
+         $Ast.crSem_of_list new_functions$;
+        end
+      >> in
+    let new_binding = function_with_label_args _loc 
+      ~fun_name 
+      ~final_ident:"db"
+      ~function_body:new_body
+      ~return_type:<:ctyp< $lid:type_name$ >>
+      fun_args in
+
     (* return single binding of all the functions for this type *)
-    Ast.biAnd_of_list [init_db_binding]
+    Ast.biAnd_of_list [init_db_binding; new_binding]
   ) tables) in
   <:str_item< value $fn_bindings$ >>
 
