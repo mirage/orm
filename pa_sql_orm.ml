@@ -86,7 +86,7 @@ open Sql_types
 let construct_typedefs env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
-  let object_decls = Ast.tyAnd_of_list (List.fold_left (fun decls t ->
+  let object_decls = Ast.tyAnd_of_list (List.fold_right (fun t decls ->
     (* define the external type name as <name>_persist *)
     let ts_name = t.t_name ^ "_persist" in
     (* define the accessor and set_accessor functions *)
@@ -100,7 +100,7 @@ let construct_typedefs env =
       <:ctyp< $lid:i$ : unit >>) ["save"; "delete"] in
     let all_fields = accessor_fields  @ other_fields in
     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >> :: decls;
-  ) [] tables) in
+  ) tables []) in
   <:str_item< type $object_decls$ >> 
 
 (* construct the functions to init the db and create objects *)
@@ -113,14 +113,14 @@ let construct_funs env =
     let type_name = sprintf "%s_persist" t.t_name in
     let fun_name = sprintf "%s_init_db" t.t_name in
 
-    let sql_decls = List.fold_left (fun a t ->
+    let sql_decls = List.fold_right (fun t a ->
       let table = find_table env t in
       let fields = sql_fields env t in
       let sql_fields = List.map (fun f ->
         sprintf "%s %s" f.f_name (string_of_sql_type f.f_typ)
       ) fields in
       sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" t (String.concat ", " sql_fields) :: a
-    ) [] (t.t_name :: t.t_child) in
+    ) (t.t_name :: t.t_child) [] in
 
     let create_table sql = <:expr<
         let sql = $str:sql$ in
@@ -154,6 +154,12 @@ let construct_funs env =
         <:binding< $lid:"_"^id^"_id"$ = $lid:id$#save >>
       ) (foreign_single_fields env t.t_name) in 
     let save_bindings = foreign_single_ids in
+    let save_main = <:binding<
+        _curobj_id = match _id with [
+         None ->  ()
+        |Some -> ()
+    ]
+    >> in
     let save_fun = biList_to_expr _loc save_bindings <:expr< () >> in
     let new_admin_functions =
        [
@@ -187,10 +193,10 @@ let () =
       prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
       let ts = parse_typedef _loc tds in
-      let env = List.fold_left (fun env t ->
+      let env = List.fold_right (fun t env ->
         let f = { Types.f_id = t.Types.td_id; f_mut = false; f_typ = t.Types.td_typ } in
         Sql_types.process env "__top" f;
-      ) Sql_types.empty_env ts in
+      ) ts Sql_types.empty_env in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with
       |_, None ->

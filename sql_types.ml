@@ -134,11 +134,11 @@ let with_table fn env t =
 (* list of fields suitable for external ocaml interface *)
 let exposed_fields =
   with_table (fun env table ->
-    List.fold_left (fun a f ->
+    List.fold_right (fun f a ->
       match f.f_ctyp with 
       |None -> a
       |Some ctyp -> (ctyp, f) :: a
-    ) [] table.t_fields
+    ) table.t_fields []
   )
 
 (* list of fields suitable for SQL statements *)
@@ -189,7 +189,7 @@ let rec process ?(opt=false) ?(ctyp=None) env t ml_field =
     let env = new_table ~name:n ~fields:[] ~parent:None env in
     (* process the fields in the new record *)
     let env = add_field ~opt:false ~ctyp:None env t "id" Auto_id in
-    List.fold_left (fun env field -> process env n field) env fl
+    List.fold_right (fun field env -> process env n field) fl env
   |Types.Array (_,ty)
   |Types.List (_,ty)   ->
     (* create a new table for the list lookup *)
