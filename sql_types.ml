@@ -194,11 +194,11 @@ let rec process ?(opt=false) ?(ctyp=None) env t ml_field =
   |Types.String _      -> add_field ~opt ~ctyp env t n Text 
   (* complex types *)
   |Types.Apply(_,[],id,[]) ->
-    add_field ~opt ~ctyp env t (n ^ "_id") (Foreign id)
+    add_field ~opt ~ctyp env t n (Foreign id)
   |Types.Record (loc,fl)
   |Types.Object (loc,fl) -> 
     (* add an id to the current table *)
-    let env = add_field ~opt ~ctyp env t (n ^ "_id") (Foreign n) in
+    let env = add_field ~opt ~ctyp env t n (Foreign n) in
     (* add a new table to the environment *)
     let env = new_table ~name:n ~fields:[] ~parent:None env in
     (* process the fields in the new record *)
@@ -212,7 +212,7 @@ let rec process ?(opt=false) ?(ctyp=None) env t ml_field =
     let env = new_table ~name:t' ~fields:[] ~parent:(Some t) env in
     (* add in the list fields to the new table *)
     let env = add_field ~opt ~ctyp env t n Hidden_list in
-    let env = add_field ~opt ~ctyp env t' (t ^ "_id") (Foreign t) in
+    let env = add_field ~opt ~ctyp env t' t (Foreign t) in
     let env = add_field ~opt ~ctyp env t' "_idx" Int in
     process env t' { ml_field with Types.f_typ=ty }
   |Types.Tuple (_,tyl) ->
