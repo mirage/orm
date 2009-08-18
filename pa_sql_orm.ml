@@ -55,6 +55,14 @@ let function_with_label_args _loc ~fun_name ~final_ident ~function_body ~return_
         <:expr<fun $b$ -> $a$ >>
        ) opt_args <:expr< ( $function_body$ : $return_type$ ) >>
       $ >>
+
+(* convert a list of bindings into an expr fragment:
+   let x = 1 in y = 2 in z = 3 in ()
+*)
+let biList_to_expr _loc bindings final =
+  List.fold_right (fun b a -> 
+    <:expr< let $b$ in $a$ >>
+  ) bindings final
    
 (* convert an exposed ocaml type into an AST ctyp fragment *)
 let rec ast_of_caml_type _loc = function
@@ -139,10 +147,18 @@ let construct_funs env =
         <:class_str_item< method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) >>;
       ]
     ) fields) in
+
+    (* implement the save function *)
+    let foreign_single_ids = List.map (fun f ->
+        let id = foreign_id_of_field f in
+        <:binding< $lid:"_"^id^"_id"$ = $lid:id$#save >>
+      ) (foreign_single_fields env t.t_name) in 
+    let save_bindings = foreign_single_ids in
+    let save_fun = biList_to_expr _loc save_bindings <:expr< () >> in
     let new_admin_functions =
        [
          <:class_str_item< method delete = failwith "delete not implemented" >>;
-         <:class_str_item< method save   = failwith "save not implemented" >>;
+         <:class_str_item< method save   = $save_fun$ >>;
        ] in
     let new_functions = new_get_set_functions @ new_admin_functions in
     let new_body = <:expr<
