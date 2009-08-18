@@ -162,6 +162,20 @@ let foreign_id_of_field f =
   |Foreign id -> id
   |_ -> failwith "foreign_id_of_field not got Foreign"
 
+(* retrieve the single Auto_id field from a table *)
+let auto_id_field =
+  with_table (fun env table ->
+    match List.filter (fun f -> f.f_typ = Auto_id) table.t_fields with
+    |[f] -> begin 
+      match f.f_ctyp with
+      |None -> failwith (sprintf "auto_id_field: %s: no ctyp for id" table.t_name)
+      |Some ctyp -> ctyp, f
+    end  
+    |[] -> failwith (sprintf "auto_id_field: %s: no entry" table.t_name)
+    |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
+ 
+  )
+
 (* --- Process functions to convert OCaml types into SQL *)
 
 exception Type_not_allowed of string
@@ -181,14 +195,14 @@ let rec process ?(opt=false) ?(ctyp=None) env t ml_field =
   (* complex types *)
   |Types.Apply(_,[],id,[]) ->
     add_field ~opt ~ctyp env t (n ^ "_id") (Foreign id)
-  |Types.Record (_,fl)
-  |Types.Object (_,fl) -> 
+  |Types.Record (loc,fl)
+  |Types.Object (loc,fl) -> 
     (* add an id to the current table *)
     let env = add_field ~opt ~ctyp env t (n ^ "_id") (Foreign n) in
     (* add a new table to the environment *)
     let env = new_table ~name:n ~fields:[] ~parent:None env in
     (* process the fields in the new record *)
-    let env = add_field ~opt:false ~ctyp:None env t "id" Auto_id in
+    let env = add_field ~opt:true ~ctyp:(Some (Types.Int64 loc)) env n "id" Auto_id in
     List.fold_right (fun field env -> process env n field) fl env
   |Types.Array (_,ty)
   |Types.List (_,ty)   ->
