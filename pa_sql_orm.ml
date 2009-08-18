@@ -77,6 +77,7 @@ let rec ast_of_caml_type _loc = function
   |Types.List (_,ty) -> <:ctyp< list $ast_of_caml_type _loc ty$ >>
   |Types.Array (_,ty) -> <:ctyp< array $ast_of_caml_type _loc ty$ >>
   |Types.Option (_,ty) -> <:ctyp< option $ast_of_caml_type _loc ty$ >>
+  |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id^"_persist"$ >>
   |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
 
 open Sql_types
@@ -114,7 +115,6 @@ let construct_funs env =
     let fun_name = sprintf "%s_init_db" t.t_name in
 
     let sql_decls = List.fold_right (fun t a ->
-      let table = find_table env t in
       let fields = sql_fields env t in
       let sql_fields = List.map (fun f ->
         sprintf "%s %s" f.f_name (string_of_sql_type f.f_typ)
@@ -150,16 +150,18 @@ let construct_funs env =
 
     (* implement the save function *)
     let foreign_single_ids = List.map (fun f ->
-        let id = foreign_id_of_field f in
-        <:binding< $lid:"_"^id^"_id"$ = $lid:id$#save >>
+        let id = f.f_name in
+        <:binding< $lid:"_"^id^"_id"$ = self#$lid:id$#save >>
       ) (foreign_single_fields env t.t_name) in 
-    let save_bindings = foreign_single_ids in
+  
+    let save_new_record = <:expr< prerr_endline "new" >> in 
     let save_main = <:binding<
         _curobj_id = match _id with [
-         None ->  ()
-        |Some -> ()
-    ]
+         None ->  $save_new_record$
+        |Some _ -> ()
+        ]
     >> in
+    let save_bindings =  foreign_single_ids @ [ save_main ] in
     let save_fun = biList_to_expr _loc save_bindings <:expr< () >> in
     let new_admin_functions =
        [
@@ -168,7 +170,7 @@ let construct_funs env =
        ] in
     let new_functions = new_get_set_functions @ new_admin_functions in
     let new_body = <:expr<
-        object
+        object(self)
          $Ast.crSem_of_list new_functions$;
         end
       >> in
