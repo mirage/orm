@@ -99,6 +99,7 @@ let new_table ~name ~fields ~parent env =
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~opt ~ctyp env t field_name field_type =
+  let ctyp = match ctyp,opt with |Some ctyp,true -> Some (Types.Option (Types.loc_of_typ ctyp, ctyp)) |_ -> ctyp in
   let field = { f_name=field_name; f_typ=field_type; f_opt=opt; f_ctyp=ctyp } in
   match find_table env t with
   |Some table -> begin

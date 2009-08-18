@@ -85,12 +85,7 @@ let construct_typedefs env =
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun (ty,f) ->
       let ctyp = ast_of_caml_type _loc ty in
-      match f.f_opt with
-      |true -> [
-       <:ctyp< $lid:f.f_name$ : option $ctyp$ >> ;
-       <:ctyp< $lid:"set_" ^ f.f_name$ : option $ctyp$ -> unit >> ]
-      |false -> [
-       <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
+      [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
        <:ctyp< $lid:"set_" ^ f.f_name$ : $ctyp$ -> unit >> ]
     ) fields) in
     let other_fields = List.map (fun i ->
