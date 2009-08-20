@@ -140,11 +140,16 @@ let construct_funs env =
     ) fields in 
     let new_get_set_functions = List.flatten (List.map (fun (_,f) ->
       let internal_var_name = sprintf "_%s" f.f_name in
-      let external_var_name = f.f_name in
-      [ 
-        <:class_str_item< value mutable $lid:internal_var_name$ = $lid:external_var_name$ >>;
-        <:class_str_item< method $lid:external_var_name$ = $lid:internal_var_name$ >>;
-        <:class_str_item< method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) >>;
+      let external_var_name = f.f_name in [
+        <:class_str_item<
+          value mutable $lid:internal_var_name$ = $lid:external_var_name$
+        >>;
+        <:class_str_item< 
+          method $lid:external_var_name$ = $lid:internal_var_name$ 
+        >>;
+        <:class_str_item< 
+          method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) 
+        >>;
       ]
     ) fields) in
 
