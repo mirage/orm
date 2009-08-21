@@ -63,7 +63,7 @@ let biList_to_expr _loc bindings final =
   List.fold_right (fun b a -> 
     <:expr< let $b$ in $a$ >>
   ) bindings final
-   
+  
 (* convert an exposed ocaml type into an AST ctyp fragment *)
 let rec ast_of_caml_type _loc = function
   |Types.Unit _    -> <:ctyp< unit >>
@@ -81,6 +81,33 @@ let rec ast_of_caml_type _loc = function
   |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
 
 open Sql_types
+
+let id_expr_of_field _loc f =
+  <:expr< $lid:"_"^f.f_name$ >>
+
+(* convert a field to a Sqlite3.Data fragment *)
+let field_to_sql_data _loc f id =
+  let ctyp = match f.f_ctyp with |None -> assert false |Some c -> c in
+  let rec simple_type = function
+    |Types.Unit _ -> <:expr< Sqlite3.Data.INT 1L >>
+    |Types.Int _ -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
+    |Types.Int32 _ -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
+    |Types.Int64 _ -> <:expr< Sqlite3.Data.INT $id$ >>
+    |Types.Float _ -> <:expr< Sqlite3.Data.REAL $id$ >>
+    |Types.Char _ -> <:expr< Sqlite3.Data.INT (Char.code $id$) >>
+    |Types.String _ -> <:expr< Sqlite3.Data.TEXT $id$ >>
+    |Types.Bool _ -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+    |x -> failwith ("field_to_sql_data: " ^ (Types.string_of_typ x))
+  in
+  match ctyp with
+  |Types.Option (_,ty) ->
+    <:expr< match $id$ with [ 
+       None -> Sqlite3.Data.NULL
+      |Some $lid:"_"^f.f_name$ -> $simple_type ty$ 
+    ] >>
+  |Types.Apply (_,[],id,[]) -> 
+    <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
+  |x -> simple_type x
 
 (* declare the types of the _persist objects used to pass SQL
    objects back and forth *)
@@ -153,21 +180,50 @@ let construct_funs env =
       ]
     ) fields) in
 
-    (* implement the save function *)
+    (* -- implement the save function *)
+
+    (* bindings for the ids of all the foreign-single fields *)
     let foreign_single_ids = List.map (fun f ->
         let id = f.f_name in
         <:binding< $lid:"_"^id^"_id"$ = self#$lid:id$#save >>
       ) (foreign_single_fields env t.t_name) in 
-  
-    let save_new_record = <:expr< prerr_endline "new" >> in 
+    (* the INSERT statement for this object *)
+    let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
+      (String.concat "," (List.map (fun f -> 
+        if f.f_typ = Auto_id then "NULL" else "?") (sql_fields env t.t_name))) in
+    (* Bind any tuples to individual variables first *)
+    let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
+       let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
+       <:binding< $tup:paCom_of_list fl$ = $lid:"_"^n'$ >> :: a
+    ) (tuple_fields env t.t_name) [] in
+    (* the Sqlite3.bind for each simple statement *)
+    let sql_bind_pos = ref 0 in
+    let sql_bind_binding = List.map (fun f ->
+       incr sql_bind_pos;
+       let id = id_expr_of_field _loc f in
+       let v = field_to_sql_data _loc f id in
+       <:binding< 
+        () = Sql_access.db_must_ok db (fun () -> 
+               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$
+          )
+       >>
+    ) (sql_fields_no_autoid env t.t_name) in
     let save_main = <:binding<
-        _curobj_id = match _id with [
-         None ->  $save_new_record$
+       _curobj_id = match _id with [
+         None -> $biList_to_expr _loc (
+          <:binding< stmt = Sqlite3.prepare db.Sql_access.db $str:insert_sql$ >>
+            :: tuple_bind_binding @ sql_bind_binding) 
+            <:expr< do { 
+              _id := Some (Sqlite3.last_insert_rowid db.Sql_access.db); _id 
+            } >>
+          $
         |Some _ -> ()
-        ]
+      ]
     >> in
     let save_bindings =  foreign_single_ids @ [ save_main ] in
     let save_fun = biList_to_expr _loc save_bindings <:expr< () >> in
+
+    (* -- hook in the admin functions (save/delete) *)
     let new_admin_functions =
        [
          <:class_str_item< method delete = failwith "delete not implemented" >>;
