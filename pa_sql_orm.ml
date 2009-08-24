@@ -259,7 +259,7 @@ let construct_init env =
   (* XXX default name until its parsed into environment *)
   let name = "orm" in
   <:str_item<
-    value init_db db_name = 
+    value $lid:name^"_init_db"$ db_name = 
       let db = Sql_access.new_state db_name in
       do {
         $exSem_of_list (List.map (fun t ->
