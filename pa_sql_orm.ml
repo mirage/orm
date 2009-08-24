@@ -192,15 +192,30 @@ let construct_funs env =
         let id = f.f_name in
         <:binding< $lid:"_"^id^"_id"$ = self#$lid:id$#save >>
       ) (foreign_single_fields env t.t_name) in 
+
+    (* helper function to do a Sqlite3.prepare from some SQL text *)
+    let prepare_stmt sql = 
+      <:binding< stmt = Sqlite3.prepare db.Sql_access.db $str:sql$ >> in
+
     (* the INSERT statement for this object *)
-    let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
+    let insert_sql_stmt = prepare_stmt (sprintf "INSERT INTO %s VALUES(%s);" t.t_name
       (String.concat "," (List.map (fun f -> 
-        if f.f_info = Internal_autoid then "NULL" else "?") (sql_fields env t.t_name))) in
+        if f.f_info = Internal_autoid then "NULL" else "?") (sql_fields env t.t_name)))) in
+
+    (* the UPDATE statement for this object *)
+    let update_sql = String.concat "," (List.map (fun f ->
+        sprintf "%s=?" f.f_name
+      ) (sql_fields_no_autoid env t.t_name)) in
+
+    let update_sql_stmt = prepare_stmt (sprintf "UPDATE %s SET %s WHERE id=?"
+      t.t_name update_sql) in
+    
     (* Bind any tuples to individual variables first *)
     let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
        let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
        <:binding< $tup:paCom_of_list fl$ = $lid:"_"^n'$ >> :: a
     ) (tuple_fields env t.t_name) [] in
+
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_binding = List.map (fun f ->
@@ -213,20 +228,38 @@ let construct_funs env =
           )
        >>
     ) (sql_fields_no_autoid env t.t_name) in
+
+    (* last binding for update statement which also needs an id at the end *)
+    incr sql_bind_pos;
+    let update_bind_binding = 
+      <:binding<
+        () = Sql_access.db_must_ok db (fun () ->
+               Sqlite3.bind stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT id))
+      >> in
+
+    let foreign_many = [] in
+
+    (* the main save function *)
     let save_main = <:binding<
        _curobj_id = match _id with [
-         None -> $biList_to_expr _loc (
-          <:binding< stmt = Sqlite3.prepare db.Sql_access.db $str:insert_sql$ >>
-            :: tuple_bind_binding @ sql_bind_binding) 
+         None -> $biList_to_expr _loc 
+           (insert_sql_stmt :: tuple_bind_binding @ sql_bind_binding) 
             <:expr<
+              do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt) };
               let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
               do { _id := Some __id; __id }
             >>
           $
-        |Some _ -> 0L
+        |Some id -> $biList_to_expr _loc
+           (update_sql_stmt :: tuple_bind_binding @ sql_bind_binding @ [update_bind_binding])
+           <:expr<
+             do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt) };
+             id
+           >>
+          $
       ]
     >> in
-    let save_bindings =  foreign_single_ids @ [ save_main ] in
+    let save_bindings =  foreign_single_ids @ [ save_main ] @ foreign_many in
     let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)
