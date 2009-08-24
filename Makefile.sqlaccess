@@ -5,4 +5,8 @@ SOURCES= sql_access.ml
 PACKS = sqlite3
 RESULT = sql_access
 
+.PHONY: all
+all: dcl
+	@:
+
 include $(OCAMLMAKEFILE)
