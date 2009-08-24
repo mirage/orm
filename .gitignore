@@ -26,6 +26,7 @@ doc/
 tests/*.db
 c_*.ml
 pc_*.ml
+pi_*.ml
 *.db
 *_debug.ml
 *_debug.mli

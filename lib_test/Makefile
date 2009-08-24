@@ -6,7 +6,7 @@ P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/si
 TESTS := simple tuple foreign variant
 
 .PHONY: all
-all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=i_%)
+all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
 	@ :
 
 ../pa_sql_orm.cma: ../pa_sql_orm.ml ../sql_types.ml
@@ -44,6 +44,11 @@ i_%: %.ml ../pa_sql_orm.cma
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma pa_sql_orm.cma" \
 	  $(BUILDINC) unix.cma sqlite3.cma sql_access.cma $*.ml
 
+# pi_% prints to a temporary file and then displays the Ocaml interface
+pi_%: %.ml ../pa_sql_orm.cma
+	camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
+	ocamlfind ocamlc -verbose -i -custom -package unix,sqlite3 -I .. unix.cma sqlite3.cma sql_access.cma $@.ml
+	
 .PHONY: clean
 clean:
-	rm -f pc_* c_* *.cmo *.cma *.db *.cmi
+	rm -f pc_* c_* pi_* *.cmo *.cma *.db *.cmi
