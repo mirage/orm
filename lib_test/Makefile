@@ -3,20 +3,23 @@
 BUILDINC := -I ../
 P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/site-lib/sqlite3 $(BUILDINC)
 
-TESTS := simple tuple variant
+TESTS := simple tuple foreign variant
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=i_%)
 	@ :
 
+../pa_sql_orm.cma: ../pa_sql_orm.ml ../sql_types.ml
+	cd .. && $(MAKE) -f Makefile.camlp4 clean pa_sql_orm.cma
+
 # p_% prints out the process ML file to stdout
 .PHONY: p_%
-p_%:
+p_%: ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma -parser ../pa_sql_orm.cma -printer o $*.ml
 
 # pc_% compiles it via a temporary ML file (pc_%.ml) so that locations in generated code can be
 # seen in error messages as a debugging aid
-pc_%: %.ml
+pc_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
 	ocamlfind ocamlc -verbose -o $@ -custom -package unix,sqlite3 -I .. unix.cma sqlite3.cma sql_access.cma $@.ml
 
@@ -25,7 +28,7 @@ pr_%: pc_%
 	@./$<
 
 # c_% compiles the ML file directly by invoking camlp4 as -pp (how it is used in production)
-c_%: %.ml
+c_%: %.ml ../pa_sql_orm.cma
 	ocamlfind ocamlc -verbose -o $@ -custom -package unix,sqlite3 \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma pa_sql_orm.cma " \
 	  $(BUILDINC) unix.cma sqlite3.cma sql_access.cma $*.ml
