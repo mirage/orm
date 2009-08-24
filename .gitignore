@@ -8,6 +8,8 @@
 *.cmi
 *.swp
 *.opt
+*.a
+*.cmxa
 test_schema_generate
 /tests/ormtest
 /tests/ormtest.ml
@@ -22,3 +24,8 @@ test.db
 sql_orm_header.ml
 doc/
 tests/*.db
+c_*.ml
+pc_*.ml
+*.db
+*_debug.ml
+*_debug.mli
