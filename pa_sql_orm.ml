@@ -64,6 +64,14 @@ let biList_to_expr _loc bindings final =
     <:expr< let $b$ in $a$ >>
   ) bindings final
 
+(* List.map with the integer position passed to the function *)
+let mapi fn =
+  let pos = ref 0 in
+  List.map (fun x ->
+    incr pos;
+    fn !pos x
+  ) 
+    
 (* convert an exposed ocaml type into an AST ctyp fragment *)
 let rec ast_of_caml_type _loc = function
   |Types.Unit _    -> <:ctyp< unit >>
@@ -210,11 +218,39 @@ let construct_funs env =
     let update_sql_stmt = prepare_stmt (sprintf "UPDATE %s SET %s WHERE id=?"
       t.t_name update_sql) in
     
-    (* Bind any tuples to individual variables first *)
+    (* Bind any tuples to individual variables *)
     let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
        let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
        <:binding< $tup:paCom_of_list fl$ = $lid:"_"^n'$ >> :: a
     ) (tuple_fields env t.t_name) [] in
+
+    (* Bind any variants to individual variables *)
+    let variant_bind_binding = Hashtbl.fold (fun n' (fl',tyname) a ->
+      (* create the tuple bindings to receive the values *)
+      let fl = <:patt< $lid:"_"^n'^"_id"$ >> :: 
+        List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
+      (* create the match cases for each of the variant values *)
+      let variant_matches = mapi (fun pos (id,vtl) ->
+          (* correlate the field position to the earlier tuple binding 
+             and return the appropriate arg for that position *)
+          let matchex =
+             <:expr< $`int64:Int64.of_int pos$ >> :: 
+             mapi (fun pos' _ -> 
+               if pos' + 1 = pos then
+                 <:expr< Some args >>
+               else
+                 <:expr< None >>
+             ) fl' in
+          match vtl with
+          |[] -> <:match_case< $uid:id$ -> $tup:exCom_of_list matchex$ >>
+          |_ ->  <:match_case< $uid:id$ args -> $tup:exCom_of_list matchex$ >>
+        ) (variant_ctyp_of_table env tyname) in
+      (* final binding for the variant matching *)
+      <:binding< 
+          $tup:paCom_of_list fl$ = match $lid:"_"^n'$ with [
+            $mcOr_of_list variant_matches$
+          ] >> :: a
+    ) (variant_fields env t.t_name) [] in
 
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
@@ -241,7 +277,7 @@ let construct_funs env =
     let save_main = <:binding<
        _curobj_id = match _id with [
          None -> $biList_to_expr _loc 
-           (insert_sql_stmt :: tuple_bind_binding)
+           (insert_sql_stmt :: tuple_bind_binding @ variant_bind_binding) 
             <:expr<
               do {
                 $exSem_of_list sql_bind_expr$;
@@ -252,7 +288,7 @@ let construct_funs env =
             >>
           $
         |Some id -> $biList_to_expr _loc
-           (update_sql_stmt :: tuple_bind_binding)
+           (update_sql_stmt :: tuple_bind_binding @ variant_bind_binding)
            <:expr<
              do { 
                $exSem_of_list sql_bind_expr$;

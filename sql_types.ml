@@ -32,8 +32,8 @@ type field_info =
   |External_and_internal_field
   |External_field
   |Internal_field
-  |Internal_tuple_field of string * int (* is a tuple to field string at pos int *)
-  |Internal_variant_field of string * int
+  |Internal_tuple_field of string * int (* field * pos *)
+  |Internal_variant_field of string * int * string (* field * pos * type name *)
   |Internal_autoid
   |External_foreign of string
 
@@ -74,7 +74,7 @@ let string_of_field_info = function
   |Internal_field -> "I"
   |External_foreign f -> sprintf "F[%s]" f
   |Internal_tuple_field (s,i) -> sprintf "T%d" i
-  |Internal_variant_field (s,i) -> sprintf "V%d" i
+  |Internal_variant_field (s,i,t) -> sprintf "V%d" i
   |Internal_autoid -> "A"
 
 let string_of_field f =
@@ -222,6 +222,13 @@ let ctyp_of_field f =
   |None -> failwith ("ctyp_of_field: " ^ f.f_name)
   |Some c -> c
 
+let variant_ctyp_of_table =
+  with_table (fun env table ->
+    match table.t_type with
+    |Variant v -> v
+    |_ -> failwith "variant_ctyp_of_table: not Variant"
+  )
+
 (* retrieve fields which came from a tuple and group them by name *)
 let tuple_fields =
   with_table (fun env table ->
@@ -235,6 +242,21 @@ let tuple_fields =
     ) table.t_fields;
     h
   )
+
+(* retrieve fields which came from a variant and group by name *)
+let variant_fields =
+  with_table (fun env table ->
+    let h = Hashtbl.create 1 in
+    List.iter (fun f -> match f.f_info with
+      |Internal_variant_field (n,pos,tyname) -> begin
+        let l,_ = try Hashtbl.find h n with Not_found -> [],"" in
+        Hashtbl.replace h n ((f::l),tyname)
+      end
+      |_ -> ()
+    ) table.t_fields;
+    h
+  ) 
+
 (* --- Process functions to convert OCaml types into SQL *)
 
 exception Type_not_allowed of string
@@ -279,8 +301,8 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) en
           |1 -> 
             let ty = List.hd tyl' in
             incr i;
-            let info = Internal_variant_field (ml_field.Types.f_id, !i) in
-            process ~info env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
+            let info = Internal_variant_field (ml_field.Types.f_id, !i, app_table.t_name) in
+            process ~info ~opt:true env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
           |_ -> failwith "cant handle variants with type-list > 1 (what are they?)"
        ) env vty
     end
