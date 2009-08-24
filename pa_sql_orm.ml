@@ -63,7 +63,7 @@ let biList_to_expr _loc bindings final =
   List.fold_right (fun b a -> 
     <:expr< let $b$ in $a$ >>
   ) bindings final
-  
+
 (* convert an exposed ocaml type into an AST ctyp fragment *)
 let rec ast_of_caml_type _loc = function
   |Types.Unit _    -> <:ctyp< unit >>
@@ -78,6 +78,7 @@ let rec ast_of_caml_type _loc = function
   |Types.Array (_,ty) -> <:ctyp< array $ast_of_caml_type _loc ty$ >>
   |Types.Option (_,ty) -> <:ctyp< option $ast_of_caml_type _loc ty$ >>
   |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id^"_persist"$ >>
+  |Types.Tuple (_, tyl) -> <:ctyp< $tup:tySta_of_list (List.map (ast_of_caml_type _loc) tyl)$ >>
   |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
 
 open Sql_types
@@ -94,7 +95,7 @@ let field_to_sql_data _loc f id =
     |Types.Int32 _ -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
     |Types.Int64 _ -> <:expr< Sqlite3.Data.INT $id$ >>
     |Types.Float _ -> <:expr< Sqlite3.Data.REAL $id$ >>
-    |Types.Char _ -> <:expr< Sqlite3.Data.INT (Char.code $id$) >>
+    |Types.Char _ -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
     |Types.String _ -> <:expr< Sqlite3.Data.TEXT $id$ >>
     |Types.Bool _ -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
     |x -> failwith ("field_to_sql_data: " ^ (Types.string_of_typ x))
@@ -119,13 +120,15 @@ let construct_typedefs env =
     let ts_name = t.t_name ^ "_persist" in
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
-    let accessor_fields = List.flatten (List.map (fun (ty,f) ->
-      let ctyp = ast_of_caml_type _loc ty in
+    let accessor_fields = List.flatten (List.map (fun f ->
+      let ctyp = ast_of_caml_type _loc (ctyp_of_field f) in
       [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
        <:ctyp< $lid:"set_" ^ f.f_name$ : $ctyp$ -> unit >> ]
     ) fields) in
-    let other_fields = List.map (fun i ->
-      <:ctyp< $lid:i$ : unit >>) ["save"; "delete"] in
+    let other_fields = [
+      <:ctyp< save: int64 >>;
+      <:ctyp< delete: unit >>;
+    ] in
     let all_fields = accessor_fields  @ other_fields in
     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >> :: decls;
   ) tables []) in
@@ -137,14 +140,15 @@ let construct_funs env =
   let tables = exposed_tables env in
   (* output the function bindings *)
   let fn_bindings = Ast.biAnd_of_list (List.map (fun t ->
+    (* open function to first access a sqlite3 db *)
+    let init_fun_name = sprintf "%s_init_db" t.t_name in
     (* init function to initalize sqlite database *)
     let type_name = sprintf "%s_persist" t.t_name in
-    let fun_name = sprintf "%s_init_db" t.t_name in
 
     let sql_decls = List.fold_right (fun t a ->
       let fields = sql_fields env t in
       let sql_fields = List.map (fun f ->
-        sprintf "%s %s" f.f_name (string_of_sql_type f.f_typ)
+        sprintf "%s %s" f.f_name (string_of_sql_type f)
       ) fields in
       sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" t (String.concat ", " sql_fields) :: a
     ) (t.t_name :: t.t_child) [] in
@@ -155,21 +159,22 @@ let construct_funs env =
      >> in
     let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
     (* the final init_db binding for the SQL creation function *)
-    let init_db_binding = <:binding< $lid:fun_name$ db = do { $create_statements$ } >> in
+    let init_db_binding = <:binding< $lid:init_fun_name$ db = do { $create_statements$ } >> in
   
     (* the _new creation function to spawn objects of the SQL type *)
-    let fun_name = sprintf "%s_new" t.t_name in
+    let new_fun_name = sprintf "%s_new" t.t_name in
     let fields = exposed_fields env t.t_name in
-    let fun_args = List.map (fun (_,f) ->
+    let fun_args = List.map (fun f ->
       match f.f_opt with
       |true -> <:patt< ?($lid:f.f_name$ = None) >>
       |false -> <:patt< ~ $lid:f.f_name$ >>
     ) fields in 
-    let new_get_set_functions = List.flatten (List.map (fun (_,f) ->
+    let new_get_set_functions = List.flatten (List.map (fun f ->
+      let cty = ast_of_caml_type _loc (ctyp_of_field f) in
       let internal_var_name = sprintf "_%s" f.f_name in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ = $lid:external_var_name$
+          value mutable $lid:internal_var_name$ : $cty$ = $lid:external_var_name$
         >>;
         <:class_str_item< 
           method $lid:external_var_name$ = $lid:internal_var_name$ 
@@ -190,7 +195,7 @@ let construct_funs env =
     (* the INSERT statement for this object *)
     let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
       (String.concat "," (List.map (fun f -> 
-        if f.f_typ = Auto_id then "NULL" else "?") (sql_fields env t.t_name))) in
+        if f.f_info = Internal_autoid then "NULL" else "?") (sql_fields env t.t_name))) in
     (* Bind any tuples to individual variables first *)
     let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
        let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
@@ -213,15 +218,16 @@ let construct_funs env =
          None -> $biList_to_expr _loc (
           <:binding< stmt = Sqlite3.prepare db.Sql_access.db $str:insert_sql$ >>
             :: tuple_bind_binding @ sql_bind_binding) 
-            <:expr< do { 
-              _id := Some (Sqlite3.last_insert_rowid db.Sql_access.db); _id 
-            } >>
+            <:expr<
+              let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
+              do { _id := Some __id; __id }
+            >>
           $
-        |Some _ -> ()
+        |Some _ -> 0L
       ]
     >> in
     let save_bindings =  foreign_single_ids @ [ save_main ] in
-    let save_fun = biList_to_expr _loc save_bindings <:expr< () >> in
+    let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)
     let new_admin_functions =
@@ -236,7 +242,7 @@ let construct_funs env =
         end
       >> in
     let new_binding = function_with_label_args _loc 
-      ~fun_name 
+      ~fun_name:new_fun_name
       ~final_ident:"db"
       ~function_body:new_body
       ~return_type:<:ctyp< $lid:type_name$ >>
@@ -246,6 +252,22 @@ let construct_funs env =
     Ast.biAnd_of_list [init_db_binding; new_binding]
   ) tables) in
   <:str_item< value $fn_bindings$ >>
+
+(* An initialization function for the whole group of statements *)
+let construct_init env =
+  let _loc = Loc.ghost in
+  (* XXX default name until its parsed into environment *)
+  let name = "orm" in
+  <:str_item<
+    value init_db db_name = 
+      let db = Sql_access.new_state db_name in
+      do {
+        $exSem_of_list (List.map (fun t ->
+            <:expr< $lid:t.t_name ^ "_init_db"$ db >>
+          ) (exposed_tables env))$;
+        db
+      };
+  >>
 
 (* Register the persist keyword with type-conv *)
 let () =
@@ -268,6 +290,7 @@ let () =
         let _loc = Loc.ghost in
         <:str_item<
           $construct_typedefs env$;
-          $construct_funs env$
+          $construct_funs env$;
+          $construct_init env$
         >>
       )

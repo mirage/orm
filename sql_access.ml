@@ -32,7 +32,10 @@ type state = {
 
 let default_busyfn (db:Sqlite3.db) =
     print_endline "WARNING: busy";
-    Thread.delay (Random.float 1.)
+    Unix.sleep 1
+
+let new_state name =
+    { db=db_open name; in_transaction=0; busyfn=default_busyfn; mode=`Deferred }
 
 let raise_sql_error x =
     raise (Sqlite3.Error (Rc.to_string x))
