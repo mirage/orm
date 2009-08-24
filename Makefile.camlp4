@@ -2,7 +2,7 @@ OCAMLMAKEFILE=OCamlMakefile
 
 ANNOTATE=Yes
 USE_CAMLP4=Yes
-SOURCES= error.ml types.ml parse.ml sql_access.ml sql_types.ml pa_sql_orm.ml
+SOURCES= error.ml types.ml parse.ml sql_types.ml pa_sql_orm.ml
 PACKS = type-conv sqlite3
 RESULT = pa_sql_orm
 
