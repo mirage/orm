@@ -218,22 +218,20 @@ let construct_funs env =
 
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
-    let sql_bind_binding = List.map (fun f ->
+    let sql_bind_expr = List.map (fun f ->
        incr sql_bind_pos;
        let id = id_expr_of_field _loc f in
        let v = field_to_sql_data _loc f id in
-       <:binding< 
-        () = Sql_access.db_must_ok db (fun () -> 
-               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$
-          )
+       <:expr< 
+        Sql_access.db_must_ok db (fun () -> 
+               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
        >>
     ) (sql_fields_no_autoid env t.t_name) in
 
     (* last binding for update statement which also needs an id at the end *)
     incr sql_bind_pos;
-    let update_bind_binding = 
-      <:binding<
-        () = Sql_access.db_must_ok db (fun () ->
+    let update_bind_expr =  <:expr< 
+        Sql_access.db_must_ok db (fun () ->
                Sqlite3.bind stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT id))
       >> in
 
@@ -243,9 +241,10 @@ let construct_funs env =
     let save_main = <:binding<
        _curobj_id = match _id with [
          None -> $biList_to_expr _loc 
-           (insert_sql_stmt :: tuple_bind_binding @ sql_bind_binding) 
+           (insert_sql_stmt :: tuple_bind_binding)
             <:expr<
               do {
+                $exSem_of_list sql_bind_expr$;
                 Sql_access.db_must_done db (fun () -> Sqlite3.step stmt);
                 let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
                 do { _id := Some __id; __id }
@@ -253,9 +252,14 @@ let construct_funs env =
             >>
           $
         |Some id -> $biList_to_expr _loc
-           (update_sql_stmt :: tuple_bind_binding @ sql_bind_binding @ [update_bind_binding])
+           (update_sql_stmt :: tuple_bind_binding)
            <:expr<
-             do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt); id }
+             do { 
+               $exSem_of_list sql_bind_expr$;
+               $update_bind_expr$;
+               Sql_access.db_must_done db (fun () -> Sqlite3.step stmt); 
+               id 
+             }
            >>
           $
       ]
