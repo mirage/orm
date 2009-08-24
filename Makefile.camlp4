@@ -11,6 +11,10 @@ RESULT = pa_sql_orm
 p-%: pa_sql_orm.cma
 	camlp4orf -I`ocamlc -where`/site-lib/type-conv pa_type_conv.cmo -parser pa_sql_orm.cma $*.ml
 
+pr-%: pa_sql_orm.cma
+	camlp4orf -I`ocamlc -where`/site-lib/type-conv pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
+	ocamlfind ocamlc -verbose -o $@ -custom -package unix,sqlite3 unix.cma sqlite3.cma sql_access.cma $@.ml
+
 r-%: pa_sql_orm.cma %.ml
 	ocamlfind ocamlc -verbose -o $@ -custom -package unix,sqlite3 -pp "camlp4orf -I `ocamlfind query type-conv` pa_type_conv.cmo pa_sql_orm.cma " unix.cma sqlite3.cma sql_access.cma $*.ml
 
