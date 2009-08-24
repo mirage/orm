@@ -77,7 +77,7 @@ let rec ast_of_caml_type _loc = function
   |Types.List (_,ty) -> <:ctyp< list $ast_of_caml_type _loc ty$ >>
   |Types.Array (_,ty) -> <:ctyp< array $ast_of_caml_type _loc ty$ >>
   |Types.Option (_,ty) -> <:ctyp< option $ast_of_caml_type _loc ty$ >>
-  |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id^"_persist"$ >>
+  |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id$ >>
   |Types.Tuple (_, tyl) -> <:ctyp< $tup:tySta_of_list (List.map (ast_of_caml_type _loc) tyl)$ >>
   |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
 
@@ -312,10 +312,10 @@ let () =
       prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
       let ts = parse_typedef _loc tds in
-      let env = List.fold_right (fun t env ->
+      let env = List.fold_left (fun env t ->
         let f = { Types.f_id = t.Types.td_id; f_mut = false; f_typ = t.Types.td_typ } in
         Sql_types.process env "__top" f;
-      ) ts Sql_types.empty_env in
+      ) Sql_types.empty_env ts in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with
       |_, None ->

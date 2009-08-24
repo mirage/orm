@@ -26,12 +26,14 @@ type sql_type =
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |Transient      (* table is internal (e.g. list) *)
+  |Variant of (Types.ident * (Types.typ list)) list
 
 type field_info =
   |External_and_internal_field
   |External_field
   |Internal_field
   |Internal_tuple_field of string * int (* is a tuple to field string at pos int *)
+  |Internal_variant_field of string * int
   |Internal_autoid
   |External_foreign of string
 
@@ -72,6 +74,7 @@ let string_of_field_info = function
   |Internal_field -> "I"
   |External_foreign f -> sprintf "F[%s]" f
   |Internal_tuple_field (s,i) -> sprintf "T%d" i
+  |Internal_variant_field (s,i) -> sprintf "V%d" i
   |Internal_autoid -> "A"
 
 let string_of_field f =
@@ -97,9 +100,8 @@ let replace_table env table =
     (List.filter (fun t -> t.t_name <> table.t_name) env.e_tables)
   }
 
-let new_table ~name ~fields ~parent env =
+let new_table ~name ~fields ~ty ~parent env =
   (* stick in the new table *)
-  let ty = match parent with |None -> Exposed |Some _ -> Transient in
   let env = replace_table env (match find_table env name with 
     |None -> { t_name=name; t_fields=fields; t_type=ty; t_child=[] }
     |Some table -> failwith (sprintf "new_table: clash %s" name) 
@@ -109,13 +111,14 @@ let new_table ~name ~fields ~parent env =
     |None -> env
     |Some t -> begin
       match find_table env t with
-      |None -> failwith (sprintf "couldnt find parent table %s" t)
+      |None -> env
       |Some ptable -> replace_table env { ptable with t_child=name::ptable.t_child }
     end
 
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~opt ~ctyp ~info env t field_name field_type =
+  prerr_endline (sprintf "add_field: %s" field_name);
   let ctyp = match ctyp,opt with 
     |Some ctyp,true -> Some (Types.Option (Types.loc_of_typ ctyp, ctyp)) 
     |_ -> ctyp
@@ -165,6 +168,7 @@ let exposed_fields =
      |Internal_autoid
      |External_foreign _ -> true
      |Internal_field
+     |Internal_variant_field _ -> false
      |Internal_tuple_field _ -> false
    )
 
@@ -175,6 +179,7 @@ let sql_fields =
      |External_and_internal_field
      |External_foreign _
      |Internal_tuple_field _
+     |Internal_variant_field _
      |Internal_field 
      |Internal_autoid -> true
      |External_field -> false
@@ -187,6 +192,7 @@ let sql_fields_no_autoid =
      |External_and_internal_field
      |External_foreign _
      |Internal_field
+     |Internal_variant_field _
      |Internal_tuple_field _ -> true
      |Internal_autoid
      |External_field -> false
@@ -246,14 +252,49 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) en
   |Types.Float _       -> add_field ~opt ~ctyp ~info env t n Real
   |Types.String _      -> add_field ~opt ~ctyp ~info env t n Text 
   (* complex types *)
-  |Types.Apply(_,[],id,[]) ->
-    add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
+  |Types.Apply(loc,[],id,[]) ->  begin
+    (* look up this type to determine if its another persist record
+       or a variant which should be inlined as tuples are *)
+    match find_table env id with
+    |Some app_table -> begin
+      match app_table.t_type with
+      |Exposed -> (* foreign type *)
+        prerr_endline ("found table and exposed ttype");
+        let ctyp = Some (Types.Apply(loc,[],(id^"_persist"),[])) in
+        add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
+      |Transient ->
+        env
+      |Variant vty ->
+       (* Just unoptimised with a unique set of columns per branch at the moment *)
+        prerr_endline "found table and varant";
+        (* add index field for which variant it is, and internally is
+           used to assign an integer id marking which variant it is *)
+        let env = add_field ~opt ~ctyp:(Some (Types.Apply(loc,[],id,[]))) 
+           ~info:External_and_internal_field env t n Int in
+        let i = ref 0 in
+        List.fold_left (fun env (vid,tyl') ->
+          match List.length tyl' with
+          |0 -> (* is just a variant like |Foo |Bar so no need for extra column *)
+            env
+          |1 -> 
+            let ty = List.hd tyl' in
+            incr i;
+            let info = Internal_variant_field (ml_field.Types.f_id, !i) in
+            process ~info env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
+          |_ -> failwith "cant handle variants with type-list > 1 (what are they?)"
+       ) env vty
+    end
+    |None -> 
+      prerr_endline "not fond table";
+      (* not in environment, asssume its a foreign type hopefully *)
+      add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
+  end
   |Types.Record (loc,fl)
   |Types.Object (loc,fl) -> 
     (* add an id to the current table *)
     let env = add_field ~opt ~ctyp ~info:(External_foreign n) env t n Int in
     (* add a new table to the environment *)
-    let env = new_table ~name:n ~fields:[] ~parent:None env in
+    let env = new_table ~name:n ~ty:Exposed ~fields:[] ~parent:None env in
     (* process the fields in the new record *)
     let env = add_field ~opt:true ~ctyp:(Some (Types.Int64 loc))
        ~info:(Internal_autoid) env n "id" Int in
@@ -263,7 +304,7 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) en
     (* create a new table for the list lookup *)
     let t' = sprintf "%s_%s_list" t n in
     (* add table to env to represent the list *)
-    let env = new_table ~name:t' ~fields:[] ~parent:(Some t) env in
+    let env = new_table ~name:t' ~ty:Transient ~fields:[] ~parent:(Some t) env in
     (* add in the list fields to the new table *)
     let env = add_field ~opt ~ctyp ~info:External_field env t n Null in
     let env = add_field ~opt ~ctyp ~info:(External_foreign t) env t' t Int in
@@ -280,12 +321,10 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) en
   |Types.Option (_,ty) ->
     process ~opt:true env t { ml_field with Types.f_typ=ty }
   |Types.Variant (loc, itl) -> 
-    (* Just unoptimised with a unique set of columns per branch at the moment *)
-    let env = new_table ~name:n ~fields:[] ~parent:(Some t) env in
-    let env = add_field ~opt ~ctyp ~info env n "_idx" Int in
-    List.fold_right (fun (id,tyl) env ->
-       process env n { ml_field with Types.f_id=id; f_typ=Types.Tuple(loc, tyl) }
-    ) itl env
+    prerr_endline "processing variant";
+    (* just mark a table here for future lookup by Apply, since we only
+       generate a variant table when its actually used in a record *)
+    new_table ~name:n ~ty:(Variant itl) ~fields:[] ~parent:(Some t) env
   (* types we dont handle for the moment *)
   |Types.Ref _
   |Types.PolyVar _
@@ -293,8 +332,4 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) en
   |Types.Abstract _ 
   |Types.Apply _
   |Types.Arrow _ as x -> raise (Type_not_allowed (Types.string_of_typ x))
-
-let process_top t =
-  let env = { e_tables = [] } in
-   process env "top" t
 

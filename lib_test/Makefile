@@ -39,7 +39,7 @@ r_%: c_%
 
 # i_% displays the inferred OCaml interface of the generated functions
 .PHONY: i_%
-i_%: %.ml
+i_%: %.ml ../pa_sql_orm.cma
 	ocamlfind ocamlc -i -verbose -custom -package unix,sqlite3 \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo sqlite3.cma pa_sql_orm.cma" \
 	  $(BUILDINC) unix.cma sqlite3.cma sql_access.cma $*.ml

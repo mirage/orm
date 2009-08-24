@@ -1,6 +1,8 @@
 type t = 
   |Foo
-  |Bar
+  |Bar of int
+  |Xyz of string
+
 and
 x = {
   foo: t;
