@@ -277,7 +277,7 @@ let construct_funs env =
     let save_main = <:binding<
        _curobj_id = match _id with [
          None -> $biList_to_expr _loc 
-           (insert_sql_stmt :: tuple_bind_binding @ variant_bind_binding) 
+           (insert_sql_stmt :: variant_bind_binding @ tuple_bind_binding) 
             <:expr<
               do {
                 $exSem_of_list sql_bind_expr$;
@@ -288,7 +288,7 @@ let construct_funs env =
             >>
           $
         |Some id -> $biList_to_expr _loc
-           (update_sql_stmt :: tuple_bind_binding @ variant_bind_binding)
+           (update_sql_stmt :: variant_bind_binding @ tuple_bind_binding)
            <:expr<
              do { 
                $exSem_of_list sql_bind_expr$;
