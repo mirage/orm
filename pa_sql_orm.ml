@@ -245,16 +245,17 @@ let construct_funs env =
          None -> $biList_to_expr _loc 
            (insert_sql_stmt :: tuple_bind_binding @ sql_bind_binding) 
             <:expr<
-              do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt) };
-              let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
-              do { _id := Some __id; __id }
+              do {
+                Sql_access.db_must_done db (fun () -> Sqlite3.step stmt);
+                let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
+                do { _id := Some __id; __id }
+              }
             >>
           $
         |Some id -> $biList_to_expr _loc
            (update_sql_stmt :: tuple_bind_binding @ sql_bind_binding @ [update_bind_binding])
            <:expr<
-             do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt) };
-             id
+             do { Sql_access.db_must_done db (fun () -> Sqlite3.step stmt); id }
            >>
           $
       ]
