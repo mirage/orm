@@ -106,6 +106,7 @@ let field_to_sql_data _loc f id =
     |Types.Char _ -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
     |Types.String _ -> <:expr< Sqlite3.Data.TEXT $id$ >>
     |Types.Bool _ -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+    |_ -> <:expr< Sqlite3.Data.NULL >> (* XXX temporary *)
     |x -> failwith ("field_to_sql_data: " ^ (Types.string_of_typ x))
   in
   match ctyp with
@@ -142,17 +143,11 @@ let construct_typedefs env =
   ) tables []) in
   <:str_item< type $object_decls$ >> 
 
-(* construct the functions to init the db and create objects *)
-let construct_funs env =
+let init_db_funs env =
   let _loc = Loc.ghost in
-  let tables = exposed_tables env in
-  (* output the function bindings *)
-  let fn_bindings = Ast.biAnd_of_list (List.map (fun t ->
+  let tables = env.e_tables in
+  Ast.exSem_of_list (List.map (fun t ->
     (* open function to first access a sqlite3 db *)
-    let init_fun_name = sprintf "%s_init_db" t.t_name in
-    (* init function to initalize sqlite database *)
-    let type_name = sprintf "%s_persist" t.t_name in
-
     let sql_decls = List.fold_right (fun t a ->
       let fields = sql_fields env t in
       let sql_fields = List.map (fun f ->
@@ -167,8 +162,19 @@ let construct_funs env =
      >> in
     let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
     (* the final init_db binding for the SQL creation function *)
-    let init_db_binding = <:binding< $lid:init_fun_name$ db = do { $create_statements$ } >> in
+    <:expr< do { $create_statements$ } >>
+  ) tables)
   
+(* construct the functions to init the db and create objects *)
+let construct_funs env =
+  let _loc = Loc.ghost in
+  let tables = exposed_tables env in
+  (* output the function bindings *)
+  let fn_bindings = Ast.biAnd_of_list (List.map (fun t ->
+    (* init function to initalize sqlite database *)
+    let type_name = sprintf "%s_persist" t.t_name in
+
+ 
     (* the _new creation function to spawn objects of the SQL type *)
     let new_fun_name = sprintf "%s_new" t.t_name in
     let fields = exposed_fields env t.t_name in
@@ -224,34 +230,7 @@ let construct_funs env =
        <:binding< $tup:paCom_of_list fl$ = $lid:"_"^n'$ >> :: a
     ) (tuple_fields env t.t_name) [] in
 
-    (* Bind any variants to individual variables *)
-    let variant_bind_binding = Hashtbl.fold (fun n' (fl',tyname) a ->
-      (* create the tuple bindings to receive the values *)
-      let fl = <:patt< $lid:"_"^n'^"_id"$ >> :: 
-        List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
-      (* create the match cases for each of the variant values *)
-      let variant_matches = mapi (fun pos (id,vtl) ->
-          (* correlate the field position to the earlier tuple binding 
-             and return the appropriate arg for that position *)
-          let matchex =
-             <:expr< $`int64:Int64.of_int pos$ >> :: 
-             mapi (fun pos' _ -> 
-               if pos' + 1 = pos then
-                 <:expr< Some args >>
-               else
-                 <:expr< None >>
-             ) fl' in
-          match vtl with
-          |[] -> <:match_case< $uid:id$ -> $tup:exCom_of_list matchex$ >>
-          |_ ->  <:match_case< $uid:id$ args -> $tup:exCom_of_list matchex$ >>
-        ) (variant_ctyp_of_table env tyname) in
-      (* final binding for the variant matching *)
-      <:binding< 
-          $tup:paCom_of_list fl$ = match $lid:"_"^n'$ with [
-            $mcOr_of_list variant_matches$
-          ] >> :: a
-    ) (variant_fields env t.t_name) [] in
-
+    let variant_bind_binding = [] in
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
@@ -323,7 +302,7 @@ let construct_funs env =
       fun_args in
 
     (* return single binding of all the functions for this type *)
-    Ast.biAnd_of_list [init_db_binding; new_binding]
+    new_binding
   ) tables) in
   <:str_item< value $fn_bindings$ >>
 
@@ -336,10 +315,7 @@ let construct_init env =
     value $lid:name^"_init_db"$ db_name = 
       let db = Sql_access.new_state db_name in
       do {
-        $exSem_of_list (List.map (fun t ->
-            <:expr< $lid:t.t_name ^ "_init_db"$ db >>
-          ) (exposed_tables env))$;
-        db
+        $init_db_funs env$; db
       };
   >>
 
@@ -354,7 +330,7 @@ let () =
       let ts = parse_typedef _loc tds in
       let env = List.fold_left (fun env t ->
         let f = { Types.f_id = t.Types.td_id; f_mut = false; f_typ = t.Types.td_typ } in
-        Sql_types.process env "__top" f;
+        Sql_types.process ~mode:`Top_level env "__top" f;
       ) Sql_types.empty_env ts in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with
