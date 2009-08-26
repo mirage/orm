@@ -102,7 +102,7 @@ let field_to_sql_data _loc f id =
     |Types.Int _ -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
     |Types.Int32 _ -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
     |Types.Int64 _ -> <:expr< Sqlite3.Data.INT $id$ >>
-    |Types.Float _ -> <:expr< Sqlite3.Data.REAL $id$ >>
+    |Types.Float _ -> <:expr< Sqlite3.Data.FLOAT $id$ >>
     |Types.Char _ -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
     |Types.String _ -> <:expr< Sqlite3.Data.TEXT $id$ >>
     |Types.Bool _ -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
@@ -283,9 +283,49 @@ let construct_object_funs env =
     new_binding
   ) tables
 
+let construct_variant_funs env =
+  let _loc = Loc.ghost in
+  List.map (fun (t,vtl) ->
+    let fun_name = t.t_name ^ "_save" in
+    let insert_stmt = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
+      (String.concat "," (List.map (fun f -> 
+          if f.f_info = Internal_autoid then "NULL" else "?"
+        ) (sql_fields env t.t_name))) in
+    let update_stmt = sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name
+      (String.concat "," (List.map (fun f ->
+          sprintf "%s=?" f.f_name) (sql_fields_no_autoid env t.t_name))) in
+    let vfs = variant_fields env t.t_name in
+    <:binding<
+      $lid:fun_name$ ?(id=None) db v =
+        let stmt = Sqlite3.prepare db.Sql_access.db 
+          (match id with [
+             None -> $str:insert_stmt$
+            |Some _ -> $str:update_stmt$
+           ]) in
+        do {
+          $exSem_of_list (mapi (fun pos f ->
+            match f.f_info with
+            |Internal_variant_field (fn,pos,tyn) -> (* XXX pos here should = pos above, remove later *)
+              <:expr<
+                Sql_access.db_must_bind db stmt $`int:pos$ ()
+              >>
+            |Internal_autoid ->
+              <:expr< 
+               match id with [
+                None -> ()
+               |Some id -> Sql_access.db_must_bind db stmt $`int:pos$ (Sqlite3.Data.INT id)
+               ] >>
+            |_ -> <:expr<>>
+           ) (sql_fields env t.t_name))
+          $
+        }
+    >>
+  ) (variant_tables env)
+
 let construct_funs env =
   let _loc = Loc.ghost in
-  let bs = List.fold_left (fun a f -> f env @ a) [] [ construct_object_funs ] in
+  let bs = List.fold_left (fun a f -> f env @ a) []
+    [ construct_object_funs; construct_variant_funs ] in
   <:str_item< value $biAnd_of_list bs$ >>
 
 (* --- Initialization functions to create tables and open the db handle *)

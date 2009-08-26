@@ -148,6 +148,13 @@ let exposed_tables env =
      t.t_type = Exposed
    ) env.e_tables
 
+let variant_tables env =
+  List.fold_left (fun a t ->
+     match t.t_type with
+     |Variant vtl -> (t,vtl) :: a
+     |_ -> a
+  ) [] env.e_tables
+
 (* helper fn to lookup a table in the env and apply a function to it *)
 let with_table fn env t =
   match find_table env t with
@@ -218,7 +225,16 @@ let auto_id_field =
     |[f] -> f
     |[] -> failwith (sprintf "auto_id_field: %s: no entry" table.t_name)
     |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
- 
+  )
+
+let variant_fields =
+  with_table (fun env table ->
+    List.fold_left (fun a f ->
+      match f.f_info with
+      |Internal_variant_field (fn,pos,tyn) ->
+         (f,fn,pos,tyn) :: a
+      |_ -> a
+    ) [] table.t_fields
   )
 
 (* extract the ocaml type field for a field *)
