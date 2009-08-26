@@ -71,6 +71,9 @@ let db_must_done db fn =
    |Rc.DONE -> ()
    |x -> raise_sql_error x
 
+let db_must_bind db stmt pos data =
+   db_must_ok db (fun () -> Sqlite3.bind stmt pos data)
+
 (* request a transaction *)
 let transaction db fn =
     let m = match db.mode with
