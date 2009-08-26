@@ -197,10 +197,28 @@ let construct_object_funs env =
         ) (sql_fields_no_autoid env t.t_name))) in
 
     (* Bind any tuples to individual variables *)
+    let tuple_h, tuple_e_h = tuple_fields env t.t_name in
     let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
        let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
-       <:binding< $tup:paCom_of_list fl$ = $lid:"_"^n'$ >> :: a
-    ) (tuple_fields env t.t_name) [] in
+       let fl_expr = List.map (fun f -> <:expr< $lid:f.f_name$ >>) fl' in
+       let fl_none = List.map (fun f -> <:expr< None >>) fl' in
+       let fl_some = List.map (fun f -> <:expr< Some $lid:"_"^f.f_name$ >>) fl' in
+       let ef = try Hashtbl.find tuple_e_h n' with Not_found -> failwith "tuple_e_H" in
+       <:binding< 
+         $tup:paCom_of_list fl$ =
+           $match ef.f_opt with
+            |true ->
+              <:expr< 
+                match $lid:"_"^n'$ with [
+                 None -> $tup:exCom_of_list fl_none$
+                |Some $tup:paCom_of_list fl$ -> $tup:exCom_of_list fl_some$
+                ]
+              >>
+            |false ->
+             <:expr< $lid:"_"^n'$ >>
+           $
+       >> :: a
+    ) tuple_h [] in
 
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
@@ -216,8 +234,6 @@ let construct_object_funs env =
 
     (* last binding for update statement which also needs an id at the end *)
     incr sql_bind_pos;
-
-    let foreign_many = [] in
 
     (* the main save function *)
     let save_main = <:binding<
@@ -245,7 +261,8 @@ let construct_object_funs env =
          ]
        }
     >> in
-    let save_bindings =  foreign_single_ids @ tuple_bind_binding @ [ save_main ] @ foreign_many in
+   
+    let save_bindings = foreign_single_ids @ tuple_bind_binding @ [ save_main ] in
     let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)

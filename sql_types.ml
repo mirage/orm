@@ -218,6 +218,13 @@ let foreign_single_fields =
     |_ -> false
   )
 
+let foreign_list_fields =
+  filter_fields_with_table (fun f ->
+   match f.f_info, f.f_ctyp with
+   |External_field , (Some (Types.List _)) -> true
+   |_ -> false
+  )
+
 (* retrieve the single Auto_id field from a table *)
 let auto_id_field =
   with_table (fun env table ->
@@ -250,18 +257,25 @@ let variant_ctyp_of_table =
     |_ -> failwith "variant_ctyp_of_table: not Variant"
   )
 
-(* retrieve fields which came from a tuple and group them by name *)
+(* retrieve fields which came from a tuple and group them by name.
+   also returns a hash with the external tuples to look up 
+   additional info (like f_opt) *)
 let tuple_fields =
   with_table (fun env table ->
     let h = Hashtbl.create 1 in
-    List.iter (fun f -> match f.f_info with
-      |Internal_tuple_field (n,pos) ->  begin
+    let e = Hashtbl.create 1 in
+    List.iter (fun f -> 
+      match f.f_info, f.f_ctyp with
+      |Internal_tuple_field (n,pos), _ ->  begin
         let l = try Hashtbl.find h n with Not_found -> [] in
         Hashtbl.replace h n (f::l)
       end
+      |External_field, (Some (Types.Option (_,Types.Tuple _)))
+      |External_field, (Some (Types.Tuple _)) -> 
+        Hashtbl.replace e f.f_name f
       |_ -> ()
     ) table.t_fields;
-    h
+    h, e
   )
 
 (* --- Process functions to convert OCaml types into SQL *)
@@ -330,7 +344,7 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) ?(
     List.fold_left (fun env ty ->
       incr i;
       let info = Internal_tuple_field (ml_field.Types.f_id, !i) in
-      process ~info ~mode env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
+      process ~opt ~info ~mode env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
     ) env tyl
   end
   |Types.Option (_,ty) ->
