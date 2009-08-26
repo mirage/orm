@@ -145,14 +145,13 @@ let construct_typedefs env =
 
  
 (* construct the functions to init the db and create objects *)
-let construct_funs env =
+let construct_object_funs env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
   (* output the function bindings *)
-  let fn_bindings = Ast.biAnd_of_list (List.map (fun t ->
+  List.map (fun t ->
     (* init function to initalize sqlite database *)
     let type_name = sprintf "%s_persist" t.t_name in
-
  
     (* the _new creation function to spawn objects of the SQL type *)
     let new_fun_name = sprintf "%s_new" t.t_name in
@@ -282,8 +281,12 @@ let construct_funs env =
 
     (* return single binding of all the functions for this type *)
     new_binding
-  ) tables) in
-  <:str_item< value $fn_bindings$ >>
+  ) tables
+
+let construct_funs env =
+  let _loc = Loc.ghost in
+  let bs = List.fold_left (fun a f -> f env @ a) [] [ construct_object_funs ] in
+  <:str_item< value $biAnd_of_list bs$ >>
 
 (* --- Initialization functions to create tables and open the db handle *)
 
