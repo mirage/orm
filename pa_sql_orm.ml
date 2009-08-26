@@ -143,28 +143,7 @@ let construct_typedefs env =
   ) tables []) in
   <:str_item< type $object_decls$ >> 
 
-let init_db_funs env =
-  let _loc = Loc.ghost in
-  let tables = env.e_tables in
-  Ast.exSem_of_list (List.map (fun t ->
-    (* open function to first access a sqlite3 db *)
-    let sql_decls = List.fold_right (fun t a ->
-      let fields = sql_fields env t in
-      let sql_fields = List.map (fun f ->
-        sprintf "%s %s" f.f_name (string_of_sql_type f)
-      ) fields in
-      sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" t (String.concat ", " sql_fields) :: a
-    ) (t.t_name :: t.t_child) [] in
-
-    let create_table sql = <:expr<
-        let sql = $str:sql$ in
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
-     >> in
-    let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
-    (* the final init_db binding for the SQL creation function *)
-    <:expr< do { $create_statements$ } >>
-  ) tables)
-  
+ 
 (* construct the functions to init the db and create objects *)
 let construct_funs env =
   let _loc = Loc.ghost in
@@ -306,7 +285,30 @@ let construct_funs env =
   ) tables) in
   <:str_item< value $fn_bindings$ >>
 
-(* An initialization function for the whole group of statements *)
+(* --- Initialization functions to create tables and open the db handle *)
+
+let init_db_funs env =
+  let _loc = Loc.ghost in
+  let tables = env.e_tables in
+  Ast.exSem_of_list (List.map (fun t ->
+    (* open function to first access a sqlite3 db *)
+    let sql_decls = List.fold_right (fun t a ->
+      let fields = sql_fields env t in
+      let sql_fields = List.map (fun f ->
+        sprintf "%s %s" f.f_name (string_of_sql_type f)
+      ) fields in
+      sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" t (String.concat ", " sql_fields) :: a
+    ) (t.t_name :: t.t_child) [] in
+
+    let create_table sql = <:expr<
+        let sql = $str:sql$ in
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
+     >> in
+    let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
+    (* the final init_db binding for the SQL creation function *)
+    <:expr< do { $create_statements$ } >>
+  ) tables)
+ 
 let construct_init env =
   let _loc = Loc.ghost in
   (* XXX default name until its parsed into environment *)
