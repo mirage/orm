@@ -278,7 +278,5 @@ let () =
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;
-          $Pa_sexp_conv.Generate_of_sexp.of_sexp tds$;
-          $Pa_sexp_conv.Generate_sexp_of.sexp_of tds$
         >>
       )
