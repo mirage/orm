@@ -3,7 +3,8 @@
 BUILDINC := -I ../ sql_access.cma
 P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/site-lib/sqlite3 -I ../
 
-TESTS := simple tuple foreign variant variant_tuple simple_twodefs variant_nested alltypes
+TESTS := alltypes nested_option option simple_option tuple variant_nested foreign \
+	 nested_tuple simple simple_twodefs variant variant_tuple
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
@@ -21,7 +22,7 @@ p_%: ../pa_sql_orm.cma
 # seen in error messages as a debugging aid
 pc_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
-	ocamlfind ocamlc -verbose -linkpkg -o $@ -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
+	ocamlfind ocamlc -verbose -linkpkg -g -o $@ -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
 
 # pr_% compiles and runs the code via the intermediate ML file
 pr_%: pc_%
@@ -29,7 +30,7 @@ pr_%: pc_%
 
 # c_% compiles the ML file directly by invoking camlp4 as -pp (how it is used in production)
 c_%: %.ml ../pa_sql_orm.cma
-	ocamlfind ocamlc -verbose -o $@ -linkpkg -package unix,sqlite3,sexplib \
+	ocamlfind ocamlc -verbose -o $@ -linkpkg -g -package unix,sqlite3,sexplib \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo pa_sql_orm.cma " \
 	  $(BUILDINC) $*.ml
 
@@ -40,13 +41,13 @@ r_%: c_%
 # i_% displays the inferred OCaml interface of the generated functions
 .PHONY: i_%
 i_%: %.ml ../pa_sql_orm.cma
-	ocamlfind ocamlc -i -verbose -linkpkg -package unix,sqlite3,sexplib \
+	ocamlfind ocamlc -i -verbose -linkpkg -g -package unix,sqlite3,sexplib \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo pa_sql_orm.cma" $(BUILDINC) $*.ml
 
 # pi_% prints to a temporary file and then displays the Ocaml interface
 pi_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
-	ocamlfind ocamlc -verbose -i -linkpkg -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
+	ocamlfind ocamlc -verbose -i -linkpkg -g -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
 	
 .PHONY: clean
 clean:
