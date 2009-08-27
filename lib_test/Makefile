@@ -3,7 +3,7 @@
 BUILDINC := -I ../
 P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/site-lib/sqlite3 $(BUILDINC)
 
-TESTS := simple tuple foreign variant variant_tuple simple_twodefs variant_nested
+TESTS := simple tuple foreign variant variant_tuple simple_twodefs variant_nested alltypes
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)

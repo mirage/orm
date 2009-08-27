@@ -86,7 +86,6 @@ let rec ast_of_caml_type _loc = function
   |Types.Array (_,ty) -> <:ctyp< array $ast_of_caml_type _loc ty$ >>
   |Types.Option (_,ty) -> <:ctyp< option $ast_of_caml_type _loc ty$ >>
   |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id$ >>
-  |Types.Tuple (_, tyl) -> <:ctyp< $tup:tySta_of_list (List.map (ast_of_caml_type _loc) tyl)$ >>
   |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
 
 open Sql_types
@@ -196,30 +195,6 @@ let construct_object_funs env =
           sprintf "%s=?" f.f_name
         ) (sql_fields_no_autoid env t.t_name))) in
 
-    (* Bind any tuples to individual variables *)
-    let tuple_h, tuple_e_h = tuple_fields env t.t_name in
-    let tuple_bind_binding = Hashtbl.fold (fun n' fl' a ->
-       let fl = List.map (fun f -> <:patt< $lid:"_"^f.f_name$ >> ) fl' in
-       let fl_expr = List.map (fun f -> <:expr< $lid:f.f_name$ >>) fl' in
-       let fl_none = List.map (fun f -> <:expr< None >>) fl' in
-       let fl_some = List.map (fun f -> <:expr< Some $lid:"_"^f.f_name$ >>) fl' in
-       let ef = try Hashtbl.find tuple_e_h n' with Not_found -> failwith "tuple_e_H" in
-       <:binding< 
-         $tup:paCom_of_list fl$ =
-           $match ef.f_opt with
-            |true ->
-              <:expr< 
-                match $lid:"_"^n'$ with [
-                 None -> $tup:exCom_of_list fl_none$
-                |Some $tup:paCom_of_list fl$ -> $tup:exCom_of_list fl_some$
-                ]
-              >>
-            |false ->
-             <:expr< $lid:"_"^n'$ >>
-           $
-       >> :: a
-    ) tuple_h [] in
-
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
@@ -262,7 +237,7 @@ let construct_object_funs env =
        }
     >> in
    
-    let save_bindings = foreign_single_ids @ tuple_bind_binding @ [ save_main ] in
+    let save_bindings = foreign_single_ids @ [ save_main ] in
     let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)
@@ -288,48 +263,10 @@ let construct_object_funs env =
     new_binding
   ) tables
 
-let construct_variant_funs env =
-  let _loc = Loc.ghost in
-  List.map (fun (t,vtl) ->
-    let fun_name = t.t_name ^ "_save" in
-    let insert_stmt = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
-      (String.concat "," (List.map (fun f -> 
-          if f.f_info = Internal_autoid then "NULL" else "?"
-        ) (sql_fields env t.t_name))) in
-    let update_stmt = sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name
-      (String.concat "," (List.map (fun f ->
-          sprintf "%s=?" f.f_name) (sql_fields_no_autoid env t.t_name))) in
-    <:binding<
-      $lid:fun_name$ ?(id=None) db v =
-        let stmt = Sqlite3.prepare db.Sql_access.db 
-          (match id with [
-             None -> $str:insert_stmt$
-            |Some _ -> $str:update_stmt$
-           ]) in
-        do {
-          $exSem_of_list (mapi (fun pos f ->
-            match f.f_info with
-            |Internal_variant_field (fn,pos,tyn) -> (* XXX pos here should = pos above, remove later *)
-              <:expr<
-                Sql_access.db_must_bind db stmt $`int:pos$ ()
-              >>
-            |Internal_autoid ->
-              <:expr< 
-               match id with [
-                None -> ()
-               |Some id -> Sql_access.db_must_bind db stmt $`int:pos$ (Sqlite3.Data.INT id)
-               ] >>
-            |_ -> <:expr<>>
-           ) (sql_fields env t.t_name))
-          $
-        }
-    >>
-  ) (variant_tables env)
-
 let construct_funs env =
   let _loc = Loc.ghost in
   let bs = List.fold_left (fun a f -> f env @ a) []
-    [ construct_object_funs; construct_variant_funs ] in
+    [ construct_object_funs ] in
   <:str_item< value $biAnd_of_list bs$ >>
 
 (* --- Initialization functions to create tables and open the db handle *)
@@ -379,7 +316,7 @@ let () =
       let ts = parse_typedef _loc tds in
       let env = List.fold_left (fun env t ->
         let f = { Types.f_id = t.Types.td_id; f_mut = false; f_typ = t.Types.td_typ } in
-        Sql_types.process ~mode:`Top_level env "__top" f;
+        Sql_types.process env "__top" f;
       ) Sql_types.empty_env ts in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with

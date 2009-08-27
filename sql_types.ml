@@ -26,17 +26,13 @@ type sql_type =
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |Transient      (* table is internal (e.g. list) *)
-  |Variant of (Types.ident * (Types.typ list)) list
 
 type field_info =
   |External_and_internal_field
   |External_field
   |Internal_field
-  |Internal_tuple_field of string * int (* field * pos *)
   |Internal_autoid
-  |Internal_variant_field of string * int * string (* field * pos * type name *)
   |External_foreign of string
-  |External_variant of string
 
 type env = {
   e_tables: table list;
@@ -74,9 +70,6 @@ let string_of_field_info = function
   |External_field -> "E"
   |Internal_field -> "I"
   |External_foreign f -> sprintf "F[%s]" f
-  |External_variant f -> sprintf "FV[%s]" f
-  |Internal_tuple_field (s,i) -> sprintf "T%d" i
-  |Internal_variant_field (s,i,t) -> sprintf "V%d" i
   |Internal_autoid -> "A"
 
 let string_of_field f =
@@ -148,13 +141,6 @@ let exposed_tables env =
      t.t_type = Exposed
    ) env.e_tables
 
-let variant_tables env =
-  List.fold_left (fun a t ->
-     match t.t_type with
-     |Variant vtl -> (t,vtl) :: a
-     |_ -> a
-  ) [] env.e_tables
-
 (* helper fn to lookup a table in the env and apply a function to it *)
 let with_table fn env t =
   match find_table env t with
@@ -175,11 +161,8 @@ let exposed_fields =
      |External_and_internal_field
      |External_field 
      |Internal_autoid
-     |External_variant _
      |External_foreign _ -> true
-     |Internal_field
-     |Internal_variant_field _ 
-     |Internal_tuple_field _ -> false
+     |Internal_field -> false
    )
 
 (* list of fields suitable for SQL statements *)
@@ -187,10 +170,7 @@ let sql_fields =
    filter_fields_with_table (fun f ->
      match f.f_info with
      |External_and_internal_field 
-     |External_variant _
      |External_foreign _
-     |Internal_tuple_field _
-     |Internal_variant_field _ 
      |Internal_field 
      |Internal_autoid -> true
      |External_field -> false
@@ -201,11 +181,8 @@ let sql_fields_no_autoid =
    filter_fields_with_table (fun f ->
      match f.f_info with
      |External_and_internal_field
-     |External_variant _
      |External_foreign _
-     |Internal_field
-     |Internal_variant_field _ 
-     |Internal_tuple_field _ -> true
+     |Internal_field -> true
      |Internal_autoid
      |External_field -> false
    )
@@ -234,54 +211,16 @@ let auto_id_field =
     |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
   )
 
-let variant_fields =
-  with_table (fun env table ->
-    List.fold_left (fun a f ->
-      match f.f_info with
-      |Internal_variant_field (fn,pos,tyn) ->
-         (f,fn,pos,tyn) :: a
-      |_ -> a
-    ) [] table.t_fields
-  )
-
 (* extract the ocaml type field for a field *)
 let ctyp_of_field f =
   match f.f_ctyp with
   |None -> failwith ("ctyp_of_field: " ^ f.f_name)
   |Some c -> c
 
-let variant_ctyp_of_table =
-  with_table (fun env table ->
-    match table.t_type with
-    |Variant v -> v
-    |_ -> failwith "variant_ctyp_of_table: not Variant"
-  )
-
-(* retrieve fields which came from a tuple and group them by name.
-   also returns a hash with the external tuples to look up 
-   additional info (like f_opt) *)
-let tuple_fields =
-  with_table (fun env table ->
-    let h = Hashtbl.create 1 in
-    let e = Hashtbl.create 1 in
-    List.iter (fun f -> 
-      match f.f_info, f.f_ctyp with
-      |Internal_tuple_field (n,pos), _ ->  begin
-        let l = try Hashtbl.find h n with Not_found -> [] in
-        Hashtbl.replace h n (f::l)
-      end
-      |External_field, (Some (Types.Option (_,Types.Tuple _)))
-      |External_field, (Some (Types.Tuple _)) -> 
-        Hashtbl.replace e f.f_name f
-      |_ -> ()
-    ) table.t_fields;
-    h, e
-  )
-
 (* --- Process functions to convert OCaml types into SQL *)
 
 exception Type_not_allowed of string
-let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) ?(mode=`Top_level) env t ml_field =
+let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) env t ml_field =
   let n = ml_field.Types.f_id in
   let ctyp = Some ml_field.Types.f_typ in
   match ml_field.Types.f_typ with
@@ -295,28 +234,9 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) ?(
   |Types.Float _       -> add_field ~opt ~ctyp ~info env t n Real
   |Types.String _      -> add_field ~opt ~ctyp ~info env t n Text 
   (* complex types *)
-  |Types.Apply(loc,[],id,[]) ->  begin
-    (* look up this type to determine if its another persist record
-       or a variant which should be inlined as tuples are *)
-    match find_table env id with
-    |Some app_table -> begin
-      match app_table.t_type with
-      |Exposed -> (* foreign type *)
-        prerr_endline ("found table and exposed ttype");
-        let ctyp = Some (Types.Apply(loc,[],(id^"_persist"),[])) in
-        add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
-      |Transient ->
-        env
-      |Variant vty -> 
-        (* Point to the foreign id of the variant table *)
-        prerr_endline "found table and variant";
-        add_field ~opt ~ctyp ~info:(External_variant id) env t n Int
-    end
-    |None -> 
-      prerr_endline "not fond table";
-      (* not in environment, asssume its a foreign type hopefully *)
-      add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
-  end
+  |Types.Apply(loc,[],id,[]) ->
+    let ctyp = Some (Types.Apply(loc,[],(id^"_persist"),[])) in
+    add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
   |Types.Record (loc,fl)
   |Types.Object (loc,fl) -> 
     (* add an id to the current table *)
@@ -326,7 +246,7 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) ?(
     (* process the fields in the new record *)
     let env = add_field ~opt:true ~ctyp:(Some (Types.Int64 loc))
        ~info:(Internal_autoid) env n "id" Int in
-    List.fold_right (fun field env -> process ~mode env n field) fl env
+    List.fold_right (fun field env -> process env n field) fl env
   |Types.Array (_,ty)
   |Types.List (_,ty)   ->
     (* create a new table for the list lookup *)
@@ -337,37 +257,12 @@ let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) ?(
     let env = add_field ~opt ~ctyp ~info:External_field env t n Null in
     let env = add_field ~opt ~ctyp ~info:(External_foreign t) env t' t Int in
     let env = add_field ~opt ~ctyp ~info:Internal_field env t' "_idx" Int in
-    process ~mode env t' { ml_field with Types.f_typ=ty }
-  |Types.Tuple (_,tyl) -> begin
-    let env = add_field ~opt ~ctyp ~info:External_field env t n Null in
-    let i = ref 0 in
-    List.fold_left (fun env ty ->
-      incr i;
-      let info = Internal_tuple_field (ml_field.Types.f_id, !i) in
-      process ~opt ~info ~mode env t { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
-    ) env tyl
-  end
+    process env t' { ml_field with Types.f_typ=ty }
   |Types.Option (_,ty) ->
-    process ~opt:true ~mode env t { ml_field with Types.f_typ=ty }
-  |Types.Variant (loc, itl) -> 
-    prerr_endline ("processing variant: " ^ n);
-    let env = new_table ~name:n ~ty:(Variant itl) ~fields:[] ~parent:(Some t) env in
-    let env = add_field ~opt:false ~ctyp:(Some (Types.Int64 loc))
-       ~info:Internal_autoid env n "id" Int in
-    let env = add_field ~opt:false ~ctyp:(Some (Types.Int64 loc))
-       ~info:Internal_field env n "idx" Int in
-    let i = ref 0 in
-    List.fold_left (fun env (vid,tyl') ->
-      incr i;
-      match tyl' with
-      |[] -> env (* is just a variant like |Foo |Bar so no need for extra column *)
-      |[ty] -> 
-        let info = Internal_variant_field (ml_field.Types.f_id, !i, n) in
-        process ~info ~opt:true env n { ml_field with Types.f_id=sprintf "%s%d" n !i; f_typ=ty }
-      |_ -> failwith "cant handle variants with type-list > 1" 
-    ) env itl
-
+    process ~opt:true env t { ml_field with Types.f_typ=ty }
   (* types we dont handle for the moment *)
+  |Types.Variant _
+  |Types.Tuple _
   |Types.Ref _
   |Types.PolyVar _
   |Types.Var _
