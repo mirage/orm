@@ -79,92 +79,7 @@ let unroll_fun_matches _loc fp1 fp2 =
   | `Fun fun_expr, `Match matching -> <:expr< $fun_expr$ (fun [ $matching$ ]) >>
   | _ -> assert false  (* impossible *)
 
-let rec sig_of_tds cnv = function
-  | TyDcl (_loc, type_name, tps, _rhs, _cl) -> cnv _loc type_name tps
-  | TyAnd (_loc, tp1, tp2) ->
-      <:sig_item< $sig_of_tds cnv tp1$; $sig_of_tds cnv tp2$ >>
-  | _ -> assert false  (* impossible *)
-
-
 (* Generators for S-expressions *)
-
-(* Generates the signature for type conversion to S-expressions *)
-module Sig_generate_sexp_of = struct
-  let sig_of_td _loc type_name tps =
-    let rec loop this_type = function
-      | [] -> <:ctyp< $this_type$ -> Sexplib.Sexp.t >>
-      | tp :: tps ->
-          let tp = Gen.drop_variance_annotations _loc tp in
-          let sexp_of = loop <:ctyp< $this_type$ $tp$ >> tps in
-          <:ctyp< ( $tp$ -> Sexplib.Sexp.t ) -> $sexp_of$ >>
-    in
-    let sexp_of = loop <:ctyp< $lid:type_name$ >> tps in
-    <:sig_item< value $lid: "sexp_of_" ^ type_name$ : $sexp_of$ >>
-
-  let mk_sig tds = <:sig_item< $sig_of_tds sig_of_td tds$ >>
-
-  let () = add_sig_generator "sexp_of" mk_sig
-
-  let mk_sig_exn = function
-    | <:ctyp@loc< $uid:cnstr$ >> | <:ctyp@loc< $uid:cnstr$ of $_$ >> ->
-        let _loc = loc in
-        <:sig_item<
-          value $lid: "exn_id_sexp_of_" ^ String.uncapitalize cnstr $
-            : Sexplib.Conv.exn_conv_handle >>
-    | _ -> failwith "mk_sig_exn: unknown type"
-
-  let () = add_sig_generator ~is_exn:true "sexp" mk_sig_exn
-end
-
-
-(* Generates the signature for type conversion from S-expressions *)
-module Sig_generate_of_sexp = struct
-  let sig_of_td with_poly _loc type_name tps =
-    let rec loop this_tp = function
-      | [] -> <:ctyp< Sexplib.Sexp.t -> $this_tp$ >>
-      | tp :: tps ->
-          let tp = Gen.drop_variance_annotations _loc tp in
-          let of_sexp = loop <:ctyp< $this_tp$ $tp$ >> tps in
-          <:ctyp< ( Sexplib.Sexp.t -> $tp$ ) -> $of_sexp$ >>
-    in
-    let of_sexp = loop <:ctyp< $lid:type_name$ >> tps in
-    let of_sexp_item =
-      <:sig_item< value $lid: type_name ^ "_of_sexp"$ : $of_sexp$; >>
-    in
-    if with_poly then
-      <:sig_item<
-        $of_sexp_item$;
-        value $lid: type_name ^ "_of_sexp__"$ : $of_sexp$;
-      >>
-    else of_sexp_item
-
-  let mk_sig with_poly tds =
-    <:sig_item< $sig_of_tds (sig_of_td with_poly) tds$ >>
-
-  let () = add_sig_generator "of_sexp" (mk_sig false)
-  let () = add_sig_generator "of_sexp_poly" (mk_sig true)
-end
-
-
-(* Generates the signature for type conversion to S-expressions *)
-module Sig_generate = struct
-  let () =
-    add_sig_generator "sexp" (fun tds ->
-      let _loc = Loc.ghost in
-      <:sig_item<
-        $Sig_generate_sexp_of.mk_sig tds$;
-        $Sig_generate_of_sexp.mk_sig false tds$
-      >>)
-
-  let () =
-    add_sig_generator "sexp_poly" (fun tds ->
-      let _loc = Loc.ghost in
-      <:sig_item<
-        $Sig_generate_sexp_of.mk_sig tds$;
-        $Sig_generate_of_sexp.mk_sig true tds$
-      >>)
-end
-
 
 (* Generator for converters of OCaml-values to S-expressions *)
 module Generate_sexp_of = struct
@@ -459,9 +374,6 @@ module Generate_sexp_of = struct
     if recursive then <:str_item< value rec $binding$ >>
     else <:str_item< value $binding$ >>
 
-  (* Add code generator to the set of known generators *)
-  let () = add_generator "sexp_of" sexp_of
-
   let string_of_ident id =
     let str_lst = Gen.get_rev_id_path id [] in
     String.concat ~sep:"." str_lst
@@ -505,7 +417,6 @@ module Generate_sexp_of = struct
           | _ -> None ])
     >>
 
-  let () = add_generator ~is_exn:true "sexp" sexp_of_exn
 end
 
 
@@ -1214,17 +1125,4 @@ module Generate_of_sexp = struct
         <:str_item< value rec $list:bindings$ >>
     | _ -> assert false  (* impossible *)
 
-  (* Add code generator to the set of known generators *)
-  let () = add_generator "of_sexp" of_sexp
 end
-
-(* Add "of_sexp" and "sexp_of" as "sexp" to the set of generators *)
-let () =
-  add_generator
-    "sexp"
-    (fun tds ->
-      let _loc = Loc.ghost in
-      <:str_item<
-        $Generate_of_sexp.of_sexp tds$; $Generate_sexp_of.sexp_of tds$
-      >>
-    )
