@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Simple"
+
 type t = {
   foo: int;
   bar: string

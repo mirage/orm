@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Foreign"
+
 type t = {
   foo: string;
   bar: int64;

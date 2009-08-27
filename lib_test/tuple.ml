@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Tuple"
+
 type t = {
   foo: int32;
   bar: string * char;

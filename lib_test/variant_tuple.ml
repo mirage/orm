@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Variant"
+
 type t = 
   |Foo
   |Bar of (int * int)

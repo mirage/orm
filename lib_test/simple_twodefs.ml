@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Simple_twodefs"
+
 type t = {
   foo: int;
   bar: string
