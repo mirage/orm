@@ -3,7 +3,7 @@ OCAMLMAKEFILE=OCamlMakefile
 ANNOTATE=Yes
 USE_CAMLP4=Yes
 #SOURCES= sql_types.ml pa_sexp_conv.ml pa_sql_orm.ml
-SOURCES= sql_types.ml pa_sexp_conv.ml pa_sql_orm.ml
+SOURCES= pa_sexp_conv.ml sql_types.ml pa_sql_orm.ml
 
 PACKS = type-conv sqlite3
 RESULT = pa_sql_orm

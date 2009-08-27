@@ -31,6 +31,7 @@ type sql_type =
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |Transient      (* table is internal (e.g. list) *)
+  |Sexp of ctyp   (* generate of/to sexp functions for this type *)
 
 type field_info =
   |External_and_internal_field
@@ -143,6 +144,22 @@ let exposed_tables env =
      t.t_type = Exposed
    ) env.e_tables
 
+let sql_tables env =
+  List.filter (fun t ->
+    match t.t_type with
+    |Exposed
+    |Transient -> true
+    |Sexp _ -> false
+  ) env.e_tables
+
+(* list of tables to generate sexp to/from functions for *)
+let sexp_tables env = 
+  List.fold_left (fun a t ->
+    match t.t_type with
+    |Sexp c -> (t.t_name, c) :: a
+    |_ -> a
+  ) [] env.e_tables
+  
 (* helper fn to lookup a table in the env and apply a function to it *)
 let with_table fn env t =
   match find_table env t with
@@ -253,7 +270,10 @@ and process_toplevel_type _loc n ctyp env =
     | <:ctyp< $lid:id$ : $t$ >> ->  process_type _loc n id t env
     | _ -> failwith "process_toplevel_type: unexpected ast"
     in fn env fs
-  | _ -> failwith "process_toplevel_type: unknown type"
+  | _ ->
+    (* create an sexpr conversion for an unknown type, so it can be
+       used if that type is referenced later on for SQL conversion *)
+    new_table ~name:n ~ty:(Sexp ctyp) ~fields:[] ~parent:None env
 
  and process_type _loc t n ctyp env =
   let info = External_and_internal_field in
@@ -269,9 +289,9 @@ and process_toplevel_type _loc n ctyp env =
   | <:ctyp@loc< option $ctyp$ >> ->
      let env = process_type _loc t n ctyp env in
      add_option_to_field n env t
-  | <:ctyp@loc< $id:id$ >> ->
-    let ids = Ast.list_of_ident id in
-    env
+  | _ -> 
+    (* add an unknown field as-is, it will be converted to sexp later on *)
+    add_field ~ctyp ~info env t n Text
 
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
@@ -292,5 +312,13 @@ let field_to_sql_data _loc f =
            |Some $pid$ -> $fn t$
          ]
       >>
-  | _ -> failwith "to_sql_data: unknown type"
+  | _ ->
+     (* convert unknown type to an sexpression *)
+     let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] f.f_ctyp in
+     let conv_fn = "sexp_of_" ^ f.f_name in
+     <:expr< 
+        Sqlite3.Data.TEXT (
+          Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
+        ) 
+     >>
   in fn f.f_ctyp

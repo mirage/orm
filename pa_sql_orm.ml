@@ -70,9 +70,6 @@ let mapi fn =
     
 open Sql_types
 
-let id_expr_of_field _loc f =
-  <:expr< $lid:"_"^f.f_name$ >>
-
 (* declare the types of the _persist objects used to pass SQL
    objects back and forth *)
 let construct_typedefs env =
@@ -153,7 +150,6 @@ let construct_object_funs env =
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
        incr sql_bind_pos;
-       let id = id_expr_of_field _loc f in
        let v = field_to_sql_data _loc f in
        <:expr< 
         Sql_access.db_must_ok db (fun () -> 
@@ -227,7 +223,6 @@ let construct_funs env =
 
 let init_db_funs env =
   let _loc = Loc.ghost in
-  let tables = env.e_tables in
   Ast.exSem_of_list (List.map (fun t ->
     (* open function to first access a sqlite3 db *)
     let sql_decls = List.fold_right (fun t a ->
@@ -245,7 +240,7 @@ let init_db_funs env =
     let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
     (* the final init_db binding for the SQL creation function *)
     <:expr< do { $create_statements$ } >>
-  ) tables)
+  ) (sql_tables env))
  
 let construct_init env =
   let _loc = Loc.ghost in
@@ -258,6 +253,13 @@ let construct_init env =
         $init_db_funs env$; db
       };
   >>
+
+let construct_sexp env =
+  let _loc = Loc.ghost in
+  let bindings = List.map (fun (n,t) ->
+      Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc n [] t
+    ) (sexp_tables env) in
+  <:str_item< value $biAnd_of_list bindings$ >>
 
 (* Register the persist keyword with type-conv *)
 let () =
@@ -275,6 +277,7 @@ let () =
       |_, Some name ->
         let _loc = Loc.ghost in
         <:str_item<
+          $construct_sexp env$;
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;
