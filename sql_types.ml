@@ -1,3 +1,5 @@
+(*pp camlp4orf *)
+
 (*
  * Copyright (c) 2009 Anil Madhavapeddy <anil@recoil.org>
  *
@@ -15,6 +17,9 @@
  *)
 
 open Printf
+open Camlp4
+open PreCast
+open Ast
 
 (* --- Type definitions *)
 
@@ -46,8 +51,7 @@ and table = {
 and field = {
   f_name: string;
   f_typ: sql_type;
-  f_ctyp: Types.typ option;
-  f_opt: bool;
+  f_ctyp: ctyp;
   f_info: field_info;
 }
 
@@ -73,7 +77,7 @@ let string_of_field_info = function
   |Internal_autoid -> "A"
 
 let string_of_field f =
-  sprintf "%s (%s):%s%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f) (if f.f_opt then " opt" else "")
+  sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
   sprintf "%s (children=%s): [ %s ] " t.t_name (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
@@ -112,13 +116,10 @@ let new_table ~name ~fields ~ty ~parent env =
 
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
-let add_field ~opt ~ctyp ~info env t field_name field_type =
+let add_field ~ctyp ~info env t field_name field_type =
   prerr_endline (sprintf "add_field: %s" field_name);
-  let ctyp = match ctyp,opt with 
-    |Some ctyp,true -> Some (Types.Option (Types.loc_of_typ ctyp, ctyp)) 
-    |_ -> ctyp
-  in
-  let field = { f_name=field_name; f_typ=field_type; f_opt=opt; f_ctyp=ctyp; f_info=info } in
+  let _loc = Loc.ghost in
+  let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info } in
   match find_table env t with
   |Some table -> begin
     (* sanity check that the name is unique in the field list *)
@@ -195,13 +196,6 @@ let foreign_single_fields =
     |_ -> false
   )
 
-let foreign_list_fields =
-  filter_fields_with_table (fun f ->
-   match f.f_info, f.f_ctyp with
-   |External_field , (Some (Types.List _)) -> true
-   |_ -> false
-  )
-
 (* retrieve the single Auto_id field from a table *)
 let auto_id_field =
   with_table (fun env table ->
@@ -211,62 +205,66 @@ let auto_id_field =
     |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
   )
 
-(* extract the ocaml type field for a field *)
-let ctyp_of_field f =
+let is_optional_field f =
+  let _loc = Loc.ghost in 
   match f.f_ctyp with
-  |None -> failwith ("ctyp_of_field: " ^ f.f_name)
-  |Some c -> c
+  | <:ctyp< option $t$ >> -> true
+  | _ -> false
 
 (* --- Process functions to convert OCaml types into SQL *)
 
-exception Type_not_allowed of string
-let rec process ?(opt=false) ?(ctyp=None) ?(info=External_and_internal_field) env t ml_field =
-  let n = ml_field.Types.f_id in
-  let ctyp = Some ml_field.Types.f_typ in
-  match ml_field.Types.f_typ with
-  (* basic types *)
-  |Types.Unit _        -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Int  _        -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Int32 _       -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Int64 _       -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Bool _        -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Char _        -> add_field ~opt ~ctyp ~info env t n Int
-  |Types.Float _       -> add_field ~opt ~ctyp ~info env t n Real
-  |Types.String _      -> add_field ~opt ~ctyp ~info env t n Text 
-  (* complex types *)
-  |Types.Apply(loc,[],id,[]) ->
-    let ctyp = Some (Types.Apply(loc,[],(id^"_persist"),[])) in
-    add_field ~opt ~ctyp ~info:(External_foreign id) env t n Int
-  |Types.Record (loc,fl)
-  |Types.Object (loc,fl) -> 
-    (* add an id to the current table *)
-    let env = add_field ~opt ~ctyp ~info:(External_foreign n) env t n Int in
+let rec process_type_declarations _loc ctyp env =
+  let rec fn ty env =
+    match ty with
+    |Ast.TyAnd (_loc, tyl, tyr) ->
+       (* two types, so process both and add to list *)
+       fn tyl (fn tyr env)
+    |Ast.TyDcl (_loc, id, _, ty, []) ->
+       (* we ignore type variables for the moment *)
+       process_toplevel_type _loc id ty env
+    |_ -> failwith "process_type_declarations: unexpected type"
+   in fn ctyp env
+
+and process_toplevel_type _loc n ctyp env =
+  match ctyp with
+  | <:ctyp@loc< < $fs$ > >>
+  | <:ctyp@loc< { $fs$ } >> ->
     (* add a new table to the environment *)
     let env = new_table ~name:n ~ty:Exposed ~fields:[] ~parent:None env in
-    (* process the fields in the new record *)
-    let env = add_field ~opt:true ~ctyp:(Some (Types.Int64 loc))
-       ~info:(Internal_autoid) env n "id" Int in
-    List.fold_right (fun field env -> process env n field) fl env
-  |Types.Array (_,ty)
-  |Types.List (_,ty)   ->
-    (* create a new table for the list lookup *)
-    let t' = sprintf "%s_%s_list" t n in
-    (* add table to env to represent the list *)
-    let env = new_table ~name:t' ~ty:Transient ~fields:[] ~parent:(Some t) env in
-    (* add in the list fields to the new table *)
-    let env = add_field ~opt ~ctyp ~info:External_field env t n Null in
-    let env = add_field ~opt ~ctyp ~info:(External_foreign t) env t' t Int in
-    let env = add_field ~opt ~ctyp ~info:Internal_field env t' "_idx" Int in
-    process env t' { ml_field with Types.f_typ=ty }
-  |Types.Option (_,ty) ->
-    process ~opt:true env t { ml_field with Types.f_typ=ty }
-  (* types we dont handle for the moment *)
-  |Types.Variant _
-  |Types.Tuple _
-  |Types.Ref _
-  |Types.PolyVar _
-  |Types.Var _
-  |Types.Abstract _ 
-  |Types.Apply _
-  |Types.Arrow _ as x -> raise (Type_not_allowed (Types.string_of_typ x))
+    let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
+    let rec fn env = function
+    | <:ctyp< $t1$; $t2$ >> -> fn (fn env t1) t2
+    | <:ctyp< $lid:id$ : mutable $t$ >>
+    | <:ctyp< $lid:id$ : $t$ >> ->  process_type _loc n id t env
+    | _ -> failwith "process_toplevel_type: unexpected ast"
+    in fn env fs
+  | _ -> failwith "process_toplevel_type: unknown type"
+
+ and process_type _loc t n ctyp env =
+  let info = External_and_internal_field in
+  match ctyp with
+  | <:ctyp@loc< unit >> -> add_field ~ctyp ~info env t n Int
+  | <:ctyp@loc< int >> -> add_field ~ctyp ~info env t n Int 
+  | <:ctyp@loc< int32 >> -> add_field ~ctyp ~info env t n Int
+  | <:ctyp@loc< int64 >> -> add_field ~ctyp ~info env t n Int
+  | <:ctyp@loc< float >> -> add_field ~ctyp ~info env t n Real
+  | <:ctyp@loc< bool >> -> add_field ~ctyp ~info env t n Int
+  | <:ctyp@loc< char >> -> add_field ~ctyp ~info env t n Int
+  | <:ctyp@loc< string >> -> add_field ~ctyp ~info env t n Text
+  | <:ctyp@loc< $id:id$ >> ->
+    let ids = Ast.list_of_ident id in
+    env
+
+let field_to_sql_data _loc f =
+  let id = <:expr< $lid:"_" ^ f.f_name$ >> in
+  match f.f_ctyp with
+  | <:ctyp@loc< unit >> -> <:expr< Sqlite3.Data.INT 1L >>
+  | <:ctyp@loc< int >> -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
+  | <:ctyp@loc< int32 >> -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
+  | <:ctyp@loc< int64 >> -> <:expr< Sqlite3.Data.INT $id$ >>
+  | <:ctyp@loc< float >> -> <:expr< Sqlite3.Data.FLOAT $id$ >>
+  | <:ctyp@loc< char >> -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
+  | <:ctyp@loc< string >> -> <:expr< Sqlite3.Data.TEXT $id$ >>
+  | <:ctyp@loc< bool >> ->  <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+  | _ -> failwith "to_sql_data: unknown type"
 

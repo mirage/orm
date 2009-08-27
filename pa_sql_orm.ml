@@ -31,10 +31,6 @@ END
 
 (* Begin implementation *)
 
-open Types
-open Parse
-open Error
-
 (* helper to pretty print AST fragments while debugging *)
 module PP = Camlp4.Printers.OCaml.Make(Syntax)
 let pp = new PP.printer ()
@@ -72,51 +68,10 @@ let mapi fn =
     fn !pos x
   ) 
     
-(* convert an exposed ocaml type into an AST ctyp fragment *)
-let rec ast_of_caml_type _loc = function
-  |Types.Unit _    -> <:ctyp< unit >>
-  |Types.Int _     -> <:ctyp< int >>
-  |Types.Int32 _   -> <:ctyp< int32 >>
-  |Types.Int64 _   -> <:ctyp< int64 >>
-  |Types.Float _   -> <:ctyp< float >>
-  |Types.Char _    -> <:ctyp< char >>
-  |Types.String _  -> <:ctyp< string >>
-  |Types.Bool _    -> <:ctyp< bool >>
-  |Types.List (_,ty) -> <:ctyp< list $ast_of_caml_type _loc ty$ >>
-  |Types.Array (_,ty) -> <:ctyp< array $ast_of_caml_type _loc ty$ >>
-  |Types.Option (_,ty) -> <:ctyp< option $ast_of_caml_type _loc ty$ >>
-  |Types.Apply (_,[],id,[]) -> <:ctyp< $lid:id$ >>
-  |x -> failwith ("ast_of_caml_type: " ^ (Types.string_of_typ x))
-
 open Sql_types
 
 let id_expr_of_field _loc f =
   <:expr< $lid:"_"^f.f_name$ >>
-
-(* convert a field to a Sqlite3.Data fragment *)
-let field_to_sql_data _loc f id =
-  let ctyp = match f.f_ctyp with |None -> assert false |Some c -> c in
-  let rec simple_type = function
-    |Types.Unit _ -> <:expr< Sqlite3.Data.INT 1L >>
-    |Types.Int _ -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
-    |Types.Int32 _ -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
-    |Types.Int64 _ -> <:expr< Sqlite3.Data.INT $id$ >>
-    |Types.Float _ -> <:expr< Sqlite3.Data.FLOAT $id$ >>
-    |Types.Char _ -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
-    |Types.String _ -> <:expr< Sqlite3.Data.TEXT $id$ >>
-    |Types.Bool _ -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
-    |_ -> <:expr< Sqlite3.Data.NULL >> (* XXX temporary *)
-    |x -> failwith ("field_to_sql_data: " ^ (Types.string_of_typ x))
-  in
-  match ctyp with
-  |Types.Option (_,ty) ->
-    <:expr< match $id$ with [ 
-       None -> Sqlite3.Data.NULL
-      |Some $lid:"_"^f.f_name$ -> $simple_type ty$ 
-    ] >>
-  |Types.Apply (_,[],id,[]) -> 
-    <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
-  |x -> simple_type x
 
 (* declare the types of the _persist objects used to pass SQL
    objects back and forth *)
@@ -129,9 +84,8 @@ let construct_typedefs env =
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
-      let ctyp = ast_of_caml_type _loc (ctyp_of_field f) in
-      [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
-       <:ctyp< $lid:"set_" ^ f.f_name$ : $ctyp$ -> unit >> ]
+      [ <:ctyp< $lid:f.f_name$ : $f.f_ctyp$ >> ;
+       <:ctyp< $lid:"set_" ^ f.f_name$ : $f.f_ctyp$ -> unit >> ]
     ) fields) in
     let other_fields = [
       <:ctyp< save: int64 >>;
@@ -156,16 +110,16 @@ let construct_object_funs env =
     let new_fun_name = sprintf "%s_new" t.t_name in
     let fields = exposed_fields env t.t_name in
     let fun_args = List.map (fun f ->
-      match f.f_opt with
-      |true -> <:patt< ?($lid:f.f_name$ = None) >>
-      |false -> <:patt< ~ $lid:f.f_name$ >>
+      if is_optional_field f then
+        <:patt< ?($lid:f.f_name$ = None) >>
+      else
+        <:patt< ~ $lid:f.f_name$ >>
     ) fields in 
     let new_get_set_functions = List.flatten (List.map (fun f ->
-      let cty = ast_of_caml_type _loc (ctyp_of_field f) in
       let internal_var_name = sprintf "_%s" f.f_name in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ : $cty$ = $lid:external_var_name$
+          value mutable $lid:internal_var_name$ : $f.f_ctyp$ = $lid:external_var_name$
         >>;
         <:class_str_item< 
           method $lid:external_var_name$ = $lid:internal_var_name$ 
@@ -200,7 +154,7 @@ let construct_object_funs env =
     let sql_bind_expr = List.map (fun f ->
        incr sql_bind_pos;
        let id = id_expr_of_field _loc f in
-       let v = field_to_sql_data _loc f id in
+       let v = field_to_sql_data _loc f in
        <:expr< 
         Sql_access.db_must_ok db (fun () -> 
                Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
@@ -313,11 +267,7 @@ let () =
     (fun tds args ->
       prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
-      let ts = parse_typedef _loc tds in
-      let env = List.fold_left (fun env t ->
-        let f = { Types.f_id = t.Types.td_id; f_mut = false; f_typ = t.Types.td_typ } in
-        Sql_types.process env "__top" f;
-      ) Sql_types.empty_env ts in
+      let env = process_type_declarations _loc tds (Sql_types.empty_env) in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with
       |_, None ->
@@ -327,6 +277,8 @@ let () =
         <:str_item<
           $construct_typedefs env$;
           $construct_funs env$;
-          $construct_init env$
+          $construct_init env$;
+          $Pa_sexp_conv.Generate_of_sexp.of_sexp tds$;
+          $Pa_sexp_conv.Generate_sexp_of.sexp_of tds$
         >>
       )
