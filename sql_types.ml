@@ -134,6 +134,7 @@ let add_field ~ctyp ~info env t field_name field_type =
     prerr_endline (sprintf "warning: add_field: %s:f U %s:T failed" field.f_name t);
     env
 
+
 (* --- Accessor functions to filter the environment *)
 
 (* list of tables for top-level code generation *)
@@ -149,6 +150,20 @@ let with_table fn env t =
     failwith (sprintf "internal error: exposed fields table '%s' not found" t)
   |Some table ->
     fn env table
+
+(* add an option type to a field entry *)
+let add_option_to_field n = 
+  let _loc = Loc.ghost in
+  with_table (fun env table ->
+    replace_table env (
+      let fs = List.map (fun f -> 
+        if f.f_name = n then (
+           {f with f_ctyp = <:ctyp<option $f.f_ctyp$>> }
+        ) else f
+      ) table.t_fields in
+      {table with t_fields=fs}
+    )
+  )
 
 let filter_fields_with_table fn =
    with_table (fun env table ->
@@ -251,13 +266,17 @@ and process_toplevel_type _loc n ctyp env =
   | <:ctyp@loc< bool >> -> add_field ~ctyp ~info env t n Int
   | <:ctyp@loc< char >> -> add_field ~ctyp ~info env t n Int
   | <:ctyp@loc< string >> -> add_field ~ctyp ~info env t n Text
+  | <:ctyp@loc< option $ctyp$ >> ->
+     let env = process_type _loc t n ctyp env in
+     add_option_to_field n env t
   | <:ctyp@loc< $id:id$ >> ->
     let ids = Ast.list_of_ident id in
     env
 
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
-  match f.f_ctyp with
+  let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
+  let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< Sqlite3.Data.INT 1L >>
   | <:ctyp@loc< int >> -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
   | <:ctyp@loc< int32 >> -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
@@ -266,5 +285,12 @@ let field_to_sql_data _loc f =
   | <:ctyp@loc< char >> -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
   | <:ctyp@loc< string >> -> <:expr< Sqlite3.Data.TEXT $id$ >>
   | <:ctyp@loc< bool >> ->  <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+  | <:ctyp@loc< option $t$ >> ->
+      <:expr<
+         match $id$ with [
+            None -> Sqlite3.Data.NULL
+           |Some $pid$ -> $fn t$
+         ]
+      >>
   | _ -> failwith "to_sql_data: unknown type"
-
+  in fn f.f_ctyp
