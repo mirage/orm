@@ -94,7 +94,8 @@ let construct_typedefs env =
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
-      [ <:ctyp< $lid:f.f_name$ : unit -> $f.f_ctyp$ >> ;
+    let ctyp = if is_foreign f then <:ctyp< unit -> $f.f_ctyp$ >> else <:ctyp< $f.f_ctyp$ >> in 
+      [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
        <:ctyp< $lid:"set_" ^ f.f_name$ : $f.f_ctyp$ -> unit >> ]
     ) fields) in
     let other_fields = [
@@ -139,31 +140,35 @@ let construct_object_funs env =
           >> in
           match f.f_info with
           | External_foreign tname -> <:binding< $lid:f.f_name$ = (fun () -> $lid:tname$#get_by_id $x$) >>
-          | _                      -> <:binding< $lid:f.f_name$ = $x$ >>
+          | _ -> <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
 
       [ 
         <:class_str_item<
           method $lid:"get_by_id"$ id =
             let sql = $str:sql$ ^ (Int64.to_string id) in
-            let stmt = Sqlite3.prepare db.db sql in
+            let stmt = Sqlite3.prepare db.Sql_access.db sql in
             let of_stmt stmt = 
-              $biList_to_expr _loc lazy_get_bindings <:expr< $apply _loc new_lazy_fun_name str_fields$ >>$ in
+              $biList_to_expr _loc lazy_get_bindings <:expr< $apply _loc new_lazy_fun_name (str_fields@["db"])$ >>$ in
             step_fold db stmt of_stmt
         >>; 
      ] in
 
     let lazy_new_set_functions = List.flatten (List.map (fun f ->
       let internal_var_name = sprintf "_%s" f.f_name in
+      let make_lazy x = if is_foreign f then <:ctyp< Lazy.t ($x$)>> else <:ctyp< $x$ >> in
+      let ctyp = match f.f_ctyp with 
+        | <:ctyp< option $x$>> -> <:ctyp< option ($make_lazy x$)>>
+	    | x -> make_lazy x in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ : $f.f_ctyp$ -> unit = $lid:external_var_name$
+          value mutable $lid:internal_var_name$ : $ctyp$ = $lid:external_var_name$
         >>;
         <:class_str_item< 
-          method $lid:external_var_name$ = $lid:internal_var_name$ ()
+          method $lid:external_var_name$ = Lazy.force $lid:internal_var_name$
         >>;
         <:class_str_item< 
-          method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := (fun () -> v) ) 
+          method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := (lazy v) ) 
         >>;
       ]
     ) fields) in

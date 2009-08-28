@@ -132,6 +132,7 @@ let add_field ~ctyp ~info env t field_name field_type =
   end
   |None -> env
 
+let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
 
 (* --- Accessor functions to filter the environment *)
 
@@ -373,13 +374,13 @@ let sql_data_to_field _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< unit >>
-  | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> assert false ] >>
-  | <:ctyp@loc< int32 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> assert false ] >>
-  | <:ctyp@loc< int64 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> assert false ] >>
-  | <:ctyp@loc< float >> -> <:expr< match $id$ with [ Sqlite3.Data.FLOAT x -> x | _ -> assert false ] >>
-  | <:ctyp@loc< char >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> assert false ] >>
-  | <:ctyp@loc< string >> -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | _ -> assert false ] >>
-  | <:ctyp@loc< bool >> ->  <:expr< match $id$ with [ Sqlite3.Data.INT 1L -> true | Sqlite3.Data.INT 0L -> false | _ -> assert false ] >>
+  | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< int32 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< int64 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< float >> -> <:expr< match $id$ with [ Sqlite3.Data.FLOAT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< char >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< string >> -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< bool >> ->  <:expr< match $id$ with [ Sqlite3.Data.INT 1L -> true | Sqlite3.Data.INT 0L -> false | _ -> failwith "TODO" ] >>
   | <:ctyp@loc< option $t$ >> ->
       <:expr<
          match $id$ with [
@@ -394,10 +395,11 @@ let sql_data_to_field _loc f =
       <:expr<
         match $id$ with [ 
           Sqlite3.Data.TEXT t -> Sexplib.Sexp.of_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
-        | _ -> assert false
+        | _ -> failwith "TODO"
           ]
        >>
   in
-  match f.f_info with
-  | External_foreign f -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> assert false ] >>
-  | _ -> fn f.f_ctyp
+  if is_foreign f then
+    <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+  else
+    fn f.f_ctyp
