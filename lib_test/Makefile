@@ -4,7 +4,7 @@ BUILDINC := -I ../ sql_access.cma
 P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/site-lib/sqlite3 -I ../
 
 TESTS := alltypes nested_option option simple_option tuple variant_nested foreign \
-	 nested_tuple simple simple_twodefs variant variant_tuple
+	 nested_tuple simple simple_twodefs variant variant_tuple foreign_and_variant
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
@@ -22,7 +22,7 @@ p_%: ../pa_sql_orm.cma
 # seen in error messages as a debugging aid
 pc_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
-	ocamlfind ocamlc -verbose -linkpkg -g -o $@ -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
+	ocamlfind ocamlc -verbose -linkpkg -g -annot -o $@ -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
 
 # pr_% compiles and runs the code via the intermediate ML file
 pr_%: pc_%
