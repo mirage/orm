@@ -217,7 +217,7 @@ let construct_funs env =
   let _loc = Loc.ghost in
   let bs = List.fold_left (fun a f -> f env @ a) []
     [ construct_object_funs ] in
-  <:str_item< value $biAnd_of_list bs$ >>
+  <:str_item< value rec $biAnd_of_list bs$ >>
 
 (* --- Initialization functions to create tables and open the db handle *)
 
@@ -259,7 +259,7 @@ let construct_sexp env =
   let bindings = List.map (fun (n,t) ->
       Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc n [] t
     ) (sexp_tables env) in
-  <:str_item< value $biAnd_of_list bindings$ >>
+  <:str_item< value rec $biAnd_of_list bindings$ >>
 
 (* Register the persist keyword with type-conv *)
 let () =
@@ -269,7 +269,7 @@ let () =
     (fun tds args ->
       prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
-      let env = process_type_declarations _loc tds (Sql_types.empty_env) in
+      let env = process tds in
       prerr_endline (Sql_types.string_of_env env);
       match tds, args with
       |_, None ->

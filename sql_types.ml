@@ -86,7 +86,7 @@ let string_of_env e =
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env = { e_tables = [] }
+let empty_env () = { e_tables = [] }
 
 let find_table env name =
   try
@@ -118,7 +118,6 @@ let new_table ~name ~fields ~ty ~parent env =
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~ctyp ~info env t field_name field_type =
-  prerr_endline (sprintf "add_field: %s" field_name);
   let _loc = Loc.ghost in
   let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info } in
   match find_table env t with
@@ -131,9 +130,7 @@ let add_field ~ctyp ~info env t field_name field_type =
       replace_table env table'
     |_ -> raise Field_name_not_unique
   end
-  |None ->
-    prerr_endline (sprintf "warning: add_field: %s:f U %s:T failed" field.f_name t);
-    env
+  |None -> env
 
 
 (* --- Accessor functions to filter the environment *)
@@ -245,7 +242,12 @@ let is_optional_field f =
 
 (* --- Process functions to convert OCaml types into SQL *)
 
-let rec process_type_declarations _loc ctyp env =
+let rec process tds =
+  let _loc = Loc.ghost in
+  let env = process_type_declarations _loc tds (empty_env ()) in
+  check_foreign_refs env
+
+and process_type_declarations _loc ctyp env =
   let rec fn ty env =
     match ty with
     |Ast.TyAnd (_loc, tyl, tyr) ->
@@ -275,7 +277,7 @@ and process_toplevel_type _loc n ctyp env =
        used if that type is referenced later on for SQL conversion *)
     new_table ~name:n ~ty:(Sexp ctyp) ~fields:[] ~parent:None env
 
- and process_type _loc t n ctyp env =
+and process_type _loc t n ctyp env =
   let info = External_and_internal_field in
   match ctyp with
   | <:ctyp@loc< unit >> -> add_field ~ctyp ~info env t n Int
@@ -289,9 +291,48 @@ and process_toplevel_type _loc n ctyp env =
   | <:ctyp@loc< option $ctyp$ >> ->
      let env = process_type _loc t n ctyp env in
      add_option_to_field n env t
+  | <:ctyp@loc< $lid:id$ >> -> begin
+     (* add an external type as a foreign id. this may not actually
+        exist, but we do a second pass later to fix up any invalid
+        External_foreign fields and convert them to sexps instead.
+        At this stage, we are still processing types so we dont know
+        the full set *)
+     add_field ~ctyp ~info:(External_foreign id) env t n Int
+  end  
   | _ -> 
     (* add an unknown field as-is, it will be converted to sexp later on *)
     add_field ~ctyp ~info env t n Text
+
+(* run through the fully-populated environment and check that all
+   foreign references do in fact exist, and if not convert them to 
+   opaque sexp types *)
+and check_foreign_refs env =
+  let _loc = Loc.ghost in
+  let f_to_sexp f = {f with f_info=External_and_internal_field; f_typ=Text } in
+  let f_to_foreign f = 
+    match f.f_info with
+    |External_foreign t -> {f with f_ctyp= <:ctyp< $lid:t^"_persist"$ >> }
+    |_ -> assert false in
+  let tables = List.map (fun t ->
+    let fields = List.map (fun f ->
+      match f.f_info with
+      |External_foreign id -> begin
+        match find_table env id with
+        |None -> (* no type we know about, so make this an sexp *)
+          f_to_sexp f
+        |Some t' -> begin
+          match t'.t_type with
+          |Sexp _ ->
+             f_to_sexp f (* is sexp type, so convert it *)
+          |Exposed |Transient ->
+             f_to_foreign f (* rewrite type to have _persist in it *)
+        end
+      end
+      |_ -> f
+    ) t.t_fields in
+    {t with t_fields=fields}
+  ) env.e_tables in
+  {env with e_tables=tables}
 
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
@@ -312,13 +353,18 @@ let field_to_sql_data _loc f =
            |Some $pid$ -> $fn t$
          ]
       >>
-  | _ ->
-     (* convert unknown type to an sexpression *)
-     let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] f.f_ctyp in
-     let conv_fn = "sexp_of_" ^ f.f_name in
-     <:expr< 
-        Sqlite3.Data.TEXT (
-          Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
-        ) 
-     >>
+  | ctyp -> begin
+     match (ctyp, f.f_info) with
+     | <:ctyp@loc< $lid:tid$ >>, (External_foreign _) -> 
+        <:expr< Sqlite3.Data.INT $lid:sprintf "_%s_id" f.f_name$ >>
+     |_ ->
+       (* convert unknown type to an sexpression *)
+       let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
+       let conv_fn = "sexp_of_" ^ f.f_name in
+       <:expr< 
+          Sqlite3.Data.TEXT (
+            Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
+          ) 
+       >>
+  end
   in fn f.f_ctyp
