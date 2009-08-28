@@ -31,11 +31,6 @@ END
 
 (* Begin implementation *)
 
-(* helper to pretty print AST fragments while debugging *)
-module PP = Camlp4.Printers.OCaml.Make(Syntax)
-let pp = new PP.printer ()
-let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
-
 (* convenience function to wrap the TyDcl constructor since I cant
    find an appropriate quotation to use for this *)
 let declare_type _loc name ty =
