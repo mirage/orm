@@ -132,6 +132,7 @@ let add_field ~ctyp ~info env t field_name field_type =
   end
   |None -> env
 
+let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
 
 (* --- Accessor functions to filter the environment *)
 
@@ -368,3 +369,37 @@ let field_to_sql_data _loc f =
        >>
   end
   in fn f.f_ctyp
+
+let sql_data_to_field _loc f =
+  let id = <:expr< $lid:"_" ^ f.f_name$ >> in
+  let rec fn = function
+  | <:ctyp@loc< unit >> -> <:expr< unit >>
+  | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< int32 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< int64 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< float >> -> <:expr< match $id$ with [ Sqlite3.Data.FLOAT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< char >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< string >> -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< bool >> ->  <:expr< match $id$ with [ Sqlite3.Data.INT 1L -> true | Sqlite3.Data.INT 0L -> false | _ -> failwith "TODO" ] >>
+  | <:ctyp@loc< option $t$ >> ->
+      <:expr<
+         match $id$ with [
+         Sqlite3.Data.NULL -> None
+         | x -> Some ($fn t$)
+         ]
+      >>
+  | ctyp -> 
+    (* convert unknown type to an sexpression *)
+    let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
+    let conv_fn = "of_sexp_" ^ f.f_name in
+      <:expr<
+        match $id$ with [ 
+          Sqlite3.Data.TEXT t -> Sexplib.Sexp.of_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
+        | _ -> failwith "TODO"
+          ]
+       >>
+  in
+  if is_foreign f then
+    <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+  else
+    fn f.f_ctyp

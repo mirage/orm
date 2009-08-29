@@ -55,6 +55,23 @@ let biList_to_expr _loc bindings final =
     <:expr< let $b$ in $a$ >>
   ) bindings final
 
+(* build something like 'f x1 x2 x3 ... xn' *)
+let apply _loc f label_args =
+  let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
+  let make_label x = Ast.ExLab (_loc, x, Ast.ExId (_loc, Ast.IdLid (_loc, x))) in
+  let rec aux = function
+  | []   -> Ast.ExApp (_loc, make f, make "()")
+  | [h]  -> Ast.ExApp (_loc, make f, make_label h)
+  | h::t -> Ast.ExApp (_loc, aux t , make_label h) in
+  let aux0 = function
+  | [] -> aux []
+  | h::t -> Ast.ExApp (_loc, aux t , make h) in
+  aux0 (List.rev label_args)
+
+let access_array _loc a i =
+  let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
+  Ast.ExAre (_loc, make a, Ast.ExInt (_loc, string_of_int i))
+	
 (* List.map with the integer position passed to the function *)
 let mapi fn =
   let pos = ref 0 in
@@ -76,7 +93,8 @@ let construct_typedefs env =
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
-      [ <:ctyp< $lid:f.f_name$ : $f.f_ctyp$ >> ;
+    let ctyp = if is_foreign f then <:ctyp< $f.f_ctyp$ >> else <:ctyp< $f.f_ctyp$ >> in 
+      [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
        <:ctyp< $lid:"set_" ^ f.f_name$ : $f.f_ctyp$ -> unit >> ]
     ) fields) in
     let other_fields = [
@@ -94,7 +112,7 @@ let construct_object_funs env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
   (* output the function bindings *)
-  List.map (fun t ->
+  List.flatten (List.map (fun t ->
     (* init function to initalize sqlite database *)
     let type_name = sprintf "%s_persist" t.t_name in
  
@@ -106,18 +124,25 @@ let construct_object_funs env =
         <:patt< ?($lid:f.f_name$ = None) >>
       else
         <:patt< ~ $lid:f.f_name$ >>
-    ) fields in 
-    let new_get_set_functions = List.flatten (List.map (fun f ->
+    ) fields in
+
+    let new_set_get_functions = List.flatten (List.map (fun f ->
       let internal_var_name = sprintf "_%s" f.f_name in
+      let make_lazy x = if is_foreign f then <:ctyp< unit -> ($x$)>> else <:ctyp< $x$ >> in
+      let ctyp = match f.f_ctyp with 
+        | <:ctyp< option $x$>> -> <:ctyp< option ($make_lazy x$)>>
+	    | x -> make_lazy x in
+      let lazy_force x = if is_foreign f then <:expr< $lid:x$ () >> else <:expr< $lid:x$ >> in 
+      let lazy_assign x = if is_foreign f then <:expr< $lid:x$ := (fun () -> v)  >> else <:expr< $lid:x$ := v >> in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ : $f.f_ctyp$ = $lid:external_var_name$
+          value mutable $lid:internal_var_name$ : $ctyp$ = $lid:external_var_name$
         >>;
         <:class_str_item< 
-          method $lid:external_var_name$ = $lid:internal_var_name$ 
+          method $lid:external_var_name$ = $lazy_force internal_var_name$
         >>;
         <:class_str_item< 
-          method $lid:"set_"^external_var_name$ v = ( $lid:internal_var_name$ := v ) 
+          method $lid:"set_"^external_var_name$ v = ( $lazy_assign internal_var_name$ ) 
         >>;
       ]
     ) fields) in
@@ -191,12 +216,14 @@ let construct_object_funs env =
          <:class_str_item< method delete = failwith "delete not implemented" >>;
          <:class_str_item< method save   = $save_fun$ >>;
        ] in
-    let new_functions = new_get_set_functions @ new_admin_functions in
+    let new_functions = new_set_get_functions @ new_admin_functions in
+
     let new_body = <:expr<
         object(self)
-         $Ast.crSem_of_list new_functions$;
+         $Ast.crSem_of_list (new_functions)$;
         end
       >> in
+
     let new_binding = function_with_label_args _loc 
       ~fun_name:new_fun_name
       ~final_ident:"db"
@@ -204,9 +231,41 @@ let construct_object_funs env =
       ~return_type:<:ctyp< $lid:type_name$ >>
       fun_args in
 
+    (* get function *)
+    (*      let args a = mapi (fun i _ -> access_array _loc a (i-1)) fields in *)
+    let get_body =
+      let str_fields = List.map (fun f -> f.f_name) fields in
+      let sql = sprintf "SELECT %s FROM %s WHERE id=" (String.concat ", " str_fields) t.t_name in
+      let get_bindings =		
+        mapi (fun i f ->
+	      let x = <:expr<
+            let $lid:"_" ^ f.f_name$ = Sqlite3.column stmt $`int:i-1$ in
+            $sql_data_to_field _loc f$
+          >> in
+          match f.f_info with
+          | External_foreign tname -> <:binding< $lid:f.f_name$ = (fun () -> List.hd ($lid:tname^"_get_by_id"$ $x$ db)) >>
+          | _ -> <:binding< $lid:f.f_name$ = $x$ >>
+        ) fields in 
+
+      <:expr<
+        let sql = $str:sql$ ^ (Int64.to_string id) in
+        let stmt = Sqlite3.prepare db.Sql_access.db sql in
+        let of_stmt stmt = 
+          $biList_to_expr _loc get_bindings <:expr< $apply _loc new_fun_name (str_fields@["db"])$ >>$ in
+        Sql_access.step_fold db stmt of_stmt
+      >> in
+
+    let get_fun_name = t.t_name^"_get_by_id" in
+    let get_binding = function_with_label_args _loc 
+      ~fun_name:get_fun_name
+      ~final_ident:"db"
+      ~function_body:get_body
+      ~return_type:<:ctyp< list $lid:type_name$ >>
+      [ <:patt< ~id >> ] in
+
     (* return single binding of all the functions for this type *)
-    new_binding
-  ) tables
+	[new_binding; get_binding]
+  ) tables)
 
 let construct_funs env =
   let _loc = Loc.ghost in

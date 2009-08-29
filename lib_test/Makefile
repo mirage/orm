@@ -1,7 +1,7 @@
 # Makefile to build and run the test files in a variety of ways
 
 BUILDINC := -I ../ sql_access.cma
-P4INC := -I$(shell ocamlc -where)/site-lib/type-conv -I$(shell ocamlc -where)/site-lib/sqlite3 -I ../
+P4INC := -I$(shell ocamlfind query type-conv) -I$(shell ocamlfind query sqlite3) -I ../
 
 TESTS := alltypes nested_option option simple_option tuple variant_nested foreign \
 	 nested_tuple simple simple_twodefs variant variant_tuple foreign_and_variant
