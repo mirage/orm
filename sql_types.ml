@@ -372,6 +372,7 @@ let field_to_sql_data _loc f =
 
 let sql_data_to_field _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
+  let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< unit >>
   | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
@@ -390,11 +391,15 @@ let sql_data_to_field _loc f =
       >>
   | ctyp -> 
     (* convert unknown type to an sexpression *)
-    let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
-    let conv_fn = "of_sexp_" ^ f.f_name in
+    let internal_binding, external_binding = 
+      Pa_sexp_conv.Generate_of_sexp.td_of_sexp _loc f.f_name [] ctyp in
+    let conv_fn = f.f_name ^ "_of_sexp" in
       <:expr<
         match $id$ with [ 
-          Sqlite3.Data.TEXT t -> Sexplib.Sexp.of_string (let $sexp_binding$ in $lid:conv_fn$ $id$)
+          Sqlite3.Data.TEXT $pid$ ->
+            let $internal_binding$ in
+            let $external_binding$ in 
+            $lid:conv_fn$ (Sexplib.Sexp.of_string $id$)
         | _ -> failwith "TODO"
           ]
        >>
