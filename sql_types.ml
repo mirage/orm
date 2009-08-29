@@ -394,7 +394,7 @@ let sql_data_to_field _loc f =
     let conv_fn = "of_sexp_" ^ f.f_name in
       <:expr<
         match $id$ with [ 
-          Sqlite3.Data.TEXT t -> Sexplib.Sexp.of_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
+          Sqlite3.Data.TEXT t -> Sexplib.Sexp.of_string (let $sexp_binding$ in $lid:conv_fn$ $id$)
         | _ -> failwith "TODO"
           ]
        >>
