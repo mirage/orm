@@ -122,7 +122,7 @@ let construct_object_funs env =
     let type_name = sprintf "%s_persist" t.t_name in
  
     (* the _new creation function to spawn objects of the SQL type *)
-    let new_fun_name = sprintf "%s_new" t.t_name in
+    let new_fun_name ~_lazy = sprintf "%s_new%s" t.t_name (if _lazy then "_lazy" else "") in
     let fields = exposed_fields env t.t_name in
     let fun_args = List.map (fun f ->
       if is_optional_field f then
@@ -131,14 +131,15 @@ let construct_object_funs env =
         <:patt< ~ $lid:f.f_name$ >>
     ) fields in
 
-    let new_set_get_functions = List.flatten (List.map (fun f ->
+    let new_set_get_functions ~_lazy = List.flatten (List.map (fun f ->
+      let _lazy = is_foreign f && _lazy in
       let internal_var_name = sprintf "_%s" f.f_name in
-      let make_lazy x = if is_foreign f then <:ctyp< unit -> ($x$)>> else <:ctyp< $x$ >> in
+      let make_lazy x = if _lazy then <:ctyp< unit -> ($x$)>> else <:ctyp< $x$ >> in
       let ctyp = match f.f_ctyp with 
         | <:ctyp< option $x$>> -> <:ctyp< option ($make_lazy x$)>>
 	    | x -> make_lazy x in
-      let lazy_force x = if is_foreign f then <:expr< $lid:x$ () >> else <:expr< $lid:x$ >> in 
-      let lazy_assign x = if is_foreign f then <:expr< $lid:x$ := (fun () -> v)  >> else <:expr< $lid:x$ := v >> in
+      let lazy_force x = if _lazy then <:expr< $lid:x$ () >> else <:expr< $lid:x$ >> in 
+      let lazy_assign x = if _lazy then <:expr< $lid:x$ := (fun () -> v) >> else <:expr< $lid:x$ := v >> in
       let external_var_name = f.f_name in [
         <:class_str_item<
           value mutable $lid:internal_var_name$ : $ctyp$ = $lid:external_var_name$
@@ -221,18 +222,18 @@ let construct_object_funs env =
          <:class_str_item< method delete = failwith "delete not implemented" >>;
          <:class_str_item< method save   = $save_fun$ >>;
        ] in
-    let new_functions = new_set_get_functions @ new_admin_functions in
+    let new_functions ~_lazy = new_set_get_functions ~_lazy @ new_admin_functions in
 
-    let new_body = <:expr<
+    let new_body ~_lazy = <:expr<
         object(self)
-         $Ast.crSem_of_list (new_functions)$;
+         $Ast.crSem_of_list (new_functions ~_lazy)$;
         end
       >> in
 
-    let new_binding = function_with_label_args _loc 
-      ~fun_name:new_fun_name
+    let new_binding ~_lazy = function_with_label_args _loc 
+      ~fun_name:(new_fun_name ~_lazy)
       ~final_ident:"db"
-      ~function_body:new_body
+      ~function_body:(new_body ~_lazy)
       ~return_type:<:ctyp< $lid:type_name$ >>
       fun_args in
 
@@ -248,17 +249,33 @@ let construct_object_funs env =
             $sql_data_to_field _loc f$
           >> in
           match f.f_info with
-          | External_foreign tname -> <:binding< $lid:f.f_name$ = (fun () -> List.hd ($lid:tname^"_get_by_id"$ $x$ db)) >>
+          | External_foreign tname ->
+             <:binding< $lid:f.f_name$ = 
+               (fun () -> List.hd ($lid:tname^"_get_by_id"$ ~_lazy ~id:$x$ db))
+             >>
           | _ -> <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
 
-      <:expr<
-        let sql = $str:sql$ ^ (Int64.to_string id) in
-        let stmt = Sqlite3.prepare db.Sql_access.db sql in
-        let of_stmt stmt = 
-          $biList_to_expr _loc get_bindings <:expr< $apply _loc new_fun_name (str_fields@["db"])$ >>$ in
-        Sql_access.step_fold db stmt of_stmt
-      >> in
+        <:expr< 
+          let sql = $str:sql$ ^ (Int64.to_string id) in
+          let stmt = Sqlite3.prepare db.Sql_access.db sql in
+          let of_stmt stmt = 
+            $biList_to_expr _loc get_bindings
+            <:expr< 
+              if _lazy then
+                $apply _loc (new_fun_name ~_lazy:true) (str_fields @ ["db"])$
+              else begin
+                $biList_to_expr _loc 
+                  (List.map 
+                    (fun f -> 
+                      if is_foreign f
+                      then <:binding< $lid:f.f_name$ = $lid:f.f_name$ () >> 
+                      else <:binding< $lid:f.f_name$ = $lid:f.f_name$ >>)
+                     fields)
+                 <:expr< $apply _loc (new_fun_name ~_lazy:false) (str_fields @ ["db"])$ >> $
+              end >> $ in
+          Sql_access.step_fold db stmt of_stmt
+        >> in
 
     let get_fun_name = t.t_name^"_get_by_id" in
     let get_binding = function_with_label_args _loc 
@@ -266,10 +283,10 @@ let construct_object_funs env =
       ~final_ident:"db"
       ~function_body:get_body
       ~return_type:<:ctyp< list $lid:type_name$ >>
-      [ <:patt< ~id >> ] in
+      [ <:patt< ~_lazy >>; <:patt< ~id >> ] in
 
     (* return single binding of all the functions for this type *)
-	[new_binding; get_binding]
+    [ new_binding ~_lazy:false; new_binding ~_lazy:true; get_binding ]
   ) tables)
 
 let construct_funs env =
