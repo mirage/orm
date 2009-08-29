@@ -1,3 +1,5 @@
+TYPE_CONV_PATH "Alltypes"
+
 type t = {
   one: char;
   two: string;
