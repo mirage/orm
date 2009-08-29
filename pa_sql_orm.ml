@@ -310,10 +310,16 @@ let construct_init env =
 
 let construct_sexp env =
   let _loc = Loc.ghost in
-  let bindings = List.map (fun (n,t) ->
+  let sexp_of_bindings = List.map (fun (n,t) ->
       Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc n [] t
     ) (sexp_tables env) in
-  <:str_item< value rec $biAnd_of_list bindings$ >>
+  let bindings_of_sexp = List.map (fun (n,t) ->
+      let internal_binding,external_binding = 
+         Pa_sexp_conv.Generate_of_sexp.td_of_sexp _loc n [] t in
+      <:binding< $internal_binding$ and $external_binding$ >>
+    ) (sexp_tables env) in
+  <:str_item< value rec $biAnd_of_list (sexp_of_bindings @ bindings_of_sexp)$ >>
+ 
 
 (* Register the persist keyword with type-conv *)
 let () =
