@@ -408,3 +408,39 @@ let sql_data_to_field _loc f =
     <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
   else
     fn f.f_ctyp
+
+let to_string _loc f =
+  let id = <:expr< $lid:f.f_name$ >> in
+  let pid = <:patt< $lid:f.f_name$ >> in
+  let rec fn = function
+  | <:ctyp@loc< unit >> -> <:expr< "1" >>
+  | <:ctyp@loc< int >> -> <:expr< string_of_int $id$ >>
+  | <:ctyp@loc< int32 >> -> <:expr< Int32.to_string $id$ >>
+  | <:ctyp@loc< int64 >> -> <:expr< Int64.to_string $id$ >>
+  | <:ctyp@loc< float >> -> <:expr< string_of_float $id$ >>
+  | <:ctyp@loc< char >> -> <:expr< String.make 1 $id$ >>
+  | <:ctyp@loc< string >> -> <:expr< $id$ >>
+  | <:ctyp@loc< bool >> ->  <:expr< string_of_bool $id$ >>
+  | <:ctyp@loc< option $t$ >> ->
+      <:expr< let x = 0 in
+         match $id$ with [
+            None -> "NULL"
+           |Some $pid$ -> $fn t$
+         ]
+      >>
+  | ctyp -> begin
+     match (ctyp, f.f_info) with
+     | <:ctyp@loc< $lid:tid$ >>, (External_foreign _) -> assert false
+     |_ ->
+       (* convert unknown type to an sexpression *)
+       let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
+       let conv_fn = "sexp_of_" ^ f.f_name in
+       <:expr< 
+            Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
+       >>
+    end in
+
+  if f.f_info = Internal_autoid then
+    <:expr< Int64.to_string $id$ >>
+  else 
+    fn f.f_ctyp

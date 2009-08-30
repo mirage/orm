@@ -232,14 +232,31 @@ let construct_object_funs env =
       ~return_type:<:ctyp< $lid:type_name$ >>
       fun_args in
 
-    (* get function *)
-    (*      let args a = mapi (fun i _ -> access_array _loc a (i-1)) fields in *)
-    let get_body =
-      let str_fields = List.map (fun f -> f.f_name) fields in
-      let sql = sprintf "SELECT %s FROM %s WHERE id=" (String.concat ", " str_fields) t.t_name in
+    (* return single binding of all the functions for this type *)
+    [ new_binding ~_lazy:false; new_binding ~_lazy:true ]
+  ) tables)
+
+(* get functions *)
+(*      let args a = mapi (fun i _ -> access_array _loc a (i-1)) fields in *)
+let construct_get_functions env =
+  let _loc = Loc.ghost in
+  let tables = exposed_tables env in
+  List.flatten (List.map (fun t ->
+    let type_name = sprintf "%s_persist" t.t_name in
+    let new_fun_name ~_lazy = sprintf "%s_new%s" t.t_name (if _lazy then "_lazy" else "") in
+    let fields = exposed_fields env t.t_name in
+    let str_fields = List.map (fun f -> f.f_name) fields in
+    let foreign_fields, not_foreign_fields = List.partition is_foreign fields in
+
+    let get_body arg =
+      let select_clause = String.concat ", " str_fields in
+      let where_clause = match arg with
+      | None -> sprintf "custom_fn(%s)" select_clause
+      | Some f -> sprintf "%s=" f.f_name in
+      let sql = sprintf "SELECT %s FROM %s WHERE %s" select_clause t.t_name where_clause in
       let get_bindings =		
         mapi (fun i f ->
-	      let x = <:expr<
+          let x = <:expr<
             let $lid:"_" ^ f.f_name$ = Sqlite3.column stmt $`int:i-1$ in
             $sql_data_to_field _loc f$
           >> in
@@ -251,44 +268,46 @@ let construct_object_funs env =
           | _ -> <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
 
-        <:expr< 
-          let sql = $str:sql$ ^ (Int64.to_string id) in
-          let stmt = Sqlite3.prepare db.Sql_access.db sql in
-          let of_stmt stmt = 
-            $biList_to_expr _loc get_bindings
+      let sql_expr = match arg with
+        | None -> <:expr< $str:sql$ >> 
+        | Some f -> <:expr< $str:sql$ ^ $to_string _loc f$ >> in
+
+      <:expr< 
+        let sql = $sql_expr$ in
+        let stmt = Sqlite3.prepare db.Sql_access.db sql in
+        let of_stmt stmt = 
+          $biList_to_expr _loc get_bindings
             <:expr< 
               if _lazy then
                 $apply _loc (new_fun_name ~_lazy:true) (str_fields @ ["db"])$
-              else begin
+              else begin 
                 $biList_to_expr _loc 
-                  (List.map 
-                    (fun f -> 
-                      if is_foreign f
-                      then <:binding< $lid:f.f_name$ = $lid:f.f_name$ () >> 
-                      else <:binding< $lid:f.f_name$ = $lid:f.f_name$ >>)
-                     fields)
-                 <:expr< $apply _loc (new_fun_name ~_lazy:false) (str_fields @ ["db"])$ >> $
-              end >> $ in
+                  (List.map (fun f -> <:binding< $lid:f.f_name$ = $lid:f.f_name$ () >>) foreign_fields)
+                  <:expr< $apply _loc (new_fun_name ~_lazy:false) (str_fields @ ["db"]) $ >>$
+              end 
+             >>$ in
           Sql_access.step_fold db stmt of_stmt
         >> in
 
-    let get_fun_name = t.t_name^"_get_by_id" in
-    let get_binding = function_with_label_args _loc 
-      ~fun_name:get_fun_name
+    let get_fun_name = function 
+      | None -> sprintf "%s_get" t.t_name 
+      | Some f ->  sprintf "%s_get_by_%s" t.t_name f.f_name in
+    let get_argument = function | None -> <:patt< ~fn >> | Some f -> <:patt< ~ $lid:f.f_name$ >> in
+    let get_binding arg = function_with_label_args _loc
+      ~fun_name:(get_fun_name arg)
       ~final_ident:"db"
-      ~function_body:get_body
-      ~return_type:<:ctyp< list $lid:type_name$ >>
-      [ <:patt< ~_lazy >>; <:patt< ~id >> ] in
-
-    (* return single binding of all the functions for this type *)
-    [ new_binding ~_lazy:false; new_binding ~_lazy:true; get_binding ]
+      ~function_body:(get_body arg)
+      ~return_type:<:ctyp< list $lid:type_name$ >> 
+      [ <:patt< ~_lazy >>; get_argument arg ] in
+     (List.map (fun x -> get_binding (Some x)) not_foreign_fields) @ [ get_binding None ]
   ) tables)
 
 let construct_funs env =
   let _loc = Loc.ghost in
   let bs = List.fold_left (fun a f -> f env @ a) []
     [ construct_object_funs ] in
-  <:str_item< value rec $biAnd_of_list bs$ >>
+  <:str_item< 
+     value rec $biAnd_of_list bs$ >>
 
 (* --- Initialization functions to create tables and open the db handle *)
 
@@ -337,7 +356,6 @@ let construct_sexp env =
     ) (sexp_tables env) in
   <:str_item< value rec $biAnd_of_list (sexp_of_bindings @ bindings_of_sexp)$ >>
  
-
 (* Register the persist keyword with type-conv *)
 let () =
   add_generator_with_arg
@@ -358,5 +376,6 @@ let () =
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;
+          value rec $biAnd_of_list (construct_get_functions env)$;
         >>
       )
