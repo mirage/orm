@@ -237,7 +237,6 @@ let construct_object_funs env =
   ) tables)
 
 (* get functions *)
-(*      let args a = mapi (fun i _ -> access_array _loc a (i-1)) fields in *)
 let construct_get_functions env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
@@ -260,12 +259,10 @@ let construct_get_functions env =
             let $lid:"_" ^ f.f_name$ = Sqlite3.column stmt $`int:i-1$ in
             $sql_data_to_field _loc f$
           >> in
-          match f.f_info with
-          | External_foreign tname ->
-             <:binding< $lid:f.f_name$ = 
-               (fun () -> $lid:tname^"_get_by_id"$ ~_lazy ~id:$x$ db)
-             >>
-          | _ -> <:binding< $lid:f.f_name$ = $x$ >>
+          if is_foreign f then
+            <:binding< $lid:f.f_name$ = (fun () -> $lid:get_foreign f^"_get_by_id"$ ~_lazy ~id:$x$ db) >>
+          else
+            <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
 
       let sql_expr = match arg with
@@ -273,8 +270,29 @@ let construct_get_functions env =
         | Some f -> <:expr< $str:sql$ ^ $to_string _loc f$ >> in
       let final_expr = match arg with
         | Some f when is_autoid f -> 
-               <:expr< match (Sql_access.step_fold db stmt of_stmt) with [ [] -> raise Not_found | [h] -> h | _ -> failwith "TODO" ] >> 
-        | _ -> <:expr< Sql_access.step_fold db stmt of_stmt >> in
+               <:expr< match (Sql_access.step_fold db stmt of_stmt) with
+                 [ [] -> raise Not_found | [h] -> h | _ -> failwith "TODO" ]
+               >> 
+        | Some f -> <:expr< Sql_access.step_fold db stmt of_stmt >>
+        | None ->
+            let access i f = 
+              <:expr< let $lid:"_"^f.f_name$ = $access_array _loc "__sql_array__" (i-1)$ in 
+                $sql_data_to_field _loc f$ >> in
+            let not_foreign_bindings =
+               mapi (fun i f -> <:binding< $lid:f.f_name$ = $access i f$ >>) not_foreign_fields in
+            let foreign_binding =
+               mapi (fun i f -> 
+                   <:binding< $lid:f.f_name$ () = $lid:get_foreign f^"_get_by_id"$ ~_lazy:True ~id: $access i f$ db>>
+                 ) foreign_fields in
+            <:expr<
+              let custom_fn __sql_array__ =
+                let x =
+                  $biList_to_expr _loc (not_foreign_bindings @ foreign_binding)
+                    <:expr< $apply _loc (new_fun_name ~_lazy:true) (str_fields @ ["db"]) $ >>$ in
+                fn x in
+	      do {
+                Sqlite3.create_funN db.Sql_access.db "custom_fn" custom_fn;
+                Sql_access.step_fold db stmt of_stmt } >> in
 
       <:expr< 
         let sql = $sql_expr$ in

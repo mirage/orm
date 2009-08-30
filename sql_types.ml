@@ -133,6 +133,9 @@ let add_field ~ctyp ~info env t field_name field_type =
   |None -> env
 
 let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
+let get_foreign f = match f.f_info with
+  | External_foreign f -> f 
+  | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
 let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
 (* --- Accessor functions to filter the environment *)
@@ -423,7 +426,7 @@ let to_string _loc f =
   | <:ctyp@loc< string >> -> <:expr< $id$ >>
   | <:ctyp@loc< bool >> ->  <:expr< string_of_bool $id$ >>
   | <:ctyp@loc< option $t$ >> ->
-      <:expr< let x = 0 in
+      <:expr<
          match $id$ with [
             None -> "NULL"
            |Some $pid$ -> $fn t$
