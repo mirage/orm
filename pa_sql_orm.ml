@@ -159,7 +159,7 @@ let construct_object_funs env =
     (* the INSERT statement for this object *)
     let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
       (String.concat "," (List.map (fun f -> 
-        if f.f_info = Internal_autoid then "NULL" else "?") (sql_fields env t.t_name))) in
+        if is_autoid f then "NULL" else "?") (sql_fields env t.t_name))) in
 
     (* the UPDATE statement for this object *)
     let update_sql = sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name
@@ -263,7 +263,7 @@ let construct_get_functions env =
           match f.f_info with
           | External_foreign tname ->
              <:binding< $lid:f.f_name$ = 
-               (fun () -> List.hd ($lid:tname^"_get_by_id"$ ~_lazy ~id:$x$ db))
+               (fun () -> $lid:tname^"_get_by_id"$ ~_lazy ~id:$x$ db)
              >>
           | _ -> <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
@@ -271,6 +271,10 @@ let construct_get_functions env =
       let sql_expr = match arg with
         | None -> <:expr< $str:sql$ >> 
         | Some f -> <:expr< $str:sql$ ^ $to_string _loc f$ >> in
+      let final_expr = match arg with
+        | Some f when is_autoid f -> 
+               <:expr< match (Sql_access.step_fold db stmt of_stmt) with [ [] -> raise Not_found | [h] -> h | _ -> failwith "TODO" ] >> 
+        | _ -> <:expr< Sql_access.step_fold db stmt of_stmt >> in
 
       <:expr< 
         let sql = $sql_expr$ in
@@ -286,18 +290,21 @@ let construct_get_functions env =
                   <:expr< $apply _loc (new_fun_name ~_lazy:false) (str_fields @ ["db"]) $ >>$
               end 
              >>$ in
-          Sql_access.step_fold db stmt of_stmt
+          $final_expr$
         >> in
 
     let get_fun_name = function 
       | None -> sprintf "%s_get" t.t_name 
       | Some f ->  sprintf "%s_get_by_%s" t.t_name f.f_name in
+    let return_type = function
+      | Some f when is_autoid f -> <:ctyp< $lid:type_name$ >>
+      | _ -> <:ctyp< list $lid:type_name$ >> in
     let get_argument = function | None -> <:patt< ~fn >> | Some f -> <:patt< ~ $lid:f.f_name$ >> in
     let get_binding arg = function_with_label_args _loc
       ~fun_name:(get_fun_name arg)
       ~final_ident:"db"
       ~function_body:(get_body arg)
-      ~return_type:<:ctyp< list $lid:type_name$ >> 
+      ~return_type:(return_type arg)
       [ <:patt< ~_lazy >>; get_argument arg ] in
      (List.map (fun x -> get_binding (Some x)) not_foreign_fields) @ [ get_binding None ]
   ) tables)

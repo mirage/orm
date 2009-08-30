@@ -133,6 +133,7 @@ let add_field ~ctyp ~info env t field_name field_type =
   |None -> env
 
 let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
+let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
 (* --- Accessor functions to filter the environment *)
 
