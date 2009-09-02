@@ -5,7 +5,7 @@ P4INC := -I$(shell ocamlfind query type-conv) -I$(shell ocamlfind query sqlite3)
 
 TESTS := alltypes nested_option option simple_option tuple variant_nested foreign \
 	 nested_tuple simple simple_twodefs variant variant_tuple foreign_and_variant \
-	 foreign_nested list_simple list_tuple
+	 foreign_nested list_simple list_tuple array_simple
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)

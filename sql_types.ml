@@ -323,7 +323,8 @@ and process_type _loc t n ctyp env =
         the full set *)
      add_field ~ctyp ~info:(External_foreign id) env t n Int
   end  
-  | <:ctyp@loc< list $ctyp$ >> as orig_ctyp ->
+  | <:ctyp@loc< list $ctyp$ >>
+  | <:ctyp@loc< array $ctyp$ >> as orig_ctyp ->
     let env = add_field ~ctyp:orig_ctyp ~info:External_field env t n Null in
     (* construct the transient list table *)
     let name = sprintf "%s_%s__list" t n in

@@ -210,7 +210,6 @@ let construct_object_funs env =
  
     (* generate the list functions insertion functions *)
     let foreign_many = List.map (fun f ->
-      (* XXX just make it work for list for now, array can happen later *)
       let tname = list_table_name t.t_name f.f_name in
       let ins_sql =
         sprintf "INSERT OR REPLACE INTO %s VALUES(%s)" tname 
@@ -228,9 +227,9 @@ let construct_object_funs env =
          >>
       ) (sql_fields_no_autoid env tname) in
       (* decide which iterator to use depending on the list type *)
-      let access_fn = match f.f_ctyp with
-        | <:ctyp< array $c$ >> -> <:expr< Array.iteri >> 
-        | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> 
+      let access_fn, length_fn = match f.f_ctyp with
+        | <:ctyp< array $c$ >> -> <:expr< Array.iteri >> , <:expr< Array.length >>
+        | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> , <:expr< List.length >>
         | _ -> assert false in
       (* main binding for iterating through the list and updating sql *)
       <:binding< () = 
@@ -249,7 +248,7 @@ let construct_object_funs env =
           Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _curobj_id);
           (* XXX check for off-by-one here *)
           Sql_access.db_must_bind db stmt 2 
-             (Sqlite3.Data.INT (Int64.of_int (List.length $lid:"_"^f.f_name$)));
+             (Sqlite3.Data.INT (Int64.of_int ($length_fn$ $lid:"_"^f.f_name$)));
           Sql_access.db_must_step db stmt
         }
       >>
