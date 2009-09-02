@@ -93,7 +93,7 @@ let construct_typedefs env =
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
-    let ctyp = if is_foreign f then <:ctyp< $f.f_ctyp$ >> else <:ctyp< $f.f_ctyp$ >> in 
+    let ctyp = <:ctyp< $f.f_ctyp$ >> in
       [ <:ctyp< $lid:f.f_name$ : $ctyp$ >> ;
        <:ctyp< $lid:"set_" ^ f.f_name$ : $f.f_ctyp$ -> unit >> ]
     ) fields) in
@@ -104,8 +104,15 @@ let construct_typedefs env =
     let all_fields = accessor_fields  @ other_fields in
     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >> :: decls;
   ) tables []) in
-  <:str_item< type $object_decls$ >> 
-
+  let cache_decls =
+    let sum_type = List.map (fun t -> (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name^"_persist"$) >> ])) tables in
+    let sum_type =
+      if List.length sum_type = 1 then
+        <:ctyp< $lid:(List.hd tables).t_name$ >>
+      else
+        <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
+      declare_type _loc "cache" sum_type in
+  stSem_of_list [ <:str_item< type $object_decls$ >>; <:str_item< type $cache_decls$ >> ]
  
 (* construct the functions to init the db and create objects *)
 let construct_object_funs env =
@@ -246,31 +253,35 @@ let construct_force_functions env =
 
     let force_body =
       let force_exprs =
-        List.map (fun f -> <:expr<
-            let key = ($str:get_foreign f$, $lid:t.t_name$ # $lid:f.f_name$#id) in
-            if Hashtbl.mem cache key
-            then $lid:t.t_name$ # $lid:"set_"^f.f_name$ (Hashtbl.find cache key)
-            else (do {
-              Hashtbl.replace cache key $lid:t.t_name$ # $lid:f.f_name$;
-              $lid:get_foreign f^"_force"$ ~cache $lid:t.t_name$ # $lid:f.f_name$
-            })
-          >>)
+        List.map 
+          (fun f -> <:expr< ignore ($lid:get_foreign f^"_force"$ ~cache $lid:t.t_name$ # $lid:f.f_name$) >>)
           foreign_fields in
-      <:expr< do { $exSem_of_list force_exprs$ } >>
-    in
+      <:expr<
+        let id = match $lid:t.t_name$#id with [ None -> assert False | Some x -> x ] in
+        let key = ( $str:t.t_name$, id) in
+        if Hashtbl.mem cache key
+        then match Hashtbl.find cache key with [ $uid:"C_"^t.t_name$ x -> x | _ -> assert False ]
+        else (do {
+          Hashtbl.replace cache key ($uid:"C_"^t.t_name$ $lid:t.t_name$);
+          $exSem_of_list force_exprs$;
+          $lid:t.t_name$ })
+
+      >> in
 
     let force_binding = function_with_label_args _loc
       ~fun_name:(t.t_name^"_force")
       ~final_ident:t.t_name
       ~function_body:force_body
-      ~return_type:<:ctyp< unit >>
+      ~return_type:<:ctyp< $lid:t.t_name^"_persist"$ >>
       [ <:patt< ~cache >> ]
     in
 
     force_binding) 
     foreign_tables 
-  @ List.map (fun t -> <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ = () >>) not_foreign_tables
-    
+  @ List.map (fun t ->
+      <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $lid:t.t_name^"_persist"$ = $lid:t.t_name$ >>)
+      not_foreign_tables
+  @ [ <:binding< $lid:"new_cache"$ () = Hashtbl.create 64 >> ]
 
 (* get functions *)
 let construct_get_functions env =
@@ -340,8 +351,10 @@ let construct_get_functions env =
             <:expr< 
               let $lid:"__"^t.t_name$ = $biList_to_expr _loc get_bindings new_lazy_object$ in
               do {
-                if not _lazy then $lid:t.t_name^"_force"$ ~cache:(Hashtbl.create 64) $lid:"__"^t.t_name$ else ();
-                $lid:"__"^t.t_name$ } 
+                if not _lazy then
+                  $lid:t.t_name^"_force"$ ~cache:(new_cache ()) $lid:"__"^t.t_name$
+                else
+                  $lid:"__"^t.t_name$ } 
             >>$ 
         in
         $final_expr$
