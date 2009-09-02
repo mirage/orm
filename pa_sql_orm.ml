@@ -236,16 +236,52 @@ let construct_object_funs env =
     [ new_binding ~_lazy:false; new_binding ~_lazy:true ]
   ) tables)
 
+(* force functions *)
+let construct_force_functions env =
+  let _loc = Loc.ghost in
+  let tables = exposed_tables env in
+  let foreign_tables, not_foreign_tables  = List.partition (fun t -> List.exists is_foreign t.t_fields) tables in 
+  List.map (fun t ->
+    let foreign_fields = List.filter is_foreign t.t_fields in
+
+    let force_body =
+      let force_exprs =
+        List.map (fun f -> <:expr<
+            let key = ($str:get_foreign f$, $lid:t.t_name$ # $lid:f.f_name$#id) in
+            if Hashtbl.mem cache key
+            then $lid:t.t_name$ # $lid:"set_"^f.f_name$ (Hashtbl.find cache key)
+            else (do {
+              Hashtbl.replace cache key $lid:t.t_name$ # $lid:f.f_name$;
+              $lid:get_foreign f^"_force"$ ~cache $lid:t.t_name$ # $lid:f.f_name$
+            })
+          >>)
+          foreign_fields in
+      <:expr< do { $exSem_of_list force_exprs$ } >>
+    in
+
+    let force_binding = function_with_label_args _loc
+      ~fun_name:(t.t_name^"_force")
+      ~final_ident:t.t_name
+      ~function_body:force_body
+      ~return_type:<:ctyp< unit >>
+      [ <:patt< ~cache >> ]
+    in
+
+    force_binding) 
+    foreign_tables 
+  @ List.map (fun t -> <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ = () >>) not_foreign_tables
+    
+
 (* get functions *)
 let construct_get_functions env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
   List.flatten (List.map (fun t ->
     let type_name = sprintf "%s_persist" t.t_name in
-    let new_fun_name ~_lazy = sprintf "%s_new%s" t.t_name (if _lazy then "_lazy" else "") in
     let fields = exposed_fields env t.t_name in
     let str_fields = List.map (fun f -> f.f_name) fields in
     let foreign_fields, not_foreign_fields = List.partition is_foreign fields in
+    let new_lazy_object = <:expr< $apply _loc (sprintf "%s_new_lazy" t.t_name) (str_fields @ ["db"]) $ >> in
 
     let get_body arg =
       let select_clause = String.concat ", " str_fields in
@@ -260,7 +296,7 @@ let construct_get_functions env =
             $sql_data_to_field _loc f$
           >> in
           if is_foreign f then
-            <:binding< $lid:f.f_name$ = (fun () -> $lid:get_foreign f^"_get_by_id"$ ~_lazy ~id:$x$ db) >>
+            <:binding< $lid:f.f_name$ = (fun () -> $lid:get_foreign f^"_get_by_id"$ ~_lazy:True ~id:$x$ db) >>
           else
             <:binding< $lid:f.f_name$ = $x$ >>
         ) fields in 
@@ -282,13 +318,12 @@ let construct_get_functions env =
                mapi (fun i f -> <:binding< $lid:f.f_name$ = $access i f$ >>) not_foreign_fields in
             let foreign_binding =
                mapi (fun i f -> 
-                   <:binding< $lid:f.f_name$ () = $lid:get_foreign f^"_get_by_id"$ ~_lazy:True ~id: $access i f$ db>>
+                   <:binding< $lid:f.f_name$ () = $lid:get_foreign f^"_get_by_id"$ ~_lazy ~id: $access i f$ db>>
                  ) foreign_fields in
             <:expr<
               let custom_fn __sql_array__ =
                 let x =
-                  $biList_to_expr _loc (not_foreign_bindings @ foreign_binding)
-                    <:expr< $apply _loc (new_fun_name ~_lazy:true) (str_fields @ ["db"]) $ >>$ in
+                  $biList_to_expr _loc (not_foreign_bindings @ foreign_binding) new_lazy_object$ in
                 fn x in
 	      do {
                 Sqlite3.create_funN db.Sql_access.db "custom_fn" custom_fn;
@@ -297,19 +332,20 @@ let construct_get_functions env =
       <:expr< 
         let sql = $sql_expr$ in
         let stmt = Sqlite3.prepare db.Sql_access.db sql in
-        let of_stmt stmt = 
-          $biList_to_expr _loc get_bindings
+        let of_stmt stmt =
+          $
+          if foreign_fields = [] then
+            biList_to_expr _loc get_bindings new_lazy_object
+          else
             <:expr< 
-              if _lazy then
-                $apply _loc (new_fun_name ~_lazy:true) (str_fields @ ["db"])$
-              else begin 
-                $biList_to_expr _loc 
-                  (List.map (fun f -> <:binding< $lid:f.f_name$ = $lid:f.f_name$ () >>) foreign_fields)
-                  <:expr< $apply _loc (new_fun_name ~_lazy:false) (str_fields @ ["db"]) $ >>$
-              end 
-             >>$ in
-          $final_expr$
-        >> in
+              let $lid:"__"^t.t_name$ = $biList_to_expr _loc get_bindings new_lazy_object$ in
+              do {
+                if not _lazy then $lid:t.t_name^"_force"$ ~cache:(Hashtbl.create 64) $lid:"__"^t.t_name$ else ();
+                $lid:"__"^t.t_name$ } 
+            >>$ 
+        in
+        $final_expr$
+      >> in
 
     let get_fun_name = function 
       | None -> sprintf "%s_get" t.t_name 
@@ -401,6 +437,7 @@ let () =
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;
+          value rec $biAnd_of_list (construct_force_functions env)$;
           value rec $biAnd_of_list (construct_get_functions env)$;
         >>
       )
