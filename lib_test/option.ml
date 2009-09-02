@@ -20,5 +20,4 @@ with persist (
 let _ =
   let db = orm_init_db "xxx.db" in
   let foo = t_new ~a:"foobar" ~b:[1;2] ~c:"wobble" db in
-  foo#save;
-  ()
+  Printf.printf "saved: %Lu %Lu\n%!" foo#save foo#save
