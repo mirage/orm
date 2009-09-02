@@ -207,8 +207,55 @@ let construct_object_funs env =
          ]
        }
     >> in
-   
-    let save_bindings = foreign_single_ids @ [ save_main ] in
+ 
+    (* generate the list functions insertion functions *)
+    let foreign_many = List.map (fun f ->
+      (* XXX just make it work for list for now, array can happen later *)
+      let tname = list_table_name t.t_name f.f_name in
+      let ins_sql =
+        sprintf "INSERT OR REPLACE INTO %s VALUES(%s)" tname 
+          (String.concat "," (List.map (fun x -> "?") (sql_fields env tname)))  in 
+      let del_sql =
+        sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?)" tname in
+      (* XXX factor this code with the bind code above for normal values *)
+      let sql_bind_pos = ref 0 in
+      let sql_bind_expr = List.map (fun f ->
+         incr sql_bind_pos;
+         let v = field_to_sql_data _loc f in
+         <:expr< 
+          Sql_access.db_must_ok db (fun () -> 
+                 Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
+         >>
+      ) (sql_fields_no_autoid env tname) in
+      (* decide which iterator to use depending on the list type *)
+      let access_fn = match f.f_ctyp with
+        | <:ctyp< array $c$ >> -> <:expr< Array.iteri >> 
+        | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> 
+        | _ -> assert false in
+      (* main binding for iterating through the list and updating sql *)
+      <:binding< () = 
+        let stmt = Sqlite3.prepare db.Sql_access.db $str:ins_sql$ in
+        let () = $access_fn$ (fun pos $lid:"_"^f.f_name$ ->
+            let _id = _curobj_id in
+            let __idx = Int64.of_int pos in
+            do { 
+              Sql_access.db_must_reset db stmt;
+              $exSem_of_list sql_bind_expr$;
+              Sql_access.db_must_step db stmt
+            }
+        ) $lid:"_"^f.f_name$ in
+        let stmt = Sqlite3.prepare db.Sql_access.db $str:del_sql$ in
+        do {
+          Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _curobj_id);
+          (* XXX check for off-by-one here *)
+          Sql_access.db_must_bind db stmt 2 
+             (Sqlite3.Data.INT (Int64.of_int (List.length $lid:"_"^f.f_name$)));
+          Sql_access.db_must_step db stmt
+        }
+      >>
+    ) (foreign_many_fields env t.t_name) in 
+
+    let save_bindings = foreign_single_ids @ [ save_main ] @ foreign_many in
     let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)
@@ -374,15 +421,19 @@ let construct_funs env =
 
 let init_db_funs env =
   let _loc = Loc.ghost in
-  Ast.exSem_of_list (List.map (fun t ->
+  Ast.exSem_of_list (List.map (fun table ->
     (* open function to first access a sqlite3 db *)
     let sql_decls = List.fold_right (fun t a ->
       let fields = sql_fields env t in
       let sql_fields = List.map (fun f ->
         sprintf "%s %s" f.f_name (string_of_sql_type f)
       ) fields in
-      sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" t (String.concat ", " sql_fields) :: a
-    ) (t.t_name :: t.t_child) [] in
+      let prim_key = match table.t_type with 
+        |List -> ", PRIMARY KEY(id, _idx)"
+        |_ -> "" in
+      sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
+        t (String.concat ", " sql_fields) prim_key :: a
+    ) (table.t_name :: table.t_child) [] in
 
     let create_table sql = <:expr<
         let sql = $str:sql$ in

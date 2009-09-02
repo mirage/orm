@@ -30,7 +30,7 @@ type sql_type =
 
 type table_type =
   |Exposed        (* table is an exposed external type *)
-  |Transient      (* table is internal (e.g. list) *)
+  |List           (* table is an internal list *)
   |Sexp of ctyp   (* generate of/to sexp functions for this type *)
 
 type field_info =
@@ -150,7 +150,7 @@ let sql_tables env =
   List.filter (fun t ->
     match t.t_type with
     |Exposed
-    |Transient -> true
+    |List -> true
     |Sexp _ -> false
   ) env.e_tables
 
@@ -222,12 +222,31 @@ let sql_fields_no_autoid =
      |External_field -> false
    )
 
+let ctyp_is_list = function
+  | <:ctyp< list $c$ >> 
+  | <:ctyp< array $c$ >> -> true
+  | _ -> false
+
 (* get the foreign single fields (ie foreign tables which arent lists) *)
 let foreign_single_fields =
   filter_fields_with_table (fun f ->
-    match f.f_info with
-    |External_foreign _ -> true
-    |_ -> false
+    match ctyp_is_list f.f_ctyp with 
+    |true -> false
+    |false -> begin
+      match f.f_info with
+      |External_foreign _ -> true
+      |_ -> false
+    end
+  )
+
+(* generate the table name for a list type in a table *)
+let list_table_name t f =
+  sprintf "%s_%s__list" t f 
+
+(* return all the fields which are list types *)
+let foreign_many_fields = 
+  filter_fields_with_table (fun f ->
+    ctyp_is_list f.f_ctyp
   )
 
 (* retrieve the single Auto_id field from a table *)
@@ -304,6 +323,14 @@ and process_type _loc t n ctyp env =
         the full set *)
      add_field ~ctyp ~info:(External_foreign id) env t n Int
   end  
+  | <:ctyp@loc< list $ctyp$ >> as orig_ctyp ->
+    let env = add_field ~ctyp:orig_ctyp ~info:External_field env t n Null in
+    (* construct the transient list table *)
+    let name = sprintf "%s_%s__list" t n in
+    let env = new_table ~name ~ty:List ~fields:[] ~parent:None env in
+    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "id" Int in
+    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "_idx" Int in
+    process_type _loc name n ctyp env 
   | _ -> 
     (* add an unknown field as-is, it will be converted to sexp later on *)
     add_field ~ctyp ~info env t n Text
@@ -329,7 +356,7 @@ and check_foreign_refs env =
           match t'.t_type with
           |Sexp _ ->
              f_to_sexp f (* is sexp type, so convert it *)
-          |Exposed |Transient ->
+          |Exposed |List ->
              f_to_foreign f (* rewrite type to have _persist in it *)
         end
       end
