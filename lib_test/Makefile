@@ -4,7 +4,8 @@ BUILDINC := -I ../ sql_access.cma
 P4INC := -I$(shell ocamlfind query type-conv) -I$(shell ocamlfind query sqlite3) -I ../
 
 TESTS := alltypes nested_option option simple_option tuple variant_nested foreign \
-	 nested_tuple simple simple_twodefs variant variant_tuple foreign_and_variant
+	 nested_tuple simple simple_twodefs variant variant_tuple foreign_and_variant \
+	 foreign_nested list_simple list_tuple
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
