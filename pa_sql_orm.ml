@@ -317,10 +317,15 @@ let construct_get_functions env =
         | Some f -> <:expr< $str:sql$ ^ $to_string _loc f$ >> in
       let final_expr = match arg with
         | Some f when is_autoid f -> 
-               <:expr< match (Sql_access.step_fold db stmt of_stmt) with
+               <:expr<
+                 let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                 match (Sql_access.step_fold db stmt of_stmt) with
                  [ [] -> raise Not_found | [h] -> h | _ -> failwith "TODO" ]
                >> 
-        | Some f -> <:expr< Sql_access.step_fold db stmt of_stmt >>
+        | Some f ->
+              <:expr<
+                let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                Sql_access.step_fold db stmt of_stmt >>
         | None ->
             let access i f = 
               <:expr< let $lid:"_"^f.f_name$ = $access_array _loc "__sql_array__" (i-1)$ in 
@@ -335,14 +340,14 @@ let construct_get_functions env =
               let custom_fn __sql_array__ =
                 let x =
                   $biList_to_expr _loc (not_foreign_bindings @ foreign_binding) new_lazy_object$ in
-                fn x in
+                if fn x then Sqlite3.Data.INT 1L else Sqlite3.Data.INT 0L in
 	      do {
                 Sqlite3.create_funN db.Sql_access.db "custom_fn" custom_fn;
+                let stmt = Sqlite3.prepare db.Sql_access.db sql in
                 Sql_access.step_fold db stmt of_stmt } >> in
 
       <:expr< 
         let sql = $sql_expr$ in
-        let stmt = Sqlite3.prepare db.Sql_access.db sql in
         let of_stmt stmt =
           $
           if foreign_fields = [] then
@@ -356,8 +361,8 @@ let construct_get_functions env =
                 else
                   $lid:"__"^t.t_name$ } 
             >>$ 
-        in
-        $final_expr$
+      in
+      $final_expr$
       >> in
 
     let get_fun_name = function 
@@ -372,7 +377,7 @@ let construct_get_functions env =
       ~final_ident:"db"
       ~function_body:(get_body arg)
       ~return_type:(return_type arg)
-      [ <:patt< ~_lazy >>; get_argument arg ] in
+      [ <:patt< ?(_lazy=False) >>; get_argument arg ] in
      (List.map (fun x -> get_binding (Some x)) not_foreign_fields) @ [ get_binding None ]
   ) tables)
 
