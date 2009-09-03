@@ -300,6 +300,7 @@ let construct_get_functions env =
       | None -> sprintf "custom_fn(%s)" select_clause
       | Some f -> sprintf "%s=" f.f_name in
       let sql = sprintf "SELECT %s FROM %s WHERE %s" select_clause t.t_name where_clause in
+      let sql_all = sprintf "SELECT %s FROM %s" select_clause t.t_name in
       let get_bindings =		
         mapi (fun i f ->
           let x = <:expr<
@@ -313,7 +314,7 @@ let construct_get_functions env =
         ) fields in 
 
       let sql_expr = match arg with
-        | None -> <:expr< $str:sql$ >> 
+        | None -> <:expr< match fn with [ None -> $str:sql_all$ | Some _ -> $str:sql$ ] >> 
         | Some f -> <:expr< $str:sql$ ^ $to_string _loc f$ >> in
       let final_expr = match arg with
         | Some f when is_autoid f -> 
@@ -337,14 +338,18 @@ let construct_get_functions env =
                    <:binding< $lid:f.f_name$ () = $lid:get_foreign f^"_get_by_id"$ ~_lazy ~id: $access i f$ db>>
                  ) foreign_fields in
             <:expr<
-              let custom_fn __sql_array__ =
-                let x =
-                  $biList_to_expr _loc (not_foreign_bindings @ foreign_binding) new_lazy_object$ in
-                if fn x then Sqlite3.Data.INT 1L else Sqlite3.Data.INT 0L in
-	      do {
-                Sqlite3.create_funN db.Sql_access.db "custom_fn" custom_fn;
-                let stmt = Sqlite3.prepare db.Sql_access.db sql in
-                Sql_access.step_fold db stmt of_stmt } >> in
+              match fn with [
+                None ->
+                  let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                  Sql_access.step_fold db stmt of_stmt
+              | Some fn -> 
+                  let custom_fn __sql_array__ =
+                    let x = $biList_to_expr _loc (not_foreign_bindings @ foreign_binding) new_lazy_object$ in
+                    if fn x then Sqlite3.Data.INT 1L else Sqlite3.Data.INT 0L in
+	          do {
+                    Sqlite3.create_funN db.Sql_access.db "custom_fn" custom_fn;
+                    let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                    Sql_access.step_fold db stmt of_stmt } ] >> in
 
       <:expr< 
         let sql = $sql_expr$ in
@@ -371,7 +376,7 @@ let construct_get_functions env =
     let return_type = function
       | Some f when is_autoid f -> <:ctyp< $lid:type_name$ >>
       | _ -> <:ctyp< list $lid:type_name$ >> in
-    let get_argument = function | None -> <:patt< ~fn >> | Some f -> <:patt< ~ $lid:f.f_name$ >> in
+    let get_argument = function | None -> <:patt< ?fn >> | Some f -> <:patt< ~ $lid:f.f_name$ >> in
     let get_binding arg = function_with_label_args _loc
       ~fun_name:(get_fun_name arg)
       ~final_ident:"db"
