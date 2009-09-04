@@ -136,21 +136,25 @@ let construct_object_funs env =
     let new_set_get_functions ~_lazy = List.flatten (List.map (fun f ->
       let _lazy = is_foreign f && _lazy in
       let internal_var_name = sprintf "_%s" f.f_name in
-      let make_lazy x = if _lazy then <:ctyp< unit -> ($x$)>> else <:ctyp< $x$ >> in
-      let ctyp = match f.f_ctyp with 
-        | <:ctyp< option $x$>> -> <:ctyp< option ($make_lazy x$)>>
-	    | x -> make_lazy x in
-      let lazy_force x = if _lazy then <:expr< $lid:x$ () >> else <:expr< $lid:x$ >> in 
-      let lazy_assign x = if _lazy then <:expr< $lid:x$ := (fun () -> v) >> else <:expr< $lid:x$ := v >> in
+      let get x =
+        if _lazy then 
+          <:expr< match $lid:x$ with [
+              `Lazy f -> let x = f () in do { $lid:x$ := `Result x; x }
+            | `Result x -> x ]
+          >>
+        else
+          <:expr< $lid:x$ >> in 
+      let set  x = if _lazy then <:expr< $lid:x$ := `Result v >> else <:expr< $lid:x$ := v >> in
+      let init x = if _lazy then <:expr< `Lazy $lid:x$ >> else <:expr< $lid:x$ >> in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ : $ctyp$ = $lid:external_var_name$
+          value mutable $lid:internal_var_name$ = $init external_var_name$
         >>;
         <:class_str_item< 
-          method $lid:external_var_name$ = $lazy_force internal_var_name$
+          method $lid:external_var_name$ = $get internal_var_name$
         >>;
         <:class_str_item< 
-          method $lid:"set_"^external_var_name$ v = ( $lazy_assign internal_var_name$ ) 
+          method $lid:"set_"^external_var_name$ v = ( $set internal_var_name$ ) 
         >>;
       ]
     ) fields) in
@@ -254,7 +258,7 @@ let construct_force_functions env =
     let force_body =
       let force_exprs =
         List.map 
-          (fun f -> <:expr< ignore ($lid:get_foreign f^"_force"$ ~cache:cache $lid:t.t_name$ # $lid:f.f_name$) >>)
+          (fun f -> <:expr< ignore ($lid:get_foreign f^"_force"$ ~cache $lid:t.t_name$ # $lid:f.f_name$) >>)
           foreign_fields in
       <:expr<
         let id = match $lid:t.t_name$#id with [ None -> assert False | Some x -> x ] in
