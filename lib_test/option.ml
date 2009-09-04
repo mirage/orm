@@ -18,6 +18,6 @@ with persist (
 )
 
 let _ =
-  let db = orm_init_db "xxx.db" in
-  let foo = t_new ~a:"foobar" ~b:[1;2] ~c:"wobble" db in
+  let db = Persist.orm_init_db "xxx.db" in
+  let foo = Persist.t { a="foobar"; b=[1;2]; c="wobble" } db in
   Printf.printf "%Lu saved" foo#save

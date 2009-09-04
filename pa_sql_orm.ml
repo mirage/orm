@@ -55,7 +55,7 @@ let biList_to_expr _loc bindings final =
     <:expr< let $b$ in $a$ >>
   ) bindings final
 
-(* build something like 'f x1 x2 x3 ... xn' *)
+(* build something like 'f ~x1 ~x2 ~x3 ... xn' *)
 let apply _loc f label_args =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
   let make_label x = Ast.ExLab (_loc, x, Ast.ExId (_loc, Ast.IdLid (_loc, x))) in
@@ -111,8 +111,11 @@ let construct_typedefs env =
         <:ctyp< $lid:(List.hd tables).t_name$ >>
       else
         <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
-      declare_type _loc "cache" sum_type in
-  stSem_of_list [ <:str_item< type $object_decls$ >>; <:str_item< type $cache_decls$ >> ]
+      declare_type _loc "cache_elt" sum_type in
+  stSem_of_list [ 
+    <:str_item< type $object_decls$ >>;
+    <:str_item< type $cache_decls$  >>;
+    <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >> ]
  
 (* construct the functions to init the db and create objects *)
 let construct_object_funs env =
@@ -286,6 +289,37 @@ let construct_force_functions env =
       <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $lid:t.t_name^"_persist"$ = $lid:t.t_name$ >>)
       not_foreign_tables
   @ [ <:binding< $lid:"new_cache"$ () = Hashtbl.create 64 >> ]
+
+(* create functions *)
+let construct_create_functions env =
+  let _loc = Loc.ghost in
+  let tables = exposed_tables env in
+  List.map (fun t ->
+    let create_body =
+      let fields = List.filter (fun f -> not (is_autoid f)) t.t_fields in
+      let fields_str = List.map (fun f -> f.f_name) fields in
+      let bindings = List.map (fun f -> 
+          if is_foreign f then
+            <:binding< $lid:f.f_name$ () = $lid:get_foreign f$ $lid:t.t_name$ . $lid:f.f_name$ db >>
+          else
+            <:binding< $lid:f.f_name$ = $lid:t.t_name$ . $lid:f.f_name$ >>
+        ) fields in
+      <:expr<
+        let __x = 
+          $biList_to_expr _loc bindings <:expr< $apply _loc (t.t_name^"_new_lazy") (fields_str @ ["db"])$ >>$ in
+        $lid:t.t_name^"_force"$ ~cache:(new_cache ()) __x
+      >> in
+
+    let create_binding = function_with_label_args _loc
+      ~fun_name:t.t_name
+      ~final_ident:"db"
+      ~function_body:create_body
+      ~return_type:<:ctyp< $lid:t.t_name^"_persist"$ >>
+      [ <:patt< $lid:t.t_name$ >> ] in
+
+    <:expr< $create_binding$ >>
+  ) tables
+
 
 (* get functions *)
 let construct_get_functions env =
@@ -505,11 +539,14 @@ let () =
       |_, Some name ->
         let _loc = Loc.ghost in
         <:str_item<
+        module Persist = struct
           $construct_sexp env$;
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;
           value rec $biAnd_of_list (construct_force_functions env)$;
+          value rec $biAnd_of_list (construct_create_functions env)$;
           value rec $biAnd_of_list (construct_get_functions env)$;
+        end
         >>
       )
