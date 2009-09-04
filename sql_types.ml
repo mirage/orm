@@ -349,9 +349,10 @@ and check_foreign_refs env =
         | _ -> assert false) } in
   let tables = List.map (fun t ->
     let fields = List.map (fun f ->
-      match f.f_ctyp with
-      | <:ctyp< $lid:id$ >>
-      | <:ctyp< list $lid:id$ >> -> begin
+      match f.f_info,f.f_ctyp with
+      | External_foreign id, _
+      | _, <:ctyp< list $lid:id$ >> -> begin
+        prerr_endline (sprintf "looking for table: %s\n%!" f.f_name);
         match find_table env id with
         |None -> (* no type we know about, so make this an sexp *)
           f_to_sexp f
