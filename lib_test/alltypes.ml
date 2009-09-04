@@ -17,9 +17,15 @@ type t = {
 } with persist()
 
 let _ =
-  let db = orm_init_db "alltypes.db" in
-  let t1 = t_new ~one:'a' ~two:"foo" ~three:1 ~four:2l 
-     ~five:true ~six:3L ~seven:() ~eight:(Some "bar") 
-     ~nine:6.9 ~ten:(100,"hello") ~eleven:["aa";"bb";"cc"]
-     ~twelve:(Some ('t',9l,())) ~thirteen:('d', (Some ("abc",999L))) db in
-  Printf.printf "saved: %Lu %Lu\n%!" t1#save t1#save
+  let db = Persist.orm_init_db "alltypes.db" in
+  let t1 = Persist.t { one='a'; two="foo"; three=1; four=2l; 
+     five=true; six=3L; seven=(); eight=(Some "bar");
+     nine=6.9; ten=(100,"hello"); eleven=["aa";"bb";"cc"];
+     twelve=(Some ('t',9l,())); thirteen=('d', (Some ("abc",999L))) } db in
+  Printf.printf "saved: %Lu %Lu\n%!" t1#save t1#save;
+  List.iter
+    (fun t -> Printf.printf "found <one=%c> where two='foo'\n%!" t#one)
+    (Persist.t_get ~two:(`Eq "foo") db);
+  List.iter
+    (fun t -> Printf.printf "found <one=%c> where two contains 'o'\n%!" t#one)
+    (Persist.t_get ~two:(`Contains "o") db)

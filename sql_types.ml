@@ -406,8 +406,8 @@ let field_to_sql_data _loc f =
   in fn f.f_ctyp
 
 let sql_data_to_field _loc f =
-  let id = <:expr< $lid:"_" ^ f.f_name$ >> in
-  let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
+  let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
+  let pid = <:patt< $lid:"__" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< () >>
   | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
@@ -479,3 +479,38 @@ let to_string _loc f =
     <:expr< Int64.to_string $id$ >>
   else 
     fn f.f_ctyp
+ 
+let ocaml_variant_to_sql_request _loc f =
+  let id = <:expr< $lid:f.f_name$ >> in
+  let pid = <:patt< $lid:f.f_name$ >> in
+  let int_like_type conv =
+    <:expr< match $id$ with [ 
+        `Eq  i -> Printf.sprintf $str:f.f_name ^ "=%s" $ ($conv$ i)
+      | `Neq i -> Printf.sprintf $str:f.f_name ^ "!=%s"$ ($conv$ i)
+      | `Le  i -> Printf.sprintf $str:f.f_name ^ ">%s" $ ($conv$ i)
+      | `Leq i -> Printf.sprintf $str:f.f_name ^ ">=%s"$ ($conv$ i)
+      | `Ge  i -> Printf.sprintf $str:f.f_name ^ "<%s" $ ($conv$ i)
+      | `Geq i -> Printf.sprintf $str:f.f_name ^ "<=%s"$ ($conv$ i)
+      | `Between (b,e) ->
+                  Printf.sprintf $str:f.f_name^">%s AND "^f.f_name^"<%s"$ ($conv$ b) ($conv$ e) ] >> in
+  let rec fn = function
+  | <:ctyp@loc< unit >>   -> <:expr< $str:f.f_name^"=1"$ >>
+  | <:ctyp@loc< int >>    -> int_like_type <:expr< $lid:"string_of_int"$ >>
+  | <:ctyp@loc< int32 >>  -> int_like_type <:expr< $uid:"Int32"$.$lid:"to_string"$ >>
+  | <:ctyp@loc< int64 >>  -> int_like_type <:expr< $uid:"Int64"$.$lid:"to_string"$ >>
+  | <:ctyp@loc< float >>  -> int_like_type <:expr< $lid:"string_of_float"$ >>
+  | <:ctyp@loc< char >>   -> int_like_type <:expr< $uid:"Char"$.$lid:"escaped"$ >>
+  | <:ctyp@loc< string >> -> 
+      <:expr< match $id$ with [ 
+          `Eq e           -> Printf.sprintf $str:f.f_name^"='%s'"$ e
+        | `Contains e     -> $str:f.f_name^" like '%"$ ^ e ^ "%'" ]
+      >>
+  | <:ctyp@loc< bool >>   -> <:expr< Printf.sprintf $str:f.f_name^"=%b"$ $id$ >>
+  | <:ctyp@loc< option $t$ >> ->
+      <:expr< match $id$ with [
+          `Is_none        -> $str:f.f_name^"=NULL"$
+        | `Exists $pid$   -> $fn t$ ]
+      >>
+  | _                     -> <:expr< assert False >>
+  in
+  fn f.f_ctyp
