@@ -74,6 +74,9 @@ let db_must_done db fn =
 let db_must_bind db stmt pos data =
    db_must_ok db (fun () -> Sqlite3.bind stmt pos data)
 
+let db_must_reset db stmt =
+   db_must_ok db (fun () -> Sqlite3.reset stmt)
+
 let db_must_step db stmt =
    db_must_done db (fun () -> Sqlite3.step stmt)
 
@@ -103,3 +106,11 @@ let step_fold db stmt iterfn =
     |x -> raise_sql_error x
     in
     fn []
+
+(* List version of Array.iteri *)
+let list_iteri fn =
+  let p = ref 0 in
+  List.iter (fun x ->
+    fn !p x;
+    incr p
+  ) 
