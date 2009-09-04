@@ -232,9 +232,19 @@ let construct_object_funs env =
         | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> , <:expr< List.length >>
         | _ -> assert false in
       (* main binding for iterating through the list and updating sql *)
+      let foreign_bindings = List.fold_left (fun a f ->
+        match f.f_info with
+        |External_foreign _ -> <:binding< $lid:"_"^f.f_name^"_id"$ = $lid:"_"^f.f_name$#save >> :: a
+        |_ -> a
+      ) [] (foreign_single_fields env tname) in
+      let foreign_bindings = match foreign_bindings with 
+      [x] -> x |_ -> <:binding< _ = () >> in
+      let fid,fexpr = match f.f_info with
+       |_ -> <:patt< () >>, <:expr< () >> in
       <:binding< () = 
         let stmt = Sqlite3.prepare db.Sql_access.db $str:ins_sql$ in
         let () = $access_fn$ (fun pos $lid:"_"^f.f_name$ ->
+            let $foreign_bindings$ in
             let _id = _curobj_id in
             let __idx = Int64.of_int pos in
             do { 
