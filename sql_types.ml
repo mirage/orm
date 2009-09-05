@@ -487,10 +487,10 @@ let ocaml_variant_to_sql_request _loc f =
     <:expr< match $id$ with [ 
         `Eq  i -> Printf.sprintf $str:f.f_name ^ "=%s" $ ($conv$ i)
       | `Neq i -> Printf.sprintf $str:f.f_name ^ "!=%s"$ ($conv$ i)
-      | `Le  i -> Printf.sprintf $str:f.f_name ^ ">%s" $ ($conv$ i)
-      | `Leq i -> Printf.sprintf $str:f.f_name ^ ">=%s"$ ($conv$ i)
-      | `Ge  i -> Printf.sprintf $str:f.f_name ^ "<%s" $ ($conv$ i)
-      | `Geq i -> Printf.sprintf $str:f.f_name ^ "<=%s"$ ($conv$ i)
+      | `Le  i -> Printf.sprintf $str:f.f_name ^ "<%s" $ ($conv$ i)
+      | `Leq i -> Printf.sprintf $str:f.f_name ^ "<=%s"$ ($conv$ i)
+      | `Ge  i -> Printf.sprintf $str:f.f_name ^ ">%s" $ ($conv$ i)
+      | `Geq i -> Printf.sprintf $str:f.f_name ^ ">=%s"$ ($conv$ i)
       | `Between (b,e) ->
                   Printf.sprintf $str:f.f_name^">%s AND "^f.f_name^"<%s"$ ($conv$ b) ($conv$ e) ] >> in
   let rec fn = function
