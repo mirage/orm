@@ -508,7 +508,7 @@ let ocaml_variant_to_sql_request _loc f =
   | <:ctyp@loc< bool >>   -> <:expr< Printf.sprintf $str:f.f_name^"=%b"$ $id$ >>
   | <:ctyp@loc< option $t$ >> ->
       <:expr< match $id$ with [
-          `Is_none        -> $str:f.f_name^"=NULL"$
+          `Is_none        -> $str:f.f_name^" IS NULL"$
         | `Exists $pid$   -> $fn t$ ]
       >>
   | _                     -> <:expr< assert False >>
