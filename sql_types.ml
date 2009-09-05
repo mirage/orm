@@ -344,8 +344,8 @@ and check_foreign_refs env =
   let f_to_sexp f = {f with f_info=External_and_internal_field; f_typ=Text } in
   let f_to_foreign f = 
     {f with f_ctyp = (match f.f_ctyp with
-        | <:ctyp< $lid:id$ >> -> <:ctyp< $lid:id^"_persist"$ >>
-        | <:ctyp< list $lid:id$ >> -> <:ctyp< list $lid:id^"_persist"$ >>
+        | <:ctyp< $lid:id$ >> -> <:ctyp< $lid:id$ >>
+        | <:ctyp< list $lid:id$ >> -> <:ctyp< list $lid:id$ >>
         | _ -> assert false) } in
   let tables = List.map (fun t ->
     let fields = List.map (fun f ->

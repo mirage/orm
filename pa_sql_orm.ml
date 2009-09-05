@@ -89,7 +89,7 @@ let construct_typedefs env =
   let tables = exposed_tables env in
   let object_decls = Ast.tyAnd_of_list (List.fold_right (fun t decls ->
     (* define the external type name as <name>_persist *)
-    let ts_name = t.t_name ^ "_persist" in
+    let ts_name = t.t_name in
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
@@ -105,7 +105,7 @@ let construct_typedefs env =
     declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >> :: decls;
   ) tables []) in
   let cache_decls =
-    let sum_type = List.map (fun t -> (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name^"_persist"$) >> ])) tables in
+    let sum_type = List.map (fun t -> (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name$) >> ])) tables in
     let sum_type =
       if List.length sum_type = 1 then
         <:ctyp< $lid:(List.hd tables).t_name$ >>
@@ -124,7 +124,7 @@ let construct_object_funs env =
   (* output the function bindings *)
   List.flatten (List.map (fun t ->
     (* init function to initalize sqlite database *)
-    let type_name = sprintf "%s_persist" t.t_name in
+    let type_name = sprintf "%s" t.t_name in
  
     (* the _new creation function to spawn objects of the SQL type *)
     let new_fun_name ~_lazy = sprintf "%s_new%s" t.t_name (if _lazy then "_lazy" else "") in
@@ -335,14 +335,14 @@ let construct_force_functions env =
       ~fun_name:(t.t_name^"_force")
       ~final_ident:t.t_name
       ~function_body:force_body
-      ~return_type:<:ctyp< $lid:t.t_name^"_persist"$ >>
+      ~return_type:<:ctyp< $lid:t.t_name$ >>
       [ <:patt< ~cache >> ]
     in
 
     force_binding) 
     foreign_tables 
   @ List.map (fun t ->
-      <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $lid:t.t_name^"_persist"$ = $lid:t.t_name$ >>)
+      <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $lid:t.t_name$ = $lid:t.t_name$ >>)
       not_foreign_tables
   @ [ <:binding< $lid:"new_cache"$ () = Hashtbl.create 64 >> ]
 
@@ -370,7 +370,7 @@ let construct_create_functions env =
       ~fun_name:t.t_name
       ~final_ident:"db"
       ~function_body:create_body
-      ~return_type:<:ctyp< $lid:t.t_name^"_persist"$ >>
+      ~return_type:<:ctyp< $lid:t.t_name$ >>
       [ <:patt< $lid:t.t_name$ >> ] in
 
     <:expr< $create_binding$ >>
@@ -382,7 +382,7 @@ let construct_get_functions env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
   List.map (fun t ->
-    let type_name = sprintf "%s_persist" t.t_name in
+    let type_name = sprintf "%s" t.t_name in
     let fields = exposed_fields env t.t_name in
     let str_fields = List.map (fun f -> f.f_name) fields in
     let foreign_fields, not_foreign_fields = List.partition is_foreign fields in
