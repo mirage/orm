@@ -561,10 +561,8 @@ let init_db_funs env =
  
 let construct_init env =
   let _loc = Loc.ghost in
-  (* XXX default name until its parsed into environment *)
-  let name = "orm" in
   <:str_item<
-    value $lid:name^"_init_db"$ db_name = 
+    value init db_name = 
       let db = Sql_access.new_state db_name in
       do {
         $init_db_funs env$; db
@@ -598,8 +596,9 @@ let () =
         Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_sql_orm: arg required")
       |_, Some name ->
         let _loc = Loc.ghost in
+       (* XXX default name is Orm until its parsed into environment *)
         <:str_item<
-        module Persist = struct
+        module Orm = struct
           $construct_sexp env$;
           $construct_typedefs env$;
           $construct_funs env$;

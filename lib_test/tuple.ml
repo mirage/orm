@@ -7,7 +7,7 @@ type t = {
 with persist()
 
 let _ =
-  let db = Persist.orm_init_db "tuple.db" in
-  let t1 = Persist.t_new ~foo:1l ~bar:("hello",'w') db in
+  let db = Orm.init "tuple.db" in
+  let t1 = Orm.t_new ~foo:1l ~bar:("hello",'w') db in
   let id = t1#save in
   Printf.printf "saved: %Lu\n%!" id

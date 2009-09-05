@@ -18,9 +18,9 @@ t = {
 with persist()
 
 let _ = 
-  let db = Persist.orm_init_db "variant_nested.db" in
-  let t1 = Persist.t_new ~foo:Xone ~bar:Ntwo  ~xyz:99 db in
-  let t2 = Persist.t_new ~foo:(Xtwo (Nfour Xone)) ~bar:(Nthree 'x') ~xyz:66 db in
-  let t3 = Persist.t_new ~foo:(Xtwo (Nthree 'z')) ~bar:(Non 111) ~xyz:88 db in
+  let db = Orm.init "variant_nested.db" in
+  let t1 = Orm.t_new ~foo:Xone ~bar:Ntwo  ~xyz:99 db in
+  let t2 = Orm.t_new ~foo:(Xtwo (Nfour Xone)) ~bar:(Nthree 'x') ~xyz:66 db in
+  let t3 = Orm.t_new ~foo:(Xtwo (Nthree 'z')) ~bar:(Non 111) ~xyz:88 db in
   List.iter (fun x -> Printf.printf "saved: %Lu\n%!" x#save) [t1;t2;t3]
 
