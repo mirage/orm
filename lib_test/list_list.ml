@@ -6,6 +6,7 @@ type t = {
 } with
 persist()
 
+open Orm
 let _ = 
   let db = init "list_simple.db" in
   let t1 = t_new ~foo:[[1]] ~bar:"hello world" db in
