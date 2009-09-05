@@ -19,6 +19,10 @@ all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
 p_%: ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser ../pa_sql_orm.cma -printer o $*.ml
 
+# top_% makes a top-level for the ML file
+top_%: pc_%
+	ocamlfind ocamlmktop -package unix,sqlite3,sexplib -linkpkg -o $@ -I ../ sql_access.cma pc_$*.cmo
+
 # pc_% compiles it via a temporary ML file (pc_%.ml) so that locations in generated code can be
 # seen in error messages as a debugging aid
 pc_%: %.ml ../pa_sql_orm.cma
@@ -57,4 +61,4 @@ pi_%: %.ml ../pa_sql_orm.cma
 	
 .PHONY: clean
 clean:
-	rm -f pc_* c_* pi_* *.cmo *.cma *.db *.cmi
+	rm -f pc_* c_* pi_* *.cmo *.cma *.db *.cmi top_*
