@@ -1,3 +1,9 @@
-- create triggers for cascading deletion
-- specify NULL/NOT NULL constraints in schema creation in the db
-- support GET of foreign/foreignmany fields
+- create indexes
+- foreign keys (Frefs)
+- no delete
+- no fold
+- recursive save
+- custom triggers
+- sig generator
+- ocamldoc
+- go back to original structure
