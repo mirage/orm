@@ -82,14 +82,12 @@ let mapi fn =
     
 open Sql_types
 
-(* declare the types of the _persist objects used to pass SQL
+(* declare the types of the objects used to pass SQL
    objects back and forth *)
 let construct_typedefs env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
   let object_decls = Ast.tyAnd_of_list (List.fold_right (fun t decls ->
-    (* define the external type name as <name>_persist *)
-    let ts_name = t.t_name in
     (* define the accessor and set_accessor functions *)
     let fields = exposed_fields env t.t_name in
     let accessor_fields = List.flatten (List.map (fun f ->
@@ -102,20 +100,155 @@ let construct_typedefs env =
       <:ctyp< delete: unit >>;
     ] in
     let all_fields = accessor_fields  @ other_fields in
-    declare_type _loc ts_name <:ctyp< < $list:all_fields$ > >> :: decls;
+    declare_type _loc t.t_name <:ctyp< < $list:all_fields$ > >> :: decls;
   ) tables []) in
+
   let cache_decls =
-    let sum_type = List.map (fun t -> (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name$) >> ])) tables in
+    let sum_type = List.map (fun t -> 
+      (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name$) >> ])) tables in
     let sum_type =
       if List.length sum_type = 1 then
         <:ctyp< $lid:(List.hd tables).t_name$ >>
       else
         <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
       declare_type _loc "cache_elt" sum_type in
+
+  let unique_table_child_iter fn t = 
+    let h = Hashtbl.create 1 in
+    let rec child = function
+     |[] -> []
+     |hd::tl ->
+       with_table (fun env table ->
+         if Hashtbl.mem h table.t_name then
+           child table.t_child
+         else (
+            Hashtbl.add h table.t_name ();
+            fn table :: (child table.t_child)
+         )
+       ) env hd @ (child tl)
+    in child (t.t_name :: t.t_child)
+  in
+
+  let id_decls = Ast.tyAnd_of_list (
+     List.map (fun t ->
+       let r = unique_table_child_iter (fun table ->
+         <:ctyp< $lid:table.t_name ^ "__id"$ : mutable option int64 >>
+       ) t in
+       declare_type _loc (t.t_name ^ "__id") <:ctyp< { $list:r$ } >> 
+     ) tables
+  ) in
+
+  let new_id_decls = biAnd_of_list (
+    List.map (fun t ->
+      let r = unique_table_child_iter (fun table ->
+        let v = if table.t_name = t.t_name then <:expr< x >> else <:expr< None >> in
+        <:rec_binding< $lid:table.t_name ^ "__id"$ = $v$ >>
+      ) t in
+      <:binding< $lid:t.t_name ^ "__id"$ x = { $rbSem_of_list r$ } >>
+    ) tables
+  ) in
   stSem_of_list [ 
     <:str_item< type $object_decls$ >>;
     <:str_item< type $cache_decls$  >>;
+    <:str_item< type $id_decls$ >>;
+    <:str_item< value rec $new_id_decls$ >>;
     <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >> ]
+
+let save_expr env t =
+    let _loc = Loc.ghost in
+     (* the INSERT statement for this object *)
+    let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
+      (String.concat "," (List.map (fun f -> 
+        if is_autoid f then "NULL" else "?") (sql_fields env t.t_name))) in
+
+    (* the UPDATE statement for this object *)
+    let update_sql = sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name
+      (String.concat "," (List.map (fun f ->
+          sprintf "%s=?" f.f_name
+        ) (sql_fields_no_autoid env t.t_name))) in
+
+    (* the Sqlite3.bind for each simple statement *)
+    let sql_bind_pos = ref 0 in
+    let sql_bind_expr = List.map (fun f ->
+       incr sql_bind_pos;
+       let v = field_to_sql_data _loc f in
+       <:expr< 
+        Sql_access.db_must_ok db (fun () -> 
+               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
+       >>
+    ) (sql_fields_no_autoid env t.t_name) in
+
+    (* last binding for update statement which also needs an id at the end *)
+    incr sql_bind_pos;
+
+    (* bindings for the ids of all the foreign-single fields *)
+    let foreign_single_ids = List.map (fun f ->
+        let id = f.f_name in
+        let ftable = get_foreign_table f in
+        debug_ctyp f.f_ctyp;
+        let ex = match ftable.t_type with
+         |Variant
+         |Tuple
+         |List ->
+            <:expr< $lid:ftable.t_name^"__save"$ db 0L $lid:"_"^f.f_name$ >>
+         |Exposed ->
+            <:expr< $lid:"_"^f.f_name$#save >>
+        in
+        <:binding< $lid:"_"^id^"_id"$ = $ex$ >>
+      ) (foreign_single_fields env t.t_name)
+    in 
+
+   (* the main save function *)
+   biList_to_expr _loc foreign_single_ids 
+    <:expr<
+       let stmt = Sqlite3.prepare db.Sql_access.db 
+         (match _id.$lid:t.t_name^"__id"$ with [
+            None -> $str:insert_sql$
+           |Some _ -> $str:update_sql$
+          ]
+         ) 
+       in
+       do {
+         $exSem_of_list sql_bind_expr$;
+         match _id.$lid:t.t_name^"__id"$ with [
+           None -> ()
+          |Some _id -> 
+            Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT _id)
+         ];
+         Sql_access.db_must_step db stmt;
+         match _id.$lid:t.t_name^"__id"$ with [
+           None -> 
+            Sqlite3.last_insert_rowid db.Sql_access.db
+          |Some _id ->
+            _id
+         ]
+       } 
+    >>  
+
+let construct_internal_funs env =
+  let _loc = Loc.ghost in
+  let tables = not_exposed_tables env in
+  List.map (fun t ->
+
+    let save_name = sprintf "%s__save" t.t_name in
+    let save_fn = match t.t_ctyp with
+    | <:ctyp< $tup:tp$ >> ->
+      let tuptys = list_of_ctyp tp [] in
+      let pos = ref (-1) in
+      let tupvars = List.map (fun x ->
+        incr pos;
+        <:patt< $lid:"_c"^(string_of_int !pos)$ >>
+      ) tuptys in
+      <:expr<
+        let $tup:paCom_of_list tupvars$ = _o in
+        $save_expr env t$
+      >>
+    |_ -> <:expr< 0L >>
+    in
+    <:binding< $lid:save_name$ db _id _o = $save_fn$ >>
+  ) tables
+
+
  
 (* construct the functions to init the db and create objects *)
 let construct_object_funs env =
@@ -151,80 +284,43 @@ let construct_object_funs env =
       let init x = if _lazy then <:expr< `Lazy $lid:x$ >> else <:expr< $lid:x$ >> in
       let external_var_name = f.f_name in [
         <:class_str_item<
-          value mutable $lid:internal_var_name$ = $init external_var_name$
+          value mutable $lid:internal_var_name$ = 
+             $match f.f_info with
+                |Internal_autoid -> <:expr<
+                   match id with 
+                   [  Some __id -> __id
+                    | None -> $lid:t.t_name ^ "__id"$ None ]
+                  >>
+                |_ -> init external_var_name
+             $
         >>;
         <:class_str_item< 
-          method $lid:external_var_name$ = $get internal_var_name$
+          method $lid:external_var_name$ = 
+             $match f.f_info with
+               |Internal_autoid -> <:expr< _id.$lid:t.t_name^"__id"$ >>
+               |_ -> get internal_var_name$
         >>;
         <:class_str_item< 
-          method $lid:"set_"^external_var_name$ v = ( $set internal_var_name$ ) 
+          method $lid:"set_"^external_var_name$ v = 
+             $match f.f_info with
+               |Internal_autoid -> <:expr< _id.$lid:t.t_name^"__id"$ := v >>
+               | _ -> set internal_var_name$
         >>;
       ]
     ) fields) in
 
     (* -- implement the save function *)
+    let save_main = <:binding< 
+      _curobj_id = 
+        let __id = $save_expr env t$ in
+        do {
+          _id.$lid:t.t_name^"__id"$ := Some __id;
+          __id
+        } >> in
 
-    (* bindings for the ids of all the foreign-single fields *)
-    let foreign_single_ids = List.map (fun f ->
-        let id = f.f_name in
-        <:binding< $lid:"_"^id^"_id"$ = self#$lid:id$#save >>
-      ) (foreign_single_fields env t.t_name) in 
-
-    (* the INSERT statement for this object *)
-    let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
-      (String.concat "," (List.map (fun f -> 
-        if is_autoid f then "NULL" else "?") (sql_fields env t.t_name))) in
-
-    (* the UPDATE statement for this object *)
-    let update_sql = sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name
-      (String.concat "," (List.map (fun f ->
-          sprintf "%s=?" f.f_name
-        ) (sql_fields_no_autoid env t.t_name))) in
-
-    (* the Sqlite3.bind for each simple statement *)
-    let sql_bind_pos = ref 0 in
-    let sql_bind_expr = List.map (fun f ->
-       incr sql_bind_pos;
-       let v = field_to_sql_data _loc f in
-       <:expr< 
-        Sql_access.db_must_ok db (fun () -> 
-               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
-       >>
-    ) (sql_fields_no_autoid env t.t_name) in
-
-    (* last binding for update statement which also needs an id at the end *)
-    incr sql_bind_pos;
-
-    (* the main save function *)
-    let save_main = <:binding<
-       _curobj_id =
-       let stmt = Sqlite3.prepare db.Sql_access.db 
-         (match _id with [
-            None -> $str:insert_sql$
-           |Some _ -> $str:update_sql$
-          ]
-         ) in
-       do {
-         $exSem_of_list sql_bind_expr$;
-         match _id with [
-           None -> ()
-          |Some _id -> 
-            Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT _id)
-         ];
-         Sql_access.db_must_step db stmt;
-         match _id with [
-           None -> 
-            let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
-            do { _id := Some __id; __id }
-          |Some _id ->
-            _id
-         ]
-       }
-    >> in
- 
-    (* generate the list functions insertion functions *)
+   (* generate the list functions insertion functions *)
     let foreign_many = List.map (fun f ->
-      let tname = list_table_name t.t_name f.f_name in
+      let tname = (get_foreign_table f).t_name in
       let ins_sql =
         sprintf "INSERT OR REPLACE INTO %s VALUES(%s)" tname 
           (String.concat "," (List.map (fun x -> "?") (sql_fields env tname)))  in 
@@ -248,17 +344,15 @@ let construct_object_funs env =
       (* main binding for iterating through the list and updating sql *)
       let foreign_bindings = List.fold_left (fun a f ->
         match f.f_info with
-        |External_foreign _ -> <:binding< $lid:"_"^f.f_name^"_id"$ = $lid:"_"^f.f_name$#save >> :: a
+        |External_foreign (id,_) -> begin
+          <:binding< $lid:"_"^f.f_name^"_id"$ = $lid:id^"__save"$ >> :: a
+        end
         |_ -> a
       ) [] (foreign_single_fields env tname) in
-      let foreign_bindings = match foreign_bindings with 
-      [x] -> x |_ -> <:binding< _ = () >> in
-      let fid,fexpr = match f.f_info with
-       |_ -> <:patt< () >>, <:expr< () >> in
       <:binding< () = 
         let stmt = Sqlite3.prepare db.Sql_access.db $str:ins_sql$ in
         let () = $access_fn$ (fun pos $lid:"_"^f.f_name$ ->
-            let $foreign_bindings$ in
+            let $biAnd_of_list foreign_bindings$ in
             let _id = _curobj_id in
             let __idx = Int64.of_int pos in
             do { 
@@ -278,7 +372,7 @@ let construct_object_funs env =
       >>
     ) (foreign_many_fields env t.t_name) in 
 
-    let save_bindings = foreign_single_ids @ [ save_main ] @ foreign_many in
+    let save_bindings = [ save_main ] @ foreign_many in
     let save_fun = biList_to_expr _loc save_bindings <:expr< _curobj_id >> in
 
     (* -- hook in the admin functions (save/delete) *)
@@ -450,13 +544,16 @@ let construct_get_functions env =
                 let $lid:"__" ^ f.f_name$ = Sqlite3.column stmt $`int:i-1$ in
                 $sql_data_to_field _loc f$
               >> in
-              if is_foreign f then
+              match f.f_info with
+              |External_foreign _ ->
                 <:binding< $lid:f.f_name$ () =
                   match $lid:get_foreign f^"_get"$ ~id:(`Exists (`Eq $x$)) db with [ 
                     [x] -> x
                   |  _  -> assert False ]
                 >>
-              else
+              |Internal_autoid ->
+                <:binding< $lid:f.f_name$ = Some ( $lid:t.t_name^"__id"$ $x$) >>
+              |_ ->
                 <:binding< $lid:f.f_name$ = $x$ >>
             ) fields in
         if foreign_fields = [] then
@@ -479,7 +576,11 @@ let construct_get_functions env =
             $sql_data_to_field _loc f$
           >> in
         let not_foreign_bindings =
-          mapi (fun i f -> <:binding< $lid:f.f_name$ = $access i f$ >>) not_foreign_fields in
+          mapi (fun i f -> match f.f_info with
+            |Internal_autoid ->
+              <:binding< $lid:f.f_name$ = Some ( $lid:t.t_name^"__id"$ ( $access i f$ )) >>
+            |_ -> <:binding< $lid:f.f_name$ = $access i f$ >>
+          ) not_foreign_fields in
         let foreign_binding =
           mapi (fun i f -> 
               <:binding< $lid:f.f_name$ () =
@@ -528,7 +629,7 @@ let construct_get_functions env =
 let construct_funs env =
   let _loc = Loc.ghost in
   let bs = List.fold_left (fun a f -> f env @ a) []
-    [ construct_object_funs ] in
+    [ construct_object_funs; construct_internal_funs ] in
   <:str_item< 
      value rec $biAnd_of_list bs$ >>
 
@@ -569,18 +670,6 @@ let construct_init env =
       };
   >>
 
-let construct_sexp env =
-  let _loc = Loc.ghost in
-  let sexp_of_bindings = List.map (fun (n,t) ->
-      Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc n [] t
-    ) (sexp_tables env) in
-  let bindings_of_sexp = List.map (fun (n,t) ->
-      let internal_binding,external_binding = 
-         Pa_sexp_conv.Generate_of_sexp.td_of_sexp _loc n [] t in
-      <:binding< $internal_binding$ and $external_binding$ >>
-    ) (sexp_tables env) in
-  <:str_item< value rec $biAnd_of_list (sexp_of_bindings @ bindings_of_sexp)$ >>
- 
 (* Register the persist keyword with type-conv *)
 let () =
   add_generator_with_arg
@@ -599,7 +688,6 @@ let () =
        (* XXX default name is Orm until its parsed into environment *)
         <:str_item<
         module Orm = struct
-          $construct_sexp env$;
           $construct_typedefs env$;
           $construct_funs env$;
           $construct_init env$;

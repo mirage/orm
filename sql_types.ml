@@ -21,6 +21,10 @@ open Camlp4
 open PreCast
 open Ast
 
+module PP = Camlp4.Printers.OCaml.Make(Syntax)
+let pp = new PP.printer ()
+let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
+
 (* --- Type definitions *)
 
 type sql_type = 
@@ -31,22 +35,23 @@ type sql_type =
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |List           (* table is an internal list *)
-  |Sexp of ctyp   (* generate of/to sexp functions for this type *)
+  |Variant        (* table is a variant list *)
+  |Tuple
 
 type field_info =
   |External_and_internal_field
-  |External_field
   |Internal_field
   |Internal_autoid
-  |External_foreign of string
-
-type env = {
+  |External_foreign of (string * table option)
+and env = {
   e_tables: table list;
+  e_types: (string * ctyp) list;
 }
 and table = {
   t_name: string;
   t_fields: field list;
   t_type: table_type;
+  t_ctyp: ctyp;
   t_child: string list; (* sub-tables created from this one *)
 }
 and field = {
@@ -54,6 +59,7 @@ and field = {
   f_typ: sql_type;
   f_ctyp: ctyp;
   f_info: field_info;
+  f_table: table;
 }
 
 (* --- String conversion functions *)
@@ -72,21 +78,22 @@ let string_of_sql_type f =
 
 let string_of_field_info = function
   |External_and_internal_field -> "E+I"
-  |External_field -> "E"
   |Internal_field -> "I"
-  |External_foreign f -> sprintf "F[%s]" f
+  |External_foreign (f,t) -> sprintf "F[%s/%s]" f 
+      (match t with |None ->"?" |Some x -> x.t_name)
   |Internal_autoid -> "A"
 
 let string_of_field f =
   sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
-  sprintf "%s (children=%s): [ %s ] " t.t_name (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
+  sprintf "%s / %s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" |Variant -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
-  string_map "\n" string_of_table e.e_tables
+  List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
+  string_map "\n" string_of_table e.e_tables 
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env () = { e_tables = [] }
+let empty_env () = { e_tables = []; e_types=[] }
 
 let find_table env name =
   try
@@ -96,14 +103,14 @@ let find_table env name =
 
 (* replace the table in the env and return new env *)
 let replace_table env table =
-  { e_tables = table :: 
+  { env with e_tables = table :: 
     (List.filter (fun t -> t.t_name <> table.t_name) env.e_tables)
   }
 
-let new_table ~name ~fields ~ty ~parent env =
+let new_table ~name ~ty ~ctyp ~parent env =
   (* stick in the new table *)
   let env = replace_table env (match find_table env name with 
-    |None -> { t_name=name; t_fields=fields; t_type=ty; t_child=[] }
+    |None -> { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[] }
     |Some table -> failwith (sprintf "new_table: clash %s" name) 
   ) in
   (* check if the table is a child and update parent child list if so *)
@@ -118,10 +125,11 @@ let new_table ~name ~fields ~ty ~parent env =
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~ctyp ~info env t field_name field_type =
+  if field_name = "" then failwith ("empty field name for " ^ t);
   let _loc = Loc.ghost in
-  let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info } in
   match find_table env t with
   |Some table -> begin
+    let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info; f_table=table } in
     (* sanity check that the name is unique in the field list *)
     match List.filter (fun f -> f.f_name = field.f_name) table.t_fields with
     |[] -> 
@@ -134,7 +142,10 @@ let add_field ~ctyp ~info env t field_name field_type =
 
 let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
 let get_foreign f = match f.f_info with
-  | External_foreign f -> f 
+  | External_foreign (f,_) -> f 
+  | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
+let get_foreign_table f = match f.f_info with
+  | External_foreign (_,(Some t)) -> t
   | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
 let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
@@ -146,22 +157,18 @@ let exposed_tables env =
      t.t_type = Exposed
    ) env.e_tables
 
+let not_exposed_tables env =
+  List.filter (fun t ->
+     t.t_type <> Exposed
+   ) env.e_tables
+
 let sql_tables env =
   List.filter (fun t ->
     match t.t_type with
     |Exposed
-    |List -> true
-    |Sexp _ -> false
+    |List |Tuple |Variant -> true
   ) env.e_tables
 
-(* list of tables to generate sexp to/from functions for *)
-let sexp_tables env = 
-  List.fold_left (fun a t ->
-    match t.t_type with
-    |Sexp c -> (t.t_name, c) :: a
-    |_ -> a
-  ) [] env.e_tables
-  
 (* helper fn to lookup a table in the env and apply a function to it *)
 let with_table fn env t =
   match find_table env t with
@@ -189,12 +196,16 @@ let filter_fields_with_table fn =
      List.filter fn table.t_fields
    )
 
+let ctyp_is_list = function
+  | <:ctyp< list $c$ >> 
+  | <:ctyp< array $c$ >> -> true
+  | _ -> false
+
 (* list of fields suitable for external ocaml interface *)
 let exposed_fields =
    filter_fields_with_table (fun f ->
      match f.f_info with
      |External_and_internal_field
-     |External_field 
      |Internal_autoid
      |External_foreign _ -> true
      |Internal_field -> false
@@ -203,29 +214,14 @@ let exposed_fields =
 (* list of fields suitable for SQL statements *)
 let sql_fields =
    filter_fields_with_table (fun f ->
-     match f.f_info with
-     |External_and_internal_field 
-     |External_foreign _
-     |Internal_field 
-     |Internal_autoid -> true
-     |External_field -> false
+     not (ctyp_is_list f.f_ctyp)
    )
 
 (* same as sql_fields but with the auto_id field filtered out *)
 let sql_fields_no_autoid =
    filter_fields_with_table (fun f ->
-     match f.f_info with
-     |External_and_internal_field
-     |External_foreign _
-     |Internal_field -> true
-     |Internal_autoid
-     |External_field -> false
+     not ((ctyp_is_list f.f_ctyp) || f.f_info = Internal_autoid)
    )
-
-let ctyp_is_list = function
-  | <:ctyp< list $c$ >> 
-  | <:ctyp< array $c$ >> -> true
-  | _ -> false
 
 (* get the foreign single fields (ie foreign tables which arent lists) *)
 let foreign_single_fields =
@@ -238,10 +234,6 @@ let foreign_single_fields =
       |_ -> false
     end
   )
-
-(* generate the table name for a list type in a table *)
-let list_table_name t f =
-  sprintf "%s_%s__list" t f 
 
 (* return all the fields which are list types *)
 let foreign_many_fields = 
@@ -288,7 +280,7 @@ and process_toplevel_type _loc n ctyp env =
   | <:ctyp@loc< < $fs$ > >>
   | <:ctyp@loc< { $fs$ } >> ->
     (* add a new table to the environment *)
-    let env = new_table ~name:n ~ty:Exposed ~fields:[] ~parent:None env in
+    let env = new_table ~name:n ~ty:Exposed ~ctyp ~parent:None env in
     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
     let rec fn env = function
     | <:ctyp< $t1$; $t2$ >> -> fn (fn env t1) t2
@@ -296,10 +288,20 @@ and process_toplevel_type _loc n ctyp env =
     | <:ctyp< $lid:id$ : $t$ >> ->  process_type _loc n id t env
     | _ -> failwith "process_toplevel_type: unexpected ast"
     in fn env fs
-  | _ ->
-    (* create an sexpr conversion for an unknown type, so it can be
-       used if that type is referenced later on for SQL conversion *)
-    new_table ~name:n ~ty:(Sexp ctyp) ~fields:[] ~parent:None env
+  | <:ctyp< [< $row_fields$ ] >> 
+  | <:ctyp< [> $row_fields$ ] >>
+  | <:ctyp< [= $row_fields$ ] >> 
+  | <:ctyp< [ $row_fields$ ] >> ->
+    let env = new_table ~name:n ~ty:Variant ~ctyp ~parent:None env in
+    let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
+    let rec fn env = function
+    | <:ctyp< $t1$ | $t2$ >> -> fn (fn env t1) t2
+    | <:ctyp< $uid:id$ of $t$ >> ->
+       process_type _loc n id t env
+    | <:ctyp< $uid:id$ >> -> env
+    | _ -> failwith "unknown variant AST"
+    in fn env row_fields
+  | _ -> failwith "process_toplevel_type: unknown type"
 
 and process_type _loc t n ctyp env =
   let info = External_and_internal_field in
@@ -315,56 +317,49 @@ and process_type _loc t n ctyp env =
   | <:ctyp@loc< option $ctyp$ >> ->
      let env = process_type _loc t n ctyp env in
      add_option_to_field n env t
+  | <:ctyp@loc< ( $tup:tp$ ) >> -> 
+     let name = sprintf "%s_%s__t" t n in
+     let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
+     let tys = list_of_ctyp tp [] in
+     let pos = ref 0 in
+     List.fold_left (fun env ctyp -> 
+       let tuple_name = sprintf "c%d" !pos in
+       incr pos;
+       process_type _loc name tuple_name ctyp env
+     ) env tys
   | <:ctyp@loc< $lid:id$ >> -> begin
-     (* add an external type as a foreign id. this may not actually
-        exist, but we do a second pass later to fix up any invalid
-        External_foreign fields and convert them to sexps instead.
-        At this stage, we are still processing types so we dont know
-        the full set *)
-     add_field ~ctyp ~info:(External_foreign id) env t n Int
+     add_field ~ctyp ~info:(External_foreign (id,None)) env t n Int
   end  
   | <:ctyp@loc< list $ctyp$ >>
   | <:ctyp@loc< array $ctyp$ >> as orig_ctyp ->
-    let env = add_field ~ctyp:orig_ctyp ~info:External_field env t n Null in
     (* construct the transient list table *)
     let name = sprintf "%s_%s__list" t n in
-    let env = new_table ~name ~ty:List ~fields:[] ~parent:None env in
+    let env = add_field ~ctyp:orig_ctyp ~info:(External_foreign (name,None)) env t n Int in
+    let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:(Some t) env in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "_idx" Int in
     process_type _loc name n ctyp env 
   | _ -> 
-    (* add an unknown field as-is, it will be converted to sexp later on *)
-    add_field ~ctyp ~info env t n Text
+    failwith "unknown type"
 
 (* run through the fully-populated environment and check that all
    foreign references do in fact exist, and if not convert them to 
    opaque sexp types *)
 and check_foreign_refs env =
   let _loc = Loc.ghost in
-  let f_to_sexp f = {f with f_info=External_and_internal_field; f_typ=Text } in
-  let f_to_foreign f = 
-    {f with f_ctyp = (match f.f_ctyp with
-        | <:ctyp< $lid:id$ >> -> <:ctyp< $lid:id$ >>
-        | <:ctyp< list $lid:id$ >> -> <:ctyp< list $lid:id$ >>
-        | _ -> assert false) } in
   let tables = List.map (fun t ->
     let fields = List.map (fun f ->
-      match f.f_info,f.f_ctyp with
-      | External_foreign id, _
-      | _, <:ctyp< list $lid:id$ >> -> begin
-        prerr_endline (sprintf "looking for table: %s\n%!" f.f_name);
+      match f.f_info with
+      | External_foreign (id,None) -> begin
+        debug_ctyp f.f_ctyp;
         match find_table env id with
-        |None -> (* no type we know about, so make this an sexp *)
-          f_to_sexp f
-        |Some t' -> begin
-          match t'.t_type with
-          |Sexp _ ->
-             f_to_sexp f (* is sexp type, so convert it *)
-          |Exposed |List ->
-             f_to_foreign f (* rewrite type to have _persist in it *)
-        end
+        |None ->
+          eprintf "UNKNOWN: %s -- %s\n" t.t_name f.f_name;
+          f
+        |Some t' ->
+          {f with f_info = (External_foreign (id, (Some t'))) }
       end
-      |_ -> f
+      | _ -> f
     ) t.t_fields in
     {t with t_fields=fields}
   ) env.e_tables in
@@ -389,55 +384,43 @@ let field_to_sql_data _loc f =
            |Some $pid$ -> $fn t$
          ]
       >>
-  | ctyp -> begin
-     match (ctyp, f.f_info) with
-     | <:ctyp@loc< $lid:tid$ >>, (External_foreign _) -> 
-        <:expr< Sqlite3.Data.INT $lid:sprintf "_%s_id" f.f_name$ >>
-     |_ ->
-       (* convert unknown type to an sexpression *)
-       let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
-       let conv_fn = "sexp_of_" ^ f.f_name in
-       <:expr< 
-          Sqlite3.Data.TEXT (
-            Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
-          ) 
-       >>
-  end
+  | ctyp ->
+    <:expr< Sqlite3.Data.INT $lid:sprintf "_%s_id" f.f_name$ >>
   in fn f.f_ctyp
 
 let sql_data_to_field _loc f =
   let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
-  let pid = <:patt< $lid:"__" ^ f.f_name$ >> in
   let rec fn = function
-  | <:ctyp@loc< unit >> -> <:expr< () >>
-  | <:ctyp@loc< int >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< int32 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< int64 >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< float >> -> <:expr< match $id$ with [ Sqlite3.Data.FLOAT x -> x | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< char >> -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< string >> -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< bool >> ->  <:expr< match $id$ with [ Sqlite3.Data.INT 1L -> True | Sqlite3.Data.INT 0L -> False | _ -> failwith "TODO" ] >>
-  | <:ctyp@loc< option $t$ >> ->
+  | <:ctyp< unit >> -> <:expr< () >>
+  | <:ctyp< int >> -> 
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
+  | <:ctyp< int32 >> ->
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> failwith "TODO" ] >>
+  | <:ctyp< int64 >> ->
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp< float >> -> 
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.FLOAT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp< char >> -> 
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> failwith "TODO" ] >>
+  | <:ctyp< string >> -> 
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.TEXT x -> x | _ -> failwith "TODO" ] >>
+  | <:ctyp< bool >> ->  
+      <:expr< match $id$ with 
+          [ Sqlite3.Data.INT 1L -> True | Sqlite3.Data.INT 0L -> False | _ -> failwith "TODO" ] >>
+  | <:ctyp< option $t$ >> ->
       <:expr<
          match $id$ with [
          Sqlite3.Data.NULL -> None
          | x -> Some ($fn t$)
          ]
       >>
-  | ctyp -> 
-    (* convert unknown type to an sexpression *)
-    let internal_binding, external_binding = 
-      Pa_sexp_conv.Generate_of_sexp.td_of_sexp _loc f.f_name [] ctyp in
-    let conv_fn = f.f_name ^ "_of_sexp" in
-      <:expr<
-        match $id$ with [ 
-          Sqlite3.Data.TEXT $pid$ ->
-            let $internal_binding$ in
-            let $external_binding$ in 
-            $lid:conv_fn$ (Sexplib.Sexp.of_string $id$)
-        | _ -> failwith "TODO"
-          ]
-       >>
+  | _ -> <:expr< "FAIL" >>
   in
   if is_foreign f then
     <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
@@ -463,18 +446,8 @@ let to_string _loc f =
            |Some $pid$ -> $fn t$
          ]
       >>
-  | ctyp -> begin
-     match (ctyp, f.f_info) with
-     | <:ctyp@loc< $lid:tid$ >>, (External_foreign _) -> assert false
-     |_ ->
-       (* convert unknown type to an sexpression *)
-       let sexp_binding = Pa_sexp_conv.Generate_sexp_of.sexp_of_td _loc f.f_name [] ctyp in
-       let conv_fn = "sexp_of_" ^ f.f_name in
-       <:expr< 
-            Sexplib.Sexp.to_string_hum (let $sexp_binding$ in $lid:conv_fn$ $id$)
-       >>
-    end in
-
+  | _ -> failwith "to_string: unknown type"
+  in
   if f.f_info = Internal_autoid then
     <:expr< Int64.to_string $id$ >>
   else 
