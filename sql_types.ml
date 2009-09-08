@@ -320,6 +320,7 @@ and process_type _loc t n ctyp env =
   | <:ctyp@loc< ( $tup:tp$ ) >> -> 
      let name = sprintf "%s_%s__t" t n in
      let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
+     let env = add_field ~ctyp ~info:(External_foreign(name,None)) env t n Int in
      let tys = list_of_ctyp tp [] in
      let pos = ref 0 in
      List.fold_left (fun env ctyp -> 
@@ -333,12 +334,12 @@ and process_type _loc t n ctyp env =
   | <:ctyp@loc< list $ctyp$ >>
   | <:ctyp@loc< array $ctyp$ >> as orig_ctyp ->
     (* construct the transient list table *)
-    let name = sprintf "%s_%s__list" t n in
+    let name = sprintf "%s_%s" t n in
     let env = add_field ~ctyp:orig_ctyp ~info:(External_foreign (name,None)) env t n Int in
     let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:(Some t) env in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "_idx" Int in
-    process_type _loc name n ctyp env 
+    process_type _loc name "lst" ctyp env 
   | _ -> 
     failwith "unknown type"
 
