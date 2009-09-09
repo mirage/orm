@@ -2,13 +2,13 @@ TYPE_CONV_PATH "Variant"
 
 type t = 
   |Foo
-  |Bar of (int * int)
+  |Bar of (int * x) list
   |Xyz of string
 
 and
 x = {
   first : t;
-  o: int;
+  o: int list;
 }
 with persist()
 

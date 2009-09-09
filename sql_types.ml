@@ -141,6 +141,9 @@ let add_field ~ctyp ~info env t field_name field_type =
   |None -> env
 
 let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
+let is_foreign_exposed f = match f.f_info with
+  |External_foreign (_, (Some t)) when t.t_type = Exposed -> true
+  |_ -> false
 let get_foreign f = match f.f_info with
   | External_foreign (f,_) -> f 
   | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
@@ -255,6 +258,12 @@ let is_optional_field f =
   match f.f_ctyp with
   | <:ctyp< option $t$ >> -> true
   | _ -> false
+
+let ctyp_of_table t =
+  let _loc = Loc.ghost in
+  match t.t_type with
+  |Exposed -> <:ctyp< $lid:t.t_name$ >>
+  |_ -> t.t_ctyp
 
 (* --- Process functions to convert OCaml types into SQL *)
 

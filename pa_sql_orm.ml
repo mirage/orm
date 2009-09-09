@@ -104,8 +104,11 @@ let construct_typedefs env =
   ) tables []) in
 
   let cache_decls =
-    let sum_type = List.map (fun t -> 
-      (_loc, "C_"^t.t_name, [ <:ctyp< ($lid:t.t_name$) >> ])) tables in
+    let sum_type = List.map (fun t ->
+      let ctyp = match t.t_type with
+        |Exposed -> <:ctyp< $lid:t.t_name$  >>
+        | _ -> t.t_ctyp in
+      (_loc, "C_"^t.t_name, [ ctyp ])) env.e_tables in
     let sum_type =
       if List.length sum_type = 1 then
         <:ctyp< $lid:(List.hd tables).t_name$ >>
@@ -149,8 +152,8 @@ let construct_typedefs env =
   ) in
   stSem_of_list [ 
     <:str_item< type $object_decls$ >>;
-    <:str_item< type $cache_decls$  >>;
     <:str_item< type $id_decls$ >>;
+    <:str_item< type $cache_decls$  >>;
     <:str_item< value rec $new_id_decls$ >>;
     <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >> ]
 
@@ -190,7 +193,7 @@ let save_expr env t =
          |Variant
          |Tuple
          |List ->
-            <:expr< $lid:ftable.t_name^"__save"$ db 0L $lid:"_"^f.f_name$ >>
+            <:expr< $lid:ftable.t_name^"__save"$ db _id self#$lid:f.f_name$ >>
          |Exposed ->
             <:expr< $lid:"_"^f.f_name$#save >>
         in
@@ -241,7 +244,8 @@ let construct_internal_funs env =
       ) tuptys in
       <:expr<
         let $tup:paCom_of_list tupvars$ = _o in
-        $save_expr env t$
+        let __id = $save_expr env t$ in
+        do { _id.$lid:t.t_name^"__id"$ := Some __id; __id }
       >>
     |_ -> <:expr< 0L >>
     in
@@ -403,8 +407,9 @@ let construct_object_funs env =
 (* force functions *)
 let construct_force_functions env =
   let _loc = Loc.ghost in
-  let tables = exposed_tables env in
-  let foreign_tables, not_foreign_tables  = List.partition (fun t -> List.exists is_foreign t.t_fields) tables in 
+  let tables = env.e_tables in
+  let foreign_tables, not_foreign_tables =
+     List.partition (fun t -> List.exists is_foreign t.t_fields) tables in 
   List.map (fun t ->
     let foreign_fields = List.filter is_foreign t.t_fields in
 
@@ -429,28 +434,32 @@ let construct_force_functions env =
       ~fun_name:(t.t_name^"_force")
       ~final_ident:t.t_name
       ~function_body:force_body
-      ~return_type:<:ctyp< $lid:t.t_name$ >>
+      ~return_type:(ctyp_of_table t)
       [ <:patt< ~cache >> ]
     in
 
     force_binding) 
     foreign_tables 
   @ List.map (fun t ->
-      <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $lid:t.t_name$ = $lid:t.t_name$ >>)
+      <:binding< $lid:t.t_name^"_force"$ ~cache $lid:t.t_name$ : $ctyp_of_table t$ = $lid:t.t_name$ >>)
       not_foreign_tables
   @ [ <:binding< $lid:"new_cache"$ () = Hashtbl.create 64 >> ]
 
 (* create functions *)
 let construct_create_functions env =
   let _loc = Loc.ghost in
-  let tables = exposed_tables env in
+  let tables = env.e_tables in
   List.map (fun t ->
     let create_body =
       let fields = List.filter (fun f -> not (is_autoid f)) t.t_fields in
       let fields_str = List.map (fun f -> f.f_name) fields in
       let bindings = List.map (fun f -> 
-          if is_foreign f then
-            <:binding< $lid:f.f_name$ () = $lid:get_foreign f$ $lid:t.t_name$ . $lid:f.f_name$ db >>
+          if is_foreign f then begin
+            if is_foreign_exposed f then 
+              <:binding< $lid:f.f_name$ () = $lid:get_foreign f$ $lid:t.t_name$ . $lid:f.f_name$ db >>
+            else
+              <:binding< $lid:f.f_name$ () = $lid:t.t_name$ . $lid:f.f_name$ >>
+          end
           else
             <:binding< $lid:f.f_name$ = $lid:t.t_name$ . $lid:f.f_name$ >>
         ) fields in
@@ -464,7 +473,7 @@ let construct_create_functions env =
       ~fun_name:t.t_name
       ~final_ident:"db"
       ~function_body:create_body
-      ~return_type:<:ctyp< $lid:t.t_name$ >>
+      ~return_type:(ctyp_of_table t)
       [ <:patt< $lid:t.t_name$ >> ] in
 
     <:expr< $create_binding$ >>
@@ -474,7 +483,7 @@ let construct_create_functions env =
 (* get functions *)
 let construct_get_functions env =
   let _loc = Loc.ghost in
-  let tables = exposed_tables env in
+  let tables = env.e_tables in
   List.map (fun t ->
     let type_name = sprintf "%s" t.t_name in
     let fields = exposed_fields env t.t_name in
@@ -612,7 +621,7 @@ let construct_get_functions env =
       >> in
 
     let get_fun_name = sprintf "%s_get" t.t_name in
-    let return_type = <:ctyp< list $lid:type_name$ >> in
+    let return_type = <:ctyp< list $ctyp_of_table t$ >> in
     let get_argument =
       <:patt< ?(_lazy=False) >> :: 
         List.map (fun f -> <:patt< ? $lid:f.f_name$ >>) not_foreign_fields @
@@ -621,7 +630,7 @@ let construct_get_functions env =
       ~fun_name:get_fun_name
       ~final_ident:"db"
       ~function_body:get_body
-      ~return_type:return_type
+      ~return_type
       get_argument in
      get_binding
   ) tables
