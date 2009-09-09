@@ -42,7 +42,7 @@ type field_info =
   |External_and_internal_field
   |Internal_field
   |Internal_autoid
-  |External_foreign of (string * table option)
+  |External_foreign of (string * string option)
 and env = {
   e_tables: table list;
   e_types: (string * ctyp) list;
@@ -59,7 +59,7 @@ and field = {
   f_typ: sql_type;
   f_ctyp: ctyp;
   f_info: field_info;
-  f_table: table;
+  f_table: string;
 }
 
 (* --- String conversion functions *)
@@ -80,7 +80,7 @@ let string_of_field_info = function
   |External_and_internal_field -> "E+I"
   |Internal_field -> "I"
   |External_foreign (f,t) -> sprintf "F[%s/%s]" f 
-      (match t with |None ->"?" |Some x -> x.t_name)
+      (match t with |None ->"?" |Some x -> x)
   |Internal_autoid -> "A"
 
 let string_of_field f =
@@ -122,6 +122,14 @@ let new_table ~name ~ty ~ctyp ~parent env =
       |Some ptable -> replace_table env { ptable with t_child=name::ptable.t_child }
     end
 
+(* helper fn to lookup a table in the env and apply a function to it *)
+let with_table fn env t =
+  match find_table env t with
+  |None -> 
+    failwith (sprintf "internal error: exposed fields table '%s' not found" t)
+  |Some table ->
+    fn env table
+
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~ctyp ~info env t field_name field_type =
@@ -129,7 +137,7 @@ let add_field ~ctyp ~info env t field_name field_type =
   let _loc = Loc.ghost in
   match find_table env t with
   |Some table -> begin
-    let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info; f_table=table } in
+    let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info; f_table=t } in
     (* sanity check that the name is unique in the field list *)
     match List.filter (fun f -> f.f_name = field.f_name) table.t_fields with
     |[] -> 
@@ -141,14 +149,15 @@ let add_field ~ctyp ~info env t field_name field_type =
   |None -> env
 
 let is_foreign f = match f.f_info with External_foreign _ -> true | _ -> false
-let is_foreign_exposed f = match f.f_info with
-  |External_foreign (_, (Some t)) when t.t_type = Exposed -> true
+let is_foreign_exposed env f = match f.f_info with
+  |External_foreign (_, (Some t)) ->
+     with_table (fun env t -> t.t_type = Exposed) env t
   |_ -> false
 let get_foreign f = match f.f_info with
   | External_foreign (f,_) -> f 
   | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
-let get_foreign_table f = match f.f_info with
-  | External_foreign (_,(Some t)) -> t
+let get_foreign_table env f = match f.f_info with
+  | External_foreign (_,(Some t)) -> with_table (fun env t -> t) env t
   | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
 let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
@@ -171,14 +180,6 @@ let sql_tables env =
     |Exposed
     |List |Tuple |Variant -> true
   ) env.e_tables
-
-(* helper fn to lookup a table in the env and apply a function to it *)
-let with_table fn env t =
-  match find_table env t with
-  |None -> 
-    failwith (sprintf "internal error: exposed fields table '%s' not found" t)
-  |Some table ->
-    fn env table
 
 (* add an option type to a field entry *)
 let add_option_to_field n = 
@@ -218,6 +219,15 @@ let exposed_fields =
 let sql_fields =
    filter_fields_with_table (fun f ->
      not (ctyp_is_list f.f_ctyp)
+   )
+
+(* list of fields which are foreign ids *)
+let id_fields =
+   filter_fields_with_table (fun f ->
+     match f.f_info with
+     |External_foreign _
+     |Internal_autoid -> true
+     |_ -> false
    )
 
 (* same as sql_fields but with the auto_id field filtered out *)
@@ -265,6 +275,38 @@ let ctyp_of_table t =
   |Exposed -> <:ctyp< $lid:t.t_name$ >>
   |_ -> t.t_ctyp
 
+(* follow all the links in a table fields to determine
+   if it ever points back to itself or not *)
+exception Is_recursive
+let is_recursive_table env t =
+  let h = Hashtbl.create 1 in
+  let rec fn t =
+    if Hashtbl.mem h t.t_name then
+       raise Is_recursive
+    else begin
+      Hashtbl.add h t.t_name ();
+      List.iter (fun f ->
+        match f.f_info with
+        |External_foreign (id,(Some t')) ->
+          with_table (fun env t -> fn t) env t'
+        |External_foreign (_,None) -> 
+          failwith (sprintf "incomplete type for EF: %s" (string_of_field f))
+        |_ -> ()
+      ) t.t_fields
+    end
+  in
+  try fn t; false
+  with Is_recursive -> true
+    
+(* --- Name functions *)
+
+let savefn t   = sprintf "%s_to_db"  t.t_name
+let getfn  t   = sprintf "%s_of_db"  t.t_name
+let tidfn t    = sprintf "%s__id"    t.t_name
+let tnewfn t   = sprintf "%s__new"   t.t_name
+let fidfn  f   = sprintf "%s__id_%s" f.f_table f.f_name
+let fcachefn t = sprintf "C_%s"      t.t_name
+let fautofn env t = fidfn (auto_id_field env t.t_name)
 (* --- Process functions to convert OCaml types into SQL *)
 
 let rec process tds =
@@ -367,7 +409,7 @@ and check_foreign_refs env =
           eprintf "UNKNOWN: %s -- %s\n" t.t_name f.f_name;
           f
         |Some t' ->
-          {f with f_info = (External_foreign (id, (Some t'))) }
+          {f with f_info = (External_foreign (id, (Some t'.t_name))) }
       end
       | _ -> f
     ) t.t_fields in
