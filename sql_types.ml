@@ -379,14 +379,14 @@ let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
   let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
   let rec fn = function
-  | <:ctyp@loc< unit >> -> <:expr< Sqlite3.Data.INT 1L >>
-  | <:ctyp@loc< int >> -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
-  | <:ctyp@loc< int32 >> -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
-  | <:ctyp@loc< int64 >> -> <:expr< Sqlite3.Data.INT $id$ >>
-  | <:ctyp@loc< float >> -> <:expr< Sqlite3.Data.FLOAT $id$ >>
-  | <:ctyp@loc< char >> -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
+  | <:ctyp@loc< unit >>   -> <:expr< Sqlite3.Data.INT 1L >>
+  | <:ctyp@loc< int >>    -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
+  | <:ctyp@loc< int32 >>  -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
+  | <:ctyp@loc< int64 >>  -> <:expr< Sqlite3.Data.INT $id$ >>
+  | <:ctyp@loc< float >>  -> <:expr< Sqlite3.Data.FLOAT $id$ >>
+  | <:ctyp@loc< char >>   -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
   | <:ctyp@loc< string >> -> <:expr< Sqlite3.Data.TEXT $id$ >>
-  | <:ctyp@loc< bool >> ->  <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+  | <:ctyp@loc< bool >>   ->  <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
   | <:ctyp@loc< option $t$ >> ->
       <:expr<
          match $id$ with [
