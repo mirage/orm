@@ -298,14 +298,21 @@ let is_recursive_table env t =
   try fn t; false
   with Is_recursive -> true
     
+let field_accessor f =
+  let _loc = Loc.ghost in
+  <:expr< $lid:f.f_table$ . $lid:f.f_name$  >>
+
 (* --- Name functions *)
 
-let savefn t   = sprintf "%s_to_db"  t.t_name
-let getfn  t   = sprintf "%s_of_db"  t.t_name
-let tidfn t    = sprintf "%s__id"    t.t_name
-let tnewfn t   = sprintf "%s__new"   t.t_name
-let fidfn  f   = sprintf "%s__id_%s" f.f_table f.f_name
-let fcachefn t = sprintf "C_%s"      t.t_name
+let savefn t    = sprintf "__%s_to_db" t.t_name
+let extsavefn t = sprintf "%s_to_db" t.t_name
+
+let getfn  t    = sprintf "%s_of_db"  t.t_name
+let tidfn t     = sprintf "%s__id"    t.t_name
+let tnewfn t    = sprintf "%s__new"   t.t_name
+let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
+let fcachefn t  = sprintf "C_%s"      t.t_name
+let fpcachefn t = sprintf "P_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 (* --- Process functions to convert OCaml types into SQL *)
 

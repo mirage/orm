@@ -88,13 +88,14 @@ let construct_typedefs env =
   let tables = exposed_tables env in
 
   let cache_decls =
-    let sum_type = List.map (fun t ->
+    let sum_type = List.flatten (List.map (fun t ->
       let ctyp = match t.t_type with
         |Exposed -> <:ctyp< $lid:t.t_name$  >>
         | _ -> t.t_ctyp 
       in
-      (_loc, (fcachefn t), [ ctyp ])
-    ) env.e_tables 
+      [ (_loc, (fcachefn t), [ ctyp ]) ;
+        (_loc, (fpcachefn t), [ <:ctyp<  >> ] ) ]
+    ) env.e_tables)
     in
     let sum_type =
       if List.length sum_type = 1 then
@@ -157,7 +158,7 @@ let construct_typedefs env =
     <:str_item< value rec $new_id_decls$ >>
   ]
 
-let save_expr env t =
+let save_expr ?(null_foreigns=false) env t =
     let _loc = Loc.ghost in
      (* the INSERT statement for this object *)
     let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
@@ -184,9 +185,6 @@ let save_expr env t =
     (* last binding for update statement which also needs an id at the end *)
     incr sql_bind_pos;
 
-    let field_accessor f =
-      <:expr< $lid:f.f_table$ . $lid:f.f_name$  >> in
-
     (* bindings for the ids of all the foreign-single fields *)
     let foreign_single_ids = List.map (fun f ->
         let id = f.f_name in
@@ -196,9 +194,12 @@ let save_expr env t =
          |Tuple
          |List ->
             <:expr< failwith "not complete" >>
-         |Exposed ->
-            <:expr< $lid:savefn ftable$ 
-              ~_id:(_id.$lid:fidfn f$) ~_cache:(Some _cache) db $field_accessor f$ >>
+         |Exposed -> 
+           if null_foreigns then
+             <:expr< 0L >>
+           else
+             <:expr< $lid:savefn ftable$ 
+               ~_id:_id.$lid:fidfn f$ ~_cache db $field_accessor f$ >>
         in
         <:binding< $lid:"_"^id^"_id"$ = $ex$ >>
       ) (foreign_single_fields env t.t_name)
@@ -241,36 +242,80 @@ let save_expr env t =
 
 let construct_save_funs env = 
   let _loc = Loc.ghost in
-  let binds = biAnd_of_list (List.map (fun t ->
-      <:binding< $lid:savefn t$ ?(_id=None) ?(_cache=None) db $lid:t.t_name$ = 
+  let binds = biAnd_of_list (List.flatten (List.map (fun t ->
+    let fsf = foreign_single_fields env t.t_name in
+    let int_binding =
+      <:binding< $lid:savefn t$ ~_id ~_cache db $lid:t.t_name$ = 
         let _id = match _id with 
           [  None -> $lid:tnewfn t$ None
            | Some _id -> _id
           ] in
-        let _cache = match _cache with
-          [  None -> Hashtbl.create 1
-           | Some c -> c 
+        let save () =
+          let _newobj_id = $save_expr env t$ in
+          do {
+            Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
+              ($uid:fcachefn t$ $lid:t.t_name$);
+            _newobj_id
+          } in
+        let _curobj_id = match _id.$lid:fautofn env t$ with 
+          [ None -> save ()
+           |Some _curobj_id -> (
+              try
+                  match Hashtbl.find _cache ($str:t.t_name$ , _curobj_id) with [
+                     $uid:fpcachefn t$ -> (* partial entry found, save children and update ids *)
+                       $biList_to_expr _loc (List.map (fun f ->
+                           let ft = get_foreign_table env f in
+                           <:binding< $lid:"_"^f.f_name$ = 
+                              $lid:savefn ft$ ~_id:(_id.$lid:fidfn f$) ~_cache db $field_accessor f$ >>
+                         ) fsf) 
+                         <:expr< 
+                            let sql = $str:sprintf "UPDATE %s SET %s WHERE id=%%Lu"
+                              t.t_name (String.concat "," (List.map (fun f -> 
+                                 f.f_name ^ "=?") fsf))$ 
+                            in 
+                            let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                            do {
+                              $exSem_of_list (
+                                 mapi (fun pos f -> 
+                                    <:expr< Sql_access.db_must_bind db stmt
+                                       $`int:pos$ (Sqlite3.Data.INT $lid:"_"^f.f_name$) >>
+                                 ) fsf
+                               )$;
+                              Sql_access.db_must_bind db stmt $`int:List.length fsf+1$
+                                (Sqlite3.Data.INT _curobj_id);
+                              Sql_access.db_must_step db stmt;
+                              Hashtbl.replace _cache ($str:t.t_name$ , _curobj_id) 
+                                 ($uid:fcachefn t$ $lid:t.t_name$);
+                              _curobj_id
+                            }
+                          >>$
+                   | $uid:fcachefn t$ _ -> (* full entry found, just return its id *)
+                      _curobj_id
+                   | _ -> assert False
+                  ]
+              with [ 
+                 Not_found -> save ()
+              ]
+            )
           ] in
-        let save () = $save_expr env t$ in
-        match _id.$lid:fautofn env t$ with 
-        [ None ->
-            save ()
-         |Some _curobj_id ->
-            if Hashtbl.mem _cache ($str:t.t_name$,_curobj_id) then
-              ( _curobj_id )
-            else
-              (
-              let _newobj_id = save () in 
-              do {
-                assert (_curobj_id = _newobj_id);
-                Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
-                  ($uid:fcachefn t$ $lid:t.t_name$);
-                _newobj_id
-              }
-              )
-        ]
+        _curobj_id
         >>
-    ) env.e_tables) 
+    in
+    let ext_binding = 
+      <:binding< $lid:extsavefn t$ db $lid:t.t_name$ =
+        let _id = $lid:tnewfn t$ None in
+        let _cache = Hashtbl.create 1 in
+        (* first break the chain by inserting a partial save *)
+        let _curobj_id = $save_expr ~null_foreigns:true env t$ in
+        (* add in a partial cache entry *)
+        do {
+          Hashtbl.add _cache ( $str:t.t_name$, _curobj_id ) $uid:fpcachefn t$;
+          $lid:savefn t$ ~_id:(Some _id) ~_cache db $lid:t.t_name$
+        }
+      >>
+    in [ int_binding; ext_binding ]
+
+    ) env.e_tables))
   in
   <:str_item< value rec $binds$ >>
 
