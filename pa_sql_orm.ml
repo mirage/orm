@@ -119,8 +119,8 @@ let construct_typedefs env =
         |Exposed -> <:ctyp< $lid:t.t_name$  >>
         | _ -> t.t_ctyp 
       in
-      [ (_loc, (fcachefn t), [ ctyp ]) ;
-        (_loc, (fpcachefn t), [ <:ctyp<  >> ] ) ]
+      [ (_loc, (fcachefn t), [ ]) ;
+        (_loc, (fpcachefn t), [ ] ) ]
     ) env.e_tables)
     in
     let sum_type =
@@ -168,8 +168,8 @@ let save_expr ?(null_foreigns=false) env t =
     (* bindings for the ids of all the foreign-single fields *)
     let foreign_single_ids = List.map (fun f ->
         let id = f.f_name in
-        let ftable = get_foreign_table env f in
-        let ex = match ftable.t_type with
+        let ft = get_foreign_table env f in
+        let ex = match ft.t_type with
          |Variant
          |Tuple
          |List ->
@@ -178,8 +178,18 @@ let save_expr ?(null_foreigns=false) env t =
            if null_foreigns then
              <:expr< 0L >>
            else
-             <:expr< $lid:savefn ftable$ 
-               ~_cache db $field_accessor f$ >>
+             <:expr< 
+               try 
+                 let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ $field_accessor f$ in
+                  match Hashtbl.mem _cache ( $str:ft.t_name$ , __i ) with [
+                    True -> __i
+                  | False ->  $lid:savefn ft$ ~_cache db $field_accessor f$ ]
+               with 
+                 [ Not_found -> 
+                   $lid:savefn ft$ ~_cache db $field_accessor f$
+                 ]
+             >>   
+
         in
         <:binding< $lid:"_"^id^"_id"$ = $ex$ >>
       ) (foreign_single_fields env t.t_name)
@@ -224,6 +234,48 @@ let construct_save_funs env =
   let _loc = Loc.ghost in
   let binds = biAnd_of_list (List.flatten (List.map (fun t ->
     let fsf = foreign_single_fields env t.t_name in
+    let save_after_cache_check =
+      if is_recursive_table env t then
+        <:expr<
+          try
+            match Hashtbl.find _cache ($str:t.t_name$ , _curobj_id) with [
+              $uid:fpcachefn t$ -> (* partial entry found, save children and update ids *)
+                  $biList_to_expr _loc (List.map (fun f ->
+                     let ft = get_foreign_table env f in
+                        <:binding< $lid:"_"^f.f_name$ = 
+                              $lid:savefn ft$ ~_cache db $field_accessor f$ >>
+                     ) fsf) 
+                     <:expr< 
+                       let sql = $str:sprintf "UPDATE %s SET %s WHERE id=?"
+                         t.t_name (String.concat "," (List.map (fun f -> 
+                           f.f_name ^ "=?") fsf))$ 
+                       in 
+                       let stmt = Sqlite3.prepare db.Sql_access.db sql in
+                       do {
+                         $exSem_of_list (
+                           mapi (fun pos f -> 
+                             <:expr< Sql_access.db_must_bind db stmt
+                               $`int:pos$ (Sqlite3.Data.INT $lid:"_"^f.f_name$) >>
+                           ) fsf
+                         )$;
+                        Sql_access.db_must_bind db stmt $`int:List.length fsf+1$
+                          (Sqlite3.Data.INT _curobj_id);
+                        Sql_access.db_must_step db stmt;
+                        Hashtbl.replace _cache ($str:t.t_name$ , _curobj_id) 
+                          $uid:fcachefn t$;
+                        _curobj_id
+                      }
+                      >>$
+              | $uid:fcachefn t$ -> (* full entry found, just return its id *)
+                _curobj_id
+              | _ -> assert False
+            ]
+          with [ Not_found -> save () ]
+        >>
+    else <:expr< save () >>
+    in
+
+
     let int_binding =
       <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
@@ -233,50 +285,14 @@ let construct_save_funs env =
         let save () =
           let _newobj_id = $save_expr env t$ in
           do {
+            $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
             Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
-              ($uid:fcachefn t$ $lid:t.t_name$);
+              $uid:fcachefn t$; 
             _newobj_id
           } in
         let _curobj_id = match $lid:tidfn t$ with 
           [ None -> save ()
-           |Some _curobj_id -> (
-              try
-                  match Hashtbl.find _cache ($str:t.t_name$ , _curobj_id) with [
-                     $uid:fpcachefn t$ -> (* partial entry found, save children and update ids *)
-                       $biList_to_expr _loc (List.map (fun f ->
-                           let ft = get_foreign_table env f in
-                           <:binding< $lid:"_"^f.f_name$ = 
-                              $lid:savefn ft$ ~_cache db $field_accessor f$ >>
-                         ) fsf) 
-                         <:expr< 
-                            let sql = $str:sprintf "UPDATE %s SET %s WHERE id=%%Lu"
-                              t.t_name (String.concat "," (List.map (fun f -> 
-                                 f.f_name ^ "=?") fsf))$ 
-                            in 
-                            let stmt = Sqlite3.prepare db.Sql_access.db sql in
-                            do {
-                              $exSem_of_list (
-                                 mapi (fun pos f -> 
-                                    <:expr< Sql_access.db_must_bind db stmt
-                                       $`int:pos$ (Sqlite3.Data.INT $lid:"_"^f.f_name$) >>
-                                 ) fsf
-                               )$;
-                              Sql_access.db_must_bind db stmt $`int:List.length fsf+1$
-                                (Sqlite3.Data.INT _curobj_id);
-                              Sql_access.db_must_step db stmt;
-                              Hashtbl.replace _cache ($str:t.t_name$ , _curobj_id) 
-                                 ($uid:fcachefn t$ $lid:t.t_name$);
-                              _curobj_id
-                            }
-                          >>$
-                   | $uid:fcachefn t$ _ -> (* full entry found, just return its id *)
-                      _curobj_id
-                   | _ -> assert False
-                  ]
-              with [ 
-                 Not_found -> save ()
-              ]
-            )
+           |Some _curobj_id -> $save_after_cache_check$
           ] in
         _curobj_id
         >>
@@ -284,16 +300,19 @@ let construct_save_funs env =
     let ext_binding = 
       <:binding< $lid:extsavefn t$ db $lid:t.t_name$ =
         let _cache = Hashtbl.create 1 in
-(*
+        let $lid:tidfn t$ = try Some ( 
+            $uid:whashfn t$.find 
+               db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
+           with [ Not_found -> None ] in
+
         (* first break the chain by inserting a partial save *)
         let _curobj_id = $save_expr ~null_foreigns:true env t$ in
         (* add in a partial cache entry *)
         do {
           Hashtbl.add _cache ( $str:t.t_name$, _curobj_id ) $uid:fpcachefn t$;
-          $lid:savefn t$ ~_id:(Some _id) ~_cache db $lid:t.t_name$
+          $uid:whashfn t$.replace db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _curobj_id;
+          $lid:savefn t$ ~_cache db $lid:t.t_name$
         }
-*)
-        $lid:savefn t$ ~_cache db $lid:t.t_name$
       >>
     in [ int_binding; ext_binding ]
 

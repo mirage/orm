@@ -2,8 +2,8 @@
 - foreign keys (Frefs)
 - no delete
 - no fold
+- let type t work via type alias (clashes with Functor atm)
 - recursive save
 - custom triggers
 - sig generator
 - ocamldoc
-- go back to original structure
