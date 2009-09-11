@@ -1,7 +1,7 @@
 OCAMLMAKEFILE=OCamlMakefile
 
 ANNOTATE=Yes
-SOURCES= sql_access.ml
+SOURCES= weaktbl.ml sql_access.ml
 PACKS = sqlite3
 RESULT = sql_access
 

@@ -193,7 +193,7 @@ let save_expr ?(null_foreigns=false) env t =
    biList_to_expr _loc (foreign_single_ids @ field_var_binds)
     <:expr<
        let stmt = Sqlite3.prepare db.Sql_access.db 
-         (match _id.$lid:fautofn env t$ with [
+         (match $lid:tidfn t$ with [
             None -> $str:insert_sql$
            |Some _ -> $str:update_sql$
           ]
@@ -201,17 +201,17 @@ let save_expr ?(null_foreigns=false) env t =
        in
        do {
          $exSem_of_list sql_bind_expr$;
-         match _id.$lid:fautofn env t$ with [
+         match $lid:tidfn t$ with [
            None -> ()
           |Some _id -> 
             Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT _id)
          ];
          Sql_access.db_must_step db stmt;
-         match _id.$lid:fautofn env t$ with [
+         match $lid:tidfn t$ with [
            None ->
               let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
               do {
-                _id.$lid:fautofn env t$ := Some __id;
+                $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ __id;
                 __id
               }
           |Some _id ->
@@ -225,11 +225,11 @@ let construct_save_funs env =
   let binds = biAnd_of_list (List.flatten (List.map (fun t ->
     let fsf = foreign_single_fields env t.t_name in
     let int_binding =
-      <:binding< $lid:savefn t$ ~_id ~_cache db $lid:t.t_name$ = 
-        let _id = match _id with 
-          [  None -> $lid:tnewfn t$ None
-           | Some _id -> _id
-          ] in
+      <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
+        let $lid:tidfn t$ = try Some ( 
+            $uid:whashfn t$.find 
+               db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
+           with [ Not_found -> None ] in
         let save () =
           let _newobj_id = $save_expr env t$ in
           do {
@@ -237,7 +237,7 @@ let construct_save_funs env =
               ($uid:fcachefn t$ $lid:t.t_name$);
             _newobj_id
           } in
-        let _curobj_id = match _id.$lid:fautofn env t$ with 
+        let _curobj_id = match $lid:tidfn t$ with 
           [ None -> save ()
            |Some _curobj_id -> (
               try
@@ -283,8 +283,8 @@ let construct_save_funs env =
     in
     let ext_binding = 
       <:binding< $lid:extsavefn t$ db $lid:t.t_name$ =
-        let _id = $lid:tnewfn t$ None in
         let _cache = Hashtbl.create 1 in
+(*
         (* first break the chain by inserting a partial save *)
         let _curobj_id = $save_expr ~null_foreigns:true env t$ in
         (* add in a partial cache entry *)
@@ -292,6 +292,8 @@ let construct_save_funs env =
           Hashtbl.add _cache ( $str:t.t_name$, _curobj_id ) $uid:fpcachefn t$;
           $lid:savefn t$ ~_id:(Some _id) ~_cache db $lid:t.t_name$
         }
+*)
+        $lid:savefn t$ ~_cache db $lid:t.t_name$
       >>
     in [ int_binding; ext_binding ]
 
