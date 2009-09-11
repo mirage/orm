@@ -96,7 +96,7 @@ let construct_typedefs env =
 
   let id_new = 
     let ids = List.map (fun t ->
-      <:rec_binding< $lid:tidfn t$ = Hashtbl.create 1 >>
+      <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 1 >>
     ) env.e_tables in
     <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
   in
@@ -132,8 +132,8 @@ let construct_typedefs env =
 
   stSem_of_list [ 
     <:str_item< $list:wh_decls$ >>;
-    <:str_item< value $id_new$ >>;
     <:str_item< type $id_decl$ >>;
+    <:str_item< value $id_new$ >>;
     <:str_item< type $cache_decls$ >>;
     <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >>;
   ]
