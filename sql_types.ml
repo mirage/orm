@@ -314,6 +314,8 @@ let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
 let fcachefn t  = sprintf "C_%s"      t.t_name
 let fpcachefn t = sprintf "P_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
+let whashfn t   = sprintf "W_%s"      t.t_name
+
 (* --- Process functions to convert OCaml types into SQL *)
 
 let rec process tds =
@@ -378,6 +380,7 @@ and process_type _loc t n ctyp env =
   | <:ctyp@loc< ( $tup:tp$ ) >> -> 
      let name = sprintf "%s_%s__t" t n in
      let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
+     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
      let env = add_field ~ctyp ~info:(External_foreign(name,None)) env t n Int in
      let tys = list_of_ctyp tp [] in
      let pos = ref 0 in
