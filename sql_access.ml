@@ -23,19 +23,20 @@ type transaction_mode = [
     |`Exclusive
 ]
 
-type state = {
+type 'a state = {
     db : db;
     mutable in_transaction: int;
     busyfn: db -> unit;
     mode: transaction_mode;
+    cache: 'a;
 }
 
 let default_busyfn (db:Sqlite3.db) =
     print_endline "WARNING: busy";
     Unix.sleep 1
 
-let new_state name =
-    { db=db_open name; in_transaction=0; busyfn=default_busyfn; mode=`Deferred }
+let new_state cache name =
+    { db=db_open name; in_transaction=0; busyfn=default_busyfn; mode=`Deferred; cache=cache }
 
 let raise_sql_error x =
     raise (Sqlite3.Error (Rc.to_string x))

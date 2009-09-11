@@ -87,6 +87,32 @@ let construct_typedefs env =
   let _loc = Loc.ghost in
   let tables = exposed_tables env in
 
+  let id_decl =
+    let ids = List.map (fun t ->
+      <:ctyp< $lid:tidfn t$ : $uid:whashfn t$.t int64 >> 
+    ) env.e_tables in
+   declare_type _loc "_cache" <:ctyp< { $tySem_of_list ids$ } >>
+  in
+
+  let id_new = 
+    let ids = List.map (fun t ->
+      <:rec_binding< $lid:tidfn t$ = Hashtbl.create 1 >>
+    ) env.e_tables in
+    <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
+  in
+
+  let wh_decls = List.map (fun t ->
+    <:str_item< 
+      module $uid:whashfn t$ = Weaktbl.Make (
+          struct 
+            type t = $ctyp_of_table t$;
+            value equal = ( == );
+            value compare = ( == );
+            value hash = Hashtbl.hash;
+          end );
+    >>
+  ) env.e_tables in
+
   let cache_decls =
     let sum_type = List.flatten (List.map (fun t ->
       let ctyp = match t.t_type with
@@ -103,59 +129,13 @@ let construct_typedefs env =
       else
         <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
       declare_type _loc "cache_elt" sum_type in
- 
-  let unique_table_child_iter fn t = 
-    let h = Hashtbl.create 1 in
-    let rec child = function
-     |[] -> []
-     |hd::tl ->
-       with_table (fun env table ->
-        if Hashtbl.mem h table.t_name then
-           child table.t_child
-         else (
-            Hashtbl.add h table.t_name ();
-            fn t @ (child table.t_child)
-         )
-       ) env hd @ (child tl)
-    in child (t.t_name :: t.t_child)
-  in
-
-  let id_decls = Ast.tyAnd_of_list (
-     List.map (fun t ->
-       let r = unique_table_child_iter (fun t' ->
-         List.map (fun f ->
-           let cty = if is_foreign_exposed env f then 
-              <:ctyp< $lid:tidfn (get_foreign_table env f)$ >>
-           else
-             <:ctyp< int64 >>
-           in
-           <:ctyp< $lid:fidfn f$ : mutable option $cty$ >>
-         ) (id_fields env t'.t_name)
-       ) t in
-       declare_type _loc (tidfn t) <:ctyp< { $list:r$ } >> 
-     ) tables
-  ) in
-
-  let new_id_decls = biAnd_of_list (
-    List.map (fun t ->
-      let r = unique_table_child_iter (fun t' ->
-        List.map (fun f ->
-            let x = match f.f_info with
-              |Internal_autoid -> <:expr< __x >>
-              |_ -> <:expr< None >> 
-            in
-            <:rec_binding< $lid:fidfn f$ = $x$ >>
-          ) (id_fields env t'.t_name)
-      ) t in
-      <:binding< $lid:tnewfn t$ __x = { $rbSem_of_list r$ } >>
-    ) tables
-  ) in
 
   stSem_of_list [ 
-    <:str_item< type $id_decls$ >>;
-    <:str_item< type $cache_decls$  >>;
+    <:str_item< $list:wh_decls$ >>;
+    <:str_item< value $id_new$ >>;
+    <:str_item< type $id_decl$ >>;
+    <:str_item< type $cache_decls$ >>;
     <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >>;
-    <:str_item< value rec $new_id_decls$ >>
   ]
 
 let save_expr ?(null_foreigns=false) env t =
@@ -199,7 +179,7 @@ let save_expr ?(null_foreigns=false) env t =
              <:expr< 0L >>
            else
              <:expr< $lid:savefn ftable$ 
-               ~_id:_id.$lid:fidfn f$ ~_cache db $field_accessor f$ >>
+               ~_cache db $field_accessor f$ >>
         in
         <:binding< $lid:"_"^id^"_id"$ = $ex$ >>
       ) (foreign_single_fields env t.t_name)
@@ -266,7 +246,7 @@ let construct_save_funs env =
                        $biList_to_expr _loc (List.map (fun f ->
                            let ft = get_foreign_table env f in
                            <:binding< $lid:"_"^f.f_name$ = 
-                              $lid:savefn ft$ ~_id:(_id.$lid:fidfn f$) ~_cache db $field_accessor f$ >>
+                              $lid:savefn ft$ ~_cache db $field_accessor f$ >>
                          ) fsf) 
                          <:expr< 
                             let sql = $str:sprintf "UPDATE %s SET %s WHERE id=%%Lu"
@@ -350,7 +330,7 @@ let construct_init env =
   let _loc = Loc.ghost in
   <:str_item<
     value init db_name = 
-      let db = Sql_access.new_state db_name in
+      let db = Sql_access.new_state (_cache_new ()) db_name in
       do {
         $init_db_funs env$; db
       };
