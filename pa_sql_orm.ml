@@ -170,11 +170,9 @@ let save_expr ?(null_foreigns=false) env t =
         let id = f.f_name in
         let ft = get_foreign_table env f in
         let ex = match ft.t_type with
-         |Variant
-         |Tuple
-         |List ->
+         |List |Variant ->
             <:expr< failwith "not complete" >>
-         |Exposed -> 
+         |Exposed |Tuple-> 
            if null_foreigns then
              <:expr< 0L >>
            else
@@ -195,10 +193,17 @@ let save_expr ?(null_foreigns=false) env t =
       ) (foreign_single_fields env t.t_name)
     in 
 
-   let field_var_binds = List.map (fun f ->
-       <:binding< $lid:"_"^f.f_name$ = $field_accessor f$ >>
-     ) (sql_fields_no_autoid env t.t_name) in
+    (* bind a variable to the contents of the current thing being saved *)
+    let snif = sql_fields_no_autoid env t.t_name in
+    let field_var_binds = match t.t_type with
+     | Exposed -> 
+        List.map (fun f -> <:binding< $lid:"_"^f.f_name$ = $field_accessor f$ >>) snif
+     | Tuple -> 
+       let fs = List.rev_map (fun f -> <:patt< $lid:"_"^f.f_name$ >>) snif in
+       [ <:binding< ( $tup:paCom_of_list fs$ ) = $lid:t.t_name$ >> ]
+     | _ -> [ ] in
 
+ 
    (* the main save function *)
    biList_to_expr _loc (foreign_single_ids @ field_var_binds)
     <:expr<
@@ -275,8 +280,7 @@ let construct_save_funs env =
     else <:expr< save () >>
     in
 
-
-    let int_binding =
+   let int_binding =
       <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
             $uid:whashfn t$.find 
