@@ -314,7 +314,8 @@ let construct_save_funs env =
           $lid:savefn t$ ~_cache db $lid:t.t_name$
         }
       >>
-    in [ int_binding; ext_binding ]
+    in 
+    int_binding ::  (if t.t_type = Exposed then [ ext_binding ] else [])
 
     ) env.e_tables))
   in
