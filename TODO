@@ -3,7 +3,7 @@
 - no delete
 - no fold
 - let type t work via type alias (clashes with Functor atm)
-- recursive save
 - custom triggers
 - sig generator
 - ocamldoc
+- better error message with incorrect foreign type (currently failwith

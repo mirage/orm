@@ -300,7 +300,7 @@ let is_recursive_table env t =
     
 let field_accessor f =
   let _loc = Loc.ghost in
-  <:expr< $lid:f.f_table$ . $lid:f.f_name$  >>
+  <:expr< $lid:"_"^f.f_name$ >>
 
 (* --- Name functions *)
 

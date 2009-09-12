@@ -138,6 +138,20 @@ let construct_typedefs env =
     <:str_item< type cache = Hashtbl.t (string * int64) cache_elt >>;
   ]
 
+(* bind a variable to the contents of the current thing being saved *)
+let field_var_binds env t =
+  let _loc = Loc.ghost in
+  let snif = sql_fields_no_autoid env t.t_name in
+  let bs = match t.t_type with
+    | Exposed -> 
+      List.map (fun f -> <:binding< $lid:"_"^f.f_name$ = 
+          $lid:f.f_table$.$lid:f.f_name$ >>) snif
+    | Tuple -> 
+      let fs = List.rev_map (fun f -> <:patt< $lid:"_"^f.f_name$ >>) snif in
+      [ <:binding< ( $tup:paCom_of_list fs$ ) = $lid:t.t_name$ >> ]
+    | _ -> [ ]
+  in biAnd_of_list bs
+
 let save_expr ?(null_foreigns=false) env t =
     let _loc = Loc.ghost in
      (* the INSERT statement for this object *)
@@ -193,19 +207,8 @@ let save_expr ?(null_foreigns=false) env t =
       ) (foreign_single_fields env t.t_name)
     in 
 
-    (* bind a variable to the contents of the current thing being saved *)
-    let snif = sql_fields_no_autoid env t.t_name in
-    let field_var_binds = match t.t_type with
-     | Exposed -> 
-        List.map (fun f -> <:binding< $lid:"_"^f.f_name$ = $field_accessor f$ >>) snif
-     | Tuple -> 
-       let fs = List.rev_map (fun f -> <:patt< $lid:"_"^f.f_name$ >>) snif in
-       [ <:binding< ( $tup:paCom_of_list fs$ ) = $lid:t.t_name$ >> ]
-     | _ -> [ ] in
-
- 
-   (* the main save function *)
-   biList_to_expr _loc (foreign_single_ids @ field_var_binds)
+  (* the main save function *)
+   biList_to_expr _loc foreign_single_ids
     <:expr<
        let stmt = Sqlite3.prepare db.Sql_access.db 
          (match $lid:tidfn t$ with [
@@ -280,12 +283,14 @@ let construct_save_funs env =
     else <:expr< save () >>
     in
 
-   let int_binding =
+  let int_binding =
       <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
             $uid:whashfn t$.find 
                db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
            with [ Not_found -> None ] in
+
+        let $field_var_binds env t$ in
         let save () =
           let _newobj_id = $save_expr env t$ in
           do {
@@ -310,6 +315,7 @@ let construct_save_funs env =
            with [ Not_found -> None ] in
 
         (* first break the chain by inserting a partial save *)
+        let $field_var_binds env t $ in
         let _curobj_id = $save_expr ~null_foreigns:true env t$ in
         (* add in a partial cache entry *)
         do {

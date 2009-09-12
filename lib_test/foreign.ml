@@ -1,13 +1,13 @@
 TYPE_CONV_PATH "Foreign"
 
-type t = {
+type s = {
   foo: string;
   bar: int64;
   xyz: char;
 }
 and x = {
-  first: t;
-  second: t;
+  first: s;
+  second: s;
   third: int;
 }
 with persist ()
