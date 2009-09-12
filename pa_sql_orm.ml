@@ -149,6 +149,24 @@ let field_var_binds env t =
     | Tuple -> 
       let fs = List.rev_map (fun f -> <:patt< $lid:"_"^f.f_name$ >>) snif in
       [ <:binding< ( $tup:paCom_of_list fs$ ) = $lid:t.t_name$ >> ]
+    | Variant vi ->
+      List.map (fun f ->  match f.f_info with
+         |Internal_field -> (* this is the index *)
+          <:binding< $lid:"_"^f.f_name$ = match $lid:t.t_name$ with [
+            $mcOr_of_list (Hashtbl.fold (fun id (n,args) a -> 
+               (if args then (* <:patt< $uid:id$ _ >> else <:patt< $uid:id$ >> in *)
+                 <:match_case< $uid:id$ _ -> $`int64:n$ >> 
+               else
+                 <:match_case< $uid:id$ -> $`int64:n$ >> )
+              :: a) vi.v_indices [])
+            $
+           ]  >>
+         |_ ->
+          <:binding< $lid:"_"^f.f_name$ = match $lid:t.t_name$ with [
+            $uid:String.capitalize f.f_name$ _v -> Some _v
+           |_ -> None
+          ] >>
+        ) snif
     | _ -> [ ]
   in biAnd_of_list bs
 
@@ -184,9 +202,9 @@ let save_expr ?(null_foreigns=false) env t =
         let id = f.f_name in
         let ft = get_foreign_table env f in
         let ex = match ft.t_type with
-         |List |Variant ->
+         |List  ->
             <:expr< failwith "not complete" >>
-         |Exposed |Tuple-> 
+         |Exposed |Tuple |Variant _ -> 
            if null_foreigns then
              <:expr< 0L >>
            else

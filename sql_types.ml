@@ -32,10 +32,14 @@ type sql_type =
   |Text    |Blob
   |Null    
 
+type variant_info = {
+  v_indices: (string , (int64 * bool)) Hashtbl.t
+}
+
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |List           (* table is an internal list *)
-  |Variant        (* table is a variant list *)
+  |Variant of variant_info (* table is a variant list *)
   |Tuple
 
 type field_info =
@@ -86,7 +90,7 @@ let string_of_field_info = function
 let string_of_field f =
   sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
-  sprintf "%s / %s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" |Variant -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
+  sprintf "%s / %s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" |Variant _ -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
   List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
   string_map "\n" string_of_table e.e_tables 
@@ -178,7 +182,7 @@ let sql_tables env =
   List.filter (fun t ->
     match t.t_type with
     |Exposed
-    |List |Tuple |Variant -> true
+    |List |Tuple |Variant _ -> true
   ) env.e_tables
 
 (* add an option type to a field entry *)
@@ -272,7 +276,7 @@ let is_optional_field f =
 let ctyp_of_table t =
   let _loc = Loc.ghost in
   match t.t_type with
-  |Exposed -> <:ctyp< $lid:t.t_name$ >>
+  |Exposed |Variant _ -> <:ctyp< $lid:t.t_name$ >>
   |_ -> t.t_ctyp
 
 (* follow all the links in a table fields to determine
@@ -352,13 +356,22 @@ and process_toplevel_type _loc n ctyp env =
   | <:ctyp< [> $row_fields$ ] >>
   | <:ctyp< [= $row_fields$ ] >> 
   | <:ctyp< [ $row_fields$ ] >> ->
-    let env = new_table ~name:n ~ty:Variant ~ctyp ~parent:None env in
+    let vi = { v_indices=Hashtbl.create 1 } in
+    let env = new_table ~name:n ~ty:(Variant vi) ~ctyp ~parent:None env in
     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
+    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env n "_idx" Int in
+    let pos = ref 0 in
+    let register_id id args = 
+      Hashtbl.add vi.v_indices id ((Int64.of_int !pos),args); incr pos in
     let rec fn env = function
     | <:ctyp< $t1$ | $t2$ >> -> fn (fn env t1) t2
     | <:ctyp< $uid:id$ of $t$ >> ->
-       process_type _loc n id t env
-    | <:ctyp< $uid:id$ >> -> env
+       register_id id true;
+       let id = String.uncapitalize id in
+       process_type _loc n id <:ctyp< option $t$ >> env
+    | <:ctyp< $uid:id$ >> ->
+       register_id id false;
+       env
     | _ -> failwith "unknown variant AST"
     in fn env row_fields
   | _ -> failwith "process_toplevel_type: unknown type"
