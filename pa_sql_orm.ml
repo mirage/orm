@@ -161,11 +161,7 @@ let field_var_binds env t =
               :: a) vi.v_indices [])
             $
            ]  >>
-         |_ ->
-          <:binding< $lid:"_"^f.f_name$ = match $lid:t.t_name$ with [
-            $uid:String.capitalize f.f_name$ _v -> Some _v
-           |_ -> None
-          ] >>
+         |_ -> <:binding< >>
         ) snif
     | _ -> [ ]
   in biAnd_of_list bs
@@ -183,25 +179,11 @@ let save_expr ?(null_foreigns=false) env t =
           sprintf "%s=?" f.f_name
         ) (sql_fields_no_autoid env t.t_name))) in
 
-    (* the Sqlite3.bind for each simple statement *)
-    let sql_bind_pos = ref 0 in
-    let sql_bind_expr = List.map (fun f ->
-       incr sql_bind_pos;
-       let v = field_to_sql_data _loc f in
-       <:expr< 
-        Sql_access.db_must_ok db (fun () -> 
-               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
-       >>
-    ) (sql_fields_no_autoid env t.t_name) in
-
-    (* last binding for update statement which also needs an id at the end *)
-    incr sql_bind_pos;
-
-    (* bindings for the ids of all the foreign-single fields *)
-    let foreign_single_ids = List.map (fun f ->
+    (* get an expression which can resolve an id and lookup cache correctly *)
+    let id_for_field_expr f = 
         let id = f.f_name in
         let ft = get_foreign_table env f in
-        let ex = match ft.t_type with
+        match ft.t_type with
          |List  ->
             <:expr< failwith "not complete" >>
          |Exposed |Tuple |Variant _ -> 
@@ -210,7 +192,8 @@ let save_expr ?(null_foreigns=false) env t =
            else
              <:expr< 
                try 
-                 let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ $field_accessor f$ in
+                 let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ 
+                    $field_accessor f$ in
                   match Hashtbl.mem _cache ( $str:ft.t_name$ , __i ) with [
                     True -> __i
                   | False ->  $lid:savefn ft$ ~_cache db $field_accessor f$ ]
@@ -219,21 +202,43 @@ let save_expr ?(null_foreigns=false) env t =
                    $lid:savefn ft$ ~_cache db $field_accessor f$
                  ]
              >>   
-
-        in
-        <:binding< $lid:"_"^id^"_id"$ = $ex$ >>
-      ) (foreign_single_fields env t.t_name)
     in 
 
+    (* the Sqlite3.bind for each simple statement *)
+    let sql_bind_pos = ref 0 in
+    let sql_bind_expr = List.map (fun f ->
+       let idex = if is_foreign f then  
+           <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr f$ >>
+         else
+           <:binding<  >>
+       in
+       incr sql_bind_pos;
+       let v = match t.t_type with 
+       |Variant _ -> <:expr<
+         match $lid:t.t_name$ with [
+           $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
+             let $idex$ in
+             $field_to_sql_data _loc f$
+           | _ -> Sqlite3.Data.NULL
+         ] >>
+       |_ -> <:expr< let $idex$ in $field_to_sql_data _loc f$ >> in
+
+       <:expr< 
+        Sql_access.db_must_ok db (fun () -> 
+               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
+       >>
+    ) (sql_fields_no_internal env t.t_name) in
+
+    (* last binding for update statement which also needs an id at the end *)
+    incr sql_bind_pos;
+
   (* the main save function *)
-   biList_to_expr _loc foreign_single_ids
     <:expr<
        let stmt = Sqlite3.prepare db.Sql_access.db 
          (match $lid:tidfn t$ with [
             None -> $str:insert_sql$
            |Some _ -> $str:update_sql$
-          ]
-         ) 
+          ]) 
        in
        do {
          $exSem_of_list sql_bind_expr$;

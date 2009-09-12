@@ -14,8 +14,7 @@ with persist ()
 
 let _ =
   let db = Orm.init "foreign.db" in
-  let t1 = Orm.t_new ~foo:"hello" ~bar:100L ~xyz:'a' db in
-  let t2 = Orm.t_new ~foo:"word"  ~bar:200L ~xyz:'z' db in
-  let x  = Orm.x_new ~first:t1 ~second:t2 ~third:6 db in
-  let id = x#save in
-  prerr_endline (Printf.sprintf "saved: %Lu\n%!" id)
+  let s1 = { foo="hello"; bar=100L; xyz='a' } in
+  let s2 = { foo="world"; bar=200L; xyz='z' } in
+  let x1 = { first=s1; second=s2; third=111 } in
+  Orm.x_to_db db x1

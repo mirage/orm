@@ -1,6 +1,6 @@
 TYPE_CONV_PATH "Alltypes"
 
-type t = {
+type x = {
   one: char;
   two: string;
   three: int;

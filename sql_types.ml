@@ -240,6 +240,12 @@ let sql_fields_no_autoid =
      not ((ctyp_is_list f.f_ctyp) || f.f_info = Internal_autoid)
    )
 
+let sql_fields_no_internal =
+  filter_fields_with_table (fun f ->
+    not ((ctyp_is_list f.f_ctyp) || f.f_info = Internal_autoid || 
+    f.f_info = Internal_field)
+  )
+
 (* get the foreign single fields (ie foreign tables which arent lists) *)
 let foreign_single_fields =
   filter_fields_with_table (fun f ->
@@ -368,7 +374,7 @@ and process_toplevel_type _loc n ctyp env =
     | <:ctyp< $uid:id$ of $t$ >> ->
        register_id id true;
        let id = String.uncapitalize id in
-       process_type _loc n id <:ctyp< option $t$ >> env
+       process_type _loc n id t env
     | <:ctyp< $uid:id$ >> ->
        register_id id false;
        env
@@ -460,7 +466,7 @@ let field_to_sql_data _loc f =
          ]
       >>
   | ctyp ->
-    <:expr< Sqlite3.Data.INT $lid:sprintf "_%s_id" f.f_name$ >>
+    <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
 
 let sql_data_to_field _loc f =
