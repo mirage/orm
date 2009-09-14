@@ -39,6 +39,7 @@ type variant_info = {
 type table_type =
   |Exposed        (* table is an exposed external type *)
   |List           (* table is an internal list *)
+  |List_items     (* table with actual contents of lists *)
   |Variant of variant_info (* table is a variant list *)
   |Tuple
 
@@ -57,6 +58,7 @@ and table = {
   t_type: table_type;
   t_ctyp: ctyp;
   t_child: string list; (* sub-tables created from this one *)
+  t_parent: string option;
 }
 and field = {
   f_name: string;
@@ -73,7 +75,7 @@ let string_map del fn v =
 
 let string_of_sql_type f = 
   match f.f_typ, f.f_info with
-  |Int,Internal_autoid -> "INTEGER PRIMARY KEY AUTOINCREMENT"
+  |Int,Internal_autoid -> "INTEGER"
   |Int,_ -> "INTEGER"
   |Real,_ -> "REAL"
   |Text,_ -> "TEXT"
@@ -90,7 +92,7 @@ let string_of_field_info = function
 let string_of_field f =
   sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
-  sprintf "%s / %s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" |Variant _ -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
+  sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" | List_items -> "List_items" |Variant _ -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
   List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
   string_map "\n" string_of_table e.e_tables 
@@ -114,7 +116,7 @@ let replace_table env table =
 let new_table ~name ~ty ~ctyp ~parent env =
   (* stick in the new table *)
   let env = replace_table env (match find_table env name with 
-    |None -> { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[] }
+    |None -> { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[]; t_parent=parent }
     |Some table -> failwith (sprintf "new_table: clash %s" name) 
   ) in
   (* check if the table is a child and update parent child list if so *)
@@ -181,8 +183,14 @@ let not_exposed_tables env =
 let sql_tables env =
   List.filter (fun t ->
     match t.t_type with
-    |Exposed
-    |List |Tuple |Variant _ -> true
+    |Exposed |List |Tuple |List_items |Variant _ -> true
+  ) env.e_tables
+
+let tables_no_list_item env =
+  List.filter (fun t ->
+    match t.t_type with
+    |List_items -> false
+    |Exposed | List |Tuple |Variant _ -> true
   ) env.e_tables
 
 (* add an option type to a field entry *)
@@ -222,7 +230,7 @@ let exposed_fields =
 (* list of fields suitable for SQL statements *)
 let sql_fields =
    filter_fields_with_table (fun f ->
-     not (ctyp_is_list f.f_ctyp)
+     true
    )
 
 (* list of fields which are foreign ids *)
@@ -237,13 +245,12 @@ let id_fields =
 (* same as sql_fields but with the auto_id field filtered out *)
 let sql_fields_no_autoid =
    filter_fields_with_table (fun f ->
-     not ((ctyp_is_list f.f_ctyp) || f.f_info = Internal_autoid)
+     f.f_info <> Internal_autoid
    )
 
 let sql_fields_no_internal =
   filter_fields_with_table (fun f ->
-    not ((ctyp_is_list f.f_ctyp) || f.f_info = Internal_autoid || 
-    f.f_info = Internal_field)
+    not (f.f_info = Internal_autoid || f.f_info = Internal_field)
   )
 
 (* get the foreign single fields (ie foreign tables which arent lists) *)
@@ -271,6 +278,16 @@ let auto_id_field =
     |[f] -> f
     |[] -> failwith (sprintf "auto_id_field: %s: no entry" table.t_name)
     |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
+  )
+
+(* retrieve the single value field from a list table *)
+let list_item_field =
+  with_table (fun env table ->
+    assert(table.t_type = List_items);
+    match List.filter (fun f -> f.f_name = "_idx") table.t_fields with
+    |[f] -> f
+    |[] -> failwith (sprintf "list_item_type: %s: no entry" table.t_name)
+    |_ -> failwith (sprintf "list_item_type: %s: multiple entries" table.t_name)
   )
 
 let is_optional_field f =
@@ -325,6 +342,9 @@ let fcachefn t  = sprintf "C_%s"      t.t_name
 let fpcachefn t = sprintf "P_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 let whashfn t   = sprintf "W_%s"      t.t_name
+let tparentidfn t = match t.t_parent with 
+  |None ->  failwith "no parent table"
+  |Some p -> "_"^p^"_id"
 
 (* --- Process functions to convert OCaml types into SQL *)
 
@@ -413,13 +433,18 @@ and process_type _loc t n ctyp env =
   end  
   | <:ctyp@loc< list $ctyp$ >>
   | <:ctyp@loc< array $ctyp$ >> as orig_ctyp ->
-    (* construct the transient list table *)
+    (* add field to current table marking the list as a foreign *)
     let name = sprintf "%s_%s" t n in
     let env = add_field ~ctyp:orig_ctyp ~info:(External_foreign (name,None)) env t n Int in
-    let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:(Some t) env in
-    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "id" Int in
-    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name "_idx" Int in
-    process_type _loc name "lst" ctyp env 
+    (* construct a table which holds the list ids to mark list identity *)
+    let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:(Some t) env in 
+    let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
+    (* construct a table which holds the actual list items *)
+    let name_items = sprintf "%s_items" name in
+    let env = new_table ~name:name_items ~ty:List_items ~ctyp ~parent:(Some name) env in
+    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "id" Int in
+    let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "_idx" Int in
+    process_type _loc name_items "_item" ctyp env 
   | _ -> 
     failwith "unknown type"
 
@@ -432,7 +457,6 @@ and check_foreign_refs env =
     let fields = List.map (fun f ->
       match f.f_info with
       | External_foreign (id,None) -> begin
-        debug_ctyp f.f_ctyp;
         match find_table env id with
         |None ->
           eprintf "UNKNOWN: %s -- %s\n" t.t_name f.f_name;

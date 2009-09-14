@@ -85,19 +85,21 @@ open Sql_types
 (* declare the types used to pass SQL objects back and forth *)
 let construct_typedefs env =
   let _loc = Loc.ghost in
+
   let tables = exposed_tables env in
+  let nlit = tables_no_list_item env in
 
   let id_decl =
     let ids = List.map (fun t ->
       <:ctyp< $lid:tidfn t$ : $uid:whashfn t$.t int64 >> 
-    ) env.e_tables in
+    ) nlit in
    declare_type _loc "_cache" <:ctyp< { $tySem_of_list ids$ } >>
   in
 
   let id_new = 
     let ids = List.map (fun t ->
       <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 1 >>
-    ) env.e_tables in
+    ) nlit in
     <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
   in
 
@@ -111,7 +113,7 @@ let construct_typedefs env =
             value hash = Hashtbl.hash;
           end );
     >>
-  ) env.e_tables in
+  ) nlit in
 
   let cache_decls =
     let sum_type = List.flatten (List.map (fun t ->
@@ -121,7 +123,7 @@ let construct_typedefs env =
       in
       [ (_loc, (fcachefn t), [ ]) ;
         (_loc, (fpcachefn t), [ ] ) ]
-    ) env.e_tables)
+    ) nlit)
     in
     let sum_type =
       if List.length sum_type = 1 then
@@ -166,6 +168,30 @@ let field_var_binds env t =
     | _ -> [ ]
   in biAnd_of_list bs
 
+(* get an expression which can resolve an id and lookup cache correctly *)
+let id_for_field_expr ~null_foreigns env f = 
+  let _loc = Loc.ghost in
+  let id = f.f_name in
+  let ft = get_foreign_table env f in
+  match ft.t_type with
+    |List_items  -> failwith "list item encountered"
+    |List| Exposed |Tuple |Variant _ -> 
+  if null_foreigns then
+    <:expr< 0L >>
+  else
+    <:expr< 
+      try 
+        let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ 
+          $field_accessor f$ in
+        match Hashtbl.mem _cache ( $str:ft.t_name$ , __i ) with [
+          True -> __i
+          | False ->  $lid:savefn ft$ ~_cache db $field_accessor f$ ]
+      with 
+      [ Not_found -> 
+          $lid:savefn ft$ ~_cache db $field_accessor f$
+      ]
+    >>   
+
 let save_expr ?(null_foreigns=false) env t =
     let _loc = Loc.ghost in
      (* the INSERT statement for this object *)
@@ -179,36 +205,11 @@ let save_expr ?(null_foreigns=false) env t =
           sprintf "%s=?" f.f_name
         ) (sql_fields_no_autoid env t.t_name))) in
 
-    (* get an expression which can resolve an id and lookup cache correctly *)
-    let id_for_field_expr f = 
-        let id = f.f_name in
-        let ft = get_foreign_table env f in
-        match ft.t_type with
-         |List  ->
-            <:expr< failwith "not complete" >>
-         |Exposed |Tuple |Variant _ -> 
-           if null_foreigns then
-             <:expr< 0L >>
-           else
-             <:expr< 
-               try 
-                 let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ 
-                    $field_accessor f$ in
-                  match Hashtbl.mem _cache ( $str:ft.t_name$ , __i ) with [
-                    True -> __i
-                  | False ->  $lid:savefn ft$ ~_cache db $field_accessor f$ ]
-               with 
-                 [ Not_found -> 
-                   $lid:savefn ft$ ~_cache db $field_accessor f$
-                 ]
-             >>   
-    in 
-
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
        let idex = if is_foreign f then  
-           <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr f$ >>
+           <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns env f$ >>
          else
            <:binding<  >>
        in
@@ -306,6 +307,59 @@ let construct_save_funs env =
     else <:expr< save () >>
     in
 
+  let list_saves = match t.t_type with
+    |List -> begin
+      (* get the child list_item table *) 
+      with_table (fun env listitem ->
+
+       (* XXX factor out binds with previous use *)
+        let sql_bind_pos = ref 0 in
+        let sql_bind_exprs = exSem_of_list (List.map (fun f ->
+           let idex = if is_foreign f then  
+             <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns:false env f$ >>
+           else
+             <:binding<  >>
+           in
+           incr sql_bind_pos;
+           let v = field_to_sql_data _loc f in
+           <:expr< 
+             let $idex$ in
+             Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ $v$ 
+           >>
+        ) (sql_fields_no_autoid env listitem.t_name)) in
+
+        (* decide which iterator to use depending on the list type *)
+        let access_fn, length_fn = match t.t_ctyp with
+          | <:ctyp< array $c$ >> -> <:expr< Array.iteri >> , <:expr< Array.length >>
+          | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> , <:expr< List.length >>
+          | _ -> failwith "table not array or list" in
+
+        <:expr<  $access_fn$ (fun pos __item ->
+            let __idx = Int64.of_int pos in
+            let _id = _newobj_id in
+            let stmt = Sqlite3.prepare db.Sql_access.db 
+              $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s)" listitem.t_name 
+               (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $
+            in
+            do { 
+              $sql_bind_exprs$;  
+              Sql_access.db_must_step db stmt;
+              let stmt = Sqlite3.prepare db.Sql_access.db
+                $`str:sprintf "DELETE FROM %s WHERE id=? AND _idx > ?" listitem.t_name$ in
+              do {
+                Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
+                (* XXX check for off-by-one here *)
+                Sql_access.db_must_bind db stmt 2
+                 (Sqlite3.Data.INT (Int64.of_int ($length_fn$ $lid:t.t_name$)));
+                Sql_access.db_must_step db stmt
+              }
+            }
+          ) $lid:t.t_name$ 
+        >>
+      ) env (match t.t_child with [x] -> x |_ -> failwith "listitem<>1") 
+    end
+    |_ -> <:expr< >>
+  in
   let int_binding =
       <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
@@ -320,13 +374,17 @@ let construct_save_funs env =
             $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
             Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
               $uid:fcachefn t$; 
+            $list_saves$;
             _newobj_id
-          } in
-        let _curobj_id = match $lid:tidfn t$ with 
-          [ None -> save ()
-           |Some _curobj_id -> $save_after_cache_check$
-          ] in
-        _curobj_id
+          } 
+        in
+        do { 
+          let _curobj_id = match $lid:tidfn t$ with 
+            [ None -> save ()
+             |Some _curobj_id -> $save_after_cache_check$
+            ] in
+          _curobj_id
+        }
         >>
     in
     let ext_binding = 
@@ -350,7 +408,7 @@ let construct_save_funs env =
     in 
     int_binding ::  (if t.t_type = Exposed then [ ext_binding ] else [])
 
-    ) env.e_tables))
+    ) (tables_no_list_item env)))
   in
   <:str_item< value rec $binds$ >>
 
@@ -358,28 +416,29 @@ let construct_save_funs env =
 
 let init_db_funs env =
   let _loc = Loc.ghost in
-  Ast.exSem_of_list (List.map (fun table ->
-    (* open function to first access a sqlite3 db *)
-    let sql_decls = List.fold_right (fun t a ->
-      let fields = sql_fields env t in
-      let sql_fields = List.map (fun f ->
-        sprintf "%s %s" f.f_name (string_of_sql_type f)
-      ) fields in
-      let prim_key = match table.t_type with 
-        |List -> ", PRIMARY KEY(id, _idx)"
-        |_ -> "" in
-      sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
-        t (String.concat ", " sql_fields) prim_key :: a
-    ) (table.t_name :: table.t_child) [] in
-
-    let create_table sql = <:expr<
-        let sql = $str:sql$ in
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql)
-     >> in
-    let create_statements = Ast.exSem_of_list (List.map create_table sql_decls) in
-    (* the final init_db binding for the SQL creation function *)
-    <:expr< do { $create_statements$ } >>
-  ) (sql_tables env))
+  let exs = Ast.exSem_of_list (
+    List.map (fun table ->
+      (* open function to first access a sqlite3 db *)
+      let sql =
+        let fields = sql_fields env table.t_name in
+        let sql_fields = List.map (fun f ->
+          sprintf "%s %s%s" f.f_name (string_of_sql_type f) 
+            (match table.t_type,f.f_info with
+           |List_items,Internal_autoid -> ""
+           |_,Internal_autoid -> " PRIMARY KEY AUTOINCREMENT"
+           |_ -> "" )
+        ) fields in
+        let prim_key = match table.t_type with 
+          |List_items -> ", PRIMARY KEY(id, _idx)"
+          |_ -> "" in
+        sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
+          table.t_name (String.concat ", " sql_fields) prim_key 
+      in
+      <:expr< 
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql$)
+      >>
+  ) (sql_tables env)) in
+  <:expr< do { $exs$ } >>
  
 let construct_init env =
   let _loc = Loc.ghost in

@@ -7,3 +7,4 @@
 - sig generator
 - ocamldoc
 - better error message with incorrect foreign type (currently failwith
+- updates fail when record is all lists (and hence no non-foreign), need check
