@@ -1,6 +1,6 @@
-TYPE_CONV_PATH "List_simple"
+TYPE_CONV_PATH "List_list"
 
-type t = {
+type s = {
   foo: int list list;
   bar: string
 } with
@@ -8,10 +8,8 @@ persist()
 
 open Orm
 let _ = 
-  let db = init "list_simple.db" in
-  let t1 = t_new ~foo:[[1]] ~bar:"hello world" db in
-  let t2 = t_new ~foo:[[2;3;4];[6;7]] ~bar:"world hello" db in
-  let t3 = t_new ~foo:[] ~bar:"world hello" db in
-  Printf.printf "saved: %Lu %Lu\n%!" t1#save t1#save;
-  Printf.printf "saved: %Lu %Lu\n%!" t2#save t2#save;
-  Printf.printf "saved: %Lu %Lu\n%!" t3#save t3#save
+  let db = init "list_list.db" in
+  let t1 = {foo=[[1]]; bar="t1" } in
+  let t2 = {foo=[[2;3;4];[6;7]] ;bar="t2"} in
+  let t3 = {foo=[]; bar="t3" } in
+  List.iter (fun t -> Printf.eprintf "saved %Lu\n%!" (Orm.s_to_db db t1)) [t1;t2;t3]
