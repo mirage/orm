@@ -205,6 +205,10 @@ let save_expr ?(null_foreigns=false) env t =
           sprintf "%s=?" f.f_name
         ) (sql_fields_no_autoid env t.t_name))) in
 
+    (* if there are no fields to update, then that would generate invalid 
+       SQL above, so set no_update true so the code gen can skip update in this case *)
+    let no_update = List.length (sql_fields_no_autoid env t.t_name) = 0 in
+
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
@@ -232,16 +236,8 @@ let save_expr ?(null_foreigns=false) env t =
 
     (* last binding for update statement which also needs an id at the end *)
     incr sql_bind_pos;
-
-  (* the main save function *)
-    <:expr<
-       let stmt = Sqlite3.prepare db.Sql_access.db 
-         (match $lid:tidfn t$ with [
-            None -> $str:insert_sql$
-           |Some _ -> $str:update_sql$
-          ]) 
-       in
-       do {
+    let sql_stmts = <:expr<
+      do {
          $exSem_of_list sql_bind_expr$;
          match $lid:tidfn t$ with [
            None -> ()
@@ -261,6 +257,26 @@ let save_expr ?(null_foreigns=false) env t =
          ]
        } 
     >>  
+    in
+
+    (* the main save function *)
+    if no_update then
+      <:expr<
+       match $lid:tidfn t$ with [
+        None -> 
+          let stmt = Sqlite3.prepare db.Sql_access.db $str:insert_sql$ in
+          $sql_stmts$
+       |Some _id -> _id
+       ] 
+      >>
+    else <:expr<
+       let stmt = Sqlite3.prepare db.Sql_access.db 
+         (match $lid:tidfn t$ with [
+            None -> $str:insert_sql$
+           |Some _ -> $str:update_sql$
+          ]) 
+       in $sql_stmts$
+    >>
 
 let construct_save_funs env = 
   let _loc = Loc.ghost in
@@ -278,7 +294,7 @@ let construct_save_funs env =
                               $lid:savefn ft$ ~_cache db $field_accessor f$ >>
                      ) fsf) 
                      <:expr< 
-                       let sql = $str:sprintf "UPDATE %s SET %s WHERE id=?"
+                       let sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;"
                          t.t_name (String.concat "," (List.map (fun f -> 
                            f.f_name ^ "=?") fsf))$ 
                        in 
@@ -338,14 +354,14 @@ let construct_save_funs env =
             let __idx = Int64.of_int pos in
             let _id = _newobj_id in
             let stmt = Sqlite3.prepare db.Sql_access.db 
-              $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s)" listitem.t_name 
+              $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s);" listitem.t_name 
                (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $
             in
             do { 
               $sql_bind_exprs$;  
               Sql_access.db_must_step db stmt;
               let stmt = Sqlite3.prepare db.Sql_access.db
-                $`str:sprintf "DELETE FROM %s WHERE id=? AND _idx > ?" listitem.t_name$ in
+                $`str:sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?);" listitem.t_name$ in
               do {
                 Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
                 (* XXX check for off-by-one here *)

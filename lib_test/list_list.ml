@@ -12,4 +12,5 @@ let _ =
   let t1 = {foo=[[1]]; bar="t1" } in
   let t2 = {foo=[[2;3;4];[6;7]] ;bar="t2"} in
   let t3 = {foo=[]; bar="t3" } in
-  List.iter (fun t -> Printf.eprintf "saved %Lu\n%!" (Orm.s_to_db db t1)) [t1;t2;t3]
+  List.iter (fun t -> Printf.eprintf "saved %Lu\n%!" (Orm.s_to_db db t)) [t1;t2;t3];
+  List.iter (fun t -> Printf.eprintf "saved %Lu\n%!" (Orm.s_to_db db t)) [t1;t2;t3]
