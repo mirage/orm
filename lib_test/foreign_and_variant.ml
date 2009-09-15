@@ -17,7 +17,7 @@ and x = {
 with persist ()
 
 let _ =
-  let db = Orm.init "foreign.db" in
+  let db = Orm.init "foreign_and_variant.db" in
   let v = Charlie (1002,1003L) in
   let s1 = { foo="s1"; bar=99L; xyz=v } in
   Orm.s_to_db db s1

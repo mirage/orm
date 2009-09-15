@@ -117,10 +117,6 @@ let construct_typedefs env =
 
   let cache_decls =
     let sum_type = List.flatten (List.map (fun t ->
-      let ctyp = match t.t_type with
-        |Exposed -> <:ctyp< $lid:t.t_name$  >>
-        | _ -> t.t_ctyp 
-      in
       [ (_loc, (fcachefn t), [ ]) ;
         (_loc, (fpcachefn t), [ ] ) ]
     ) nlit)
@@ -151,6 +147,13 @@ let field_var_binds env t =
     | Tuple -> 
       let fs = List.rev_map (fun f -> <:patt< $lid:"_"^f.f_name$ >>) snif in
       [ <:binding< ( $tup:paCom_of_list fs$ ) = $lid:t.t_name$ >> ]
+    | Optional ->
+      List.map (fun f -> match f.f_info with 
+         |Internal_field -> (* this is the isset *)
+            <:binding< $lid:"_"^f.f_name$ = match $lid:t.t_name$ with [
+               None -> False | Some _ -> True ] >> 
+         |_ -> <:binding< $lid:"_"^f.f_name$ = $lid:t.t_name$ >>
+      ) snif
     | Variant vi ->
       List.map (fun f ->  match f.f_info with
          |Internal_field -> (* this is the index *)
@@ -171,11 +174,10 @@ let field_var_binds env t =
 (* get an expression which can resolve an id and lookup cache correctly *)
 let id_for_field_expr ~null_foreigns env f = 
   let _loc = Loc.ghost in
-  let id = f.f_name in
   let ft = get_foreign_table env f in
   match ft.t_type with
     |List_items  -> failwith "list item encountered"
-    |List| Exposed |Tuple |Variant _ -> 
+    |List| Exposed |Tuple |Optional |Variant _ -> 
   if null_foreigns then
     <:expr< 0L >>
   else
@@ -219,20 +221,38 @@ let save_expr ?(null_foreigns=false) env t =
        in
        incr sql_bind_pos;
        let v = match t.t_type with 
-       |Variant _ -> <:expr<
-         match $lid:t.t_name$ with [
-           $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
-             let $idex$ in
-             $field_to_sql_data _loc f$
-           | _ -> Sqlite3.Data.NULL
-         ] >>
+       |Variant _ -> begin
+         match f.f_info with
+         |Internal_field -> (* this is the index *)
+           field_to_sql_data _loc f
+         |_ -> <:expr<
+           match $lid:t.t_name$ with [
+             $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
+               let $idex$ in
+               $field_to_sql_data _loc f$
+             | _ -> Sqlite3.Data.NULL
+           ] >>
+       end
+       |Optional -> begin
+         match f.f_info with
+         |Internal_field -> (* this is the isset *)
+           <:expr< $field_to_sql_data _loc f$ >>
+         |_ -> <:expr<
+            match $lid:"_"^f.f_name$ with [
+              None -> Sqlite3.Data.NULL
+             |Some $lid:"_"^f.f_name$ ->
+               let $idex$ in 
+               $field_to_sql_data _loc f$
+            ] 
+          >>
+       end
        |_ -> <:expr< let $idex$ in $field_to_sql_data _loc f$ >> in
 
        <:expr< 
         Sql_access.db_must_ok db (fun () -> 
                Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
        >>
-    ) (sql_fields_no_internal env t.t_name) in
+    ) (sql_fields_no_autoid env t.t_name) in
 
     (* last binding for update statement which also needs an id at the end *)
     incr sql_bind_pos;

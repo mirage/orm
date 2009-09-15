@@ -41,6 +41,7 @@ type table_type =
   |List           (* table is an internal list *)
   |List_items     (* table with actual contents of lists *)
   |Variant of variant_info (* table is a variant list *)
+  |Optional
   |Tuple
 
 type field_info =
@@ -92,7 +93,7 @@ let string_of_field_info = function
 let string_of_field f =
   sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
-  sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" | List_items -> "List_items" |Variant _ -> "Variant" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
+  sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" | List_items -> "List_items" |Variant _ -> "Variant" |Optional -> "Optional" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
   List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
   string_map "\n" string_of_table e.e_tables 
@@ -183,29 +184,15 @@ let not_exposed_tables env =
 let sql_tables env =
   List.filter (fun t ->
     match t.t_type with
-    |Exposed |List |Tuple |List_items |Variant _ -> true
+    |Exposed |List |Tuple |List_items |Optional |Variant _ -> true
   ) env.e_tables
 
 let tables_no_list_item env =
   List.filter (fun t ->
     match t.t_type with
     |List_items -> false
-    |Exposed | List |Tuple |Variant _ -> true
+    |Exposed | List |Tuple |Optional |Variant _ -> true
   ) env.e_tables
-
-(* add an option type to a field entry *)
-let add_option_to_field n = 
-  let _loc = Loc.ghost in
-  with_table (fun env table ->
-    replace_table env (
-      let fs = List.map (fun f -> 
-        if f.f_name = n then (
-           {f with f_ctyp = <:ctyp<option $f.f_ctyp$>> }
-        ) else f
-      ) table.t_fields in
-      {table with t_fields=fs}
-    )
-  )
 
 let filter_fields_with_table fn =
    with_table (fun env table ->
@@ -289,12 +276,6 @@ let list_item_field =
     |[] -> failwith (sprintf "list_item_type: %s: no entry" table.t_name)
     |_ -> failwith (sprintf "list_item_type: %s: multiple entries" table.t_name)
   )
-
-let is_optional_field f =
-  let _loc = Loc.ghost in 
-  match f.f_ctyp with
-  | <:ctyp< option $t$ >> -> true
-  | _ -> false
 
 let ctyp_of_table t =
   let _loc = Loc.ghost in
@@ -413,9 +394,13 @@ and process_type _loc t n ctyp env =
   | <:ctyp@loc< bool >> -> add_field ~ctyp ~info env t n Int
   | <:ctyp@loc< char >> -> add_field ~ctyp ~info env t n Int
   | <:ctyp@loc< string >> -> add_field ~ctyp ~info env t n Text
-  | <:ctyp@loc< option $ctyp$ >> ->
-     let env = process_type _loc t n ctyp env in
-     add_option_to_field n env t
+  | <:ctyp@loc< option $ty$ >> -> 
+     let name = sprintf "%s_%s__o" t n in
+     let env = add_field ~ctyp ~info:(External_foreign(name,None)) env t n Int in
+     let env = new_table ~name ~ty:Optional ~ctyp ~parent:(Some t) env in
+     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
+     let env = add_field ~ctyp:<:ctyp< bool >> ~info:Internal_field env name "_isset" Int in
+     process_type _loc name n ty env
   | <:ctyp@loc< ( $tup:tp$ ) >> -> 
      let name = sprintf "%s_%s__t" t n in
      let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
@@ -482,13 +467,6 @@ let field_to_sql_data _loc f =
   | <:ctyp@loc< char >>   -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
   | <:ctyp@loc< string >> -> <:expr< Sqlite3.Data.TEXT $id$ >>
   | <:ctyp@loc< bool >>   ->  <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
-  | <:ctyp@loc< option $t$ >> ->
-      <:expr<
-         match $id$ with [
-            None -> Sqlite3.Data.NULL
-           |Some $pid$ -> $fn t$
-         ]
-      >>
   | ctyp ->
     <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
