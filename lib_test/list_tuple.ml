@@ -1,6 +1,6 @@
 TYPE_CONV_PATH "List_tuple"
 
-type t = {
+type s = {
   foo: (int * char list) list;
   bar: string
 } with
@@ -8,9 +8,7 @@ persist()
 
 let _ = 
   let db = Orm.init "list_tuple.db" in
-  let t1 = Orm.t_new ~foo:[(1,['x';'y'])] ~bar:"hello world" db in
-  let t2 = Orm.t_new ~foo:[(2,[]); (3,['a';'b';'c']); (4,['a'])] ~bar:"world hello" db in
-  let t3 = Orm.t_new ~foo:[] ~bar:"world hello" db in
-  Printf.printf "saved: %Lu %Lu\n%!" t1#save t1#save;
-  Printf.printf "saved: %Lu %Lu\n%!" t2#save t2#save;
-  Printf.printf "saved: %Lu %Lu\n%!" t3#save t3#save
+  let t1 = {foo=[(1,['x';'y'])] ; bar="hello world" } in
+  let t2 = {foo=[(2,[]); (3,['a';'b';'c']); (4,['a'])] ; bar="world hello" } in
+  let t3 = {foo=[] ; bar="world hello" } in
+  List.iter (fun x -> Printf.eprintf "saved: %Lu\n" (Orm.s_to_db db x)) [t1;t2;t3]

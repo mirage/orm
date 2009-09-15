@@ -1,6 +1,6 @@
 TYPE_CONV_PATH "Simple_twodefs"
 
-type t = {
+type s = {
   foo: int;
   bar: string
 } 
@@ -13,11 +13,11 @@ with persist()
 
 let _ = 
   let db = Orm.init "simple_twodefs.db" in
-  let t1 = Orm.t_new ~foo:1 ~bar:"hello world" db in
-  let t2 = Orm.t_new ~foo:100 ~bar:"world hello" db in
-  let x1 = Orm.x_new ~foo2:'x' ~foo3:100l db in
-  let id1 = t1#save in
-  let id2 = t2#save in
-  let id3 = x1#save in
-  Printf.printf "saved: %Lu %Lu %Lu\n%!" id1 id2 id3
+  let t1 = {foo=1 ;bar="hello world" } in
+  let t2 = {foo=100 ;bar="world hello" } in
+  let x1 = {foo2='x' ;foo3=100l } in
+  let ts t = ignore(Orm.s_to_db db t) in
+  ts t1; ts t1;
+  ts t2; ts t2;
+  ignore(Orm.x_to_db db x1)
 

@@ -1,21 +1,21 @@
 TYPE_CONV_PATH "Variant"
 
-type t = 
+type s = 
   |Foo
   |Bar of (int * x) list
   |Xyz of string
 
 and
 x = {
-  first : t;
+  first : s;
   o: int list;
 }
 with persist()
 
 let _ = 
-  let db = Orm.init "variant.db" in
-  let x1 = Orm.x_new ~first:Foo ~o:100 db in
-  let x2 = Orm.x_new ~first:(Bar (1,2)) ~o:101 db in
-  let x3 = Orm.x_new ~first:(Xyz "hello") ~o:102 db in
-  List.iter (fun x -> Printf.printf "saved: %Lu\n%!" x#save) [x1;x2;x3]
+  let db = Orm.init "variant_tuple.db" in
+  let rec x1 = {first=Foo ; o=[100] }
+  and x2 = {first=Bar [(1,x1); (2,x3)] ; o=[101;102]}
+  and x3 = {first=(Xyz "hello") ; o=[] } in
+  List.iter (fun x -> Printf.printf "saved: %Lu\n%!" (Orm.x_to_db db x)) [x1;x2;x3]
 

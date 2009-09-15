@@ -10,7 +10,7 @@ and x =
   |Xtwo of n
   |Xthree of int
 and
-t = {
+s = {
   foo: x;
   bar: n;
   xyz: int;
@@ -19,8 +19,8 @@ with persist()
 
 let _ = 
   let db = Orm.init "variant_nested.db" in
-  let t1 = Orm.t_new ~foo:Xone ~bar:Ntwo  ~xyz:99 db in
-  let t2 = Orm.t_new ~foo:(Xtwo (Nfour Xone)) ~bar:(Nthree 'x') ~xyz:66 db in
-  let t3 = Orm.t_new ~foo:(Xtwo (Nthree 'z')) ~bar:(Non 111) ~xyz:88 db in
-  List.iter (fun x -> Printf.printf "saved: %Lu\n%!" x#save) [t1;t2;t3]
+  let t1 = {foo=Xone ; bar=Ntwo ; xyz=99 } in
+  let t2 = {foo=(Xtwo (Nfour Xone)) ; bar=(Nthree 'x') ;xyz=66 } in
+  let t3 = {foo=(Xtwo (Nthree 'z')) ; bar=(Non 111) ; xyz=88 } in
+  List.iter (fun x -> Printf.printf "saved: %Lu\n%!" (Orm.s_to_db db x)) [t1;t2;t3]
 
