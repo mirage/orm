@@ -194,6 +194,45 @@ let id_for_field_expr ~null_foreigns env f =
       ]
     >>   
 
+let sql_binding ~null_foreigns pos env t f =
+  let _loc = Loc.ghost in
+  let idex = if is_foreign f then  
+    <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns env f$ >>
+  else
+    <:binding<  >>
+  in
+  let v = match t.t_type with 
+  |Variant _ -> begin
+    match f.f_info with
+    |Internal_field -> (* this is the index *)
+      field_to_sql_data _loc f
+    |_ -> <:expr<
+       match $lid:t.t_name$ with [
+         $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
+           let $idex$ in
+           $field_to_sql_data _loc f$
+         | _ -> Sqlite3.Data.NULL
+       ] >>
+  end
+  |Optional -> begin
+    match f.f_info with
+    |Internal_field -> (* this is the isset *)
+      <:expr< $field_to_sql_data _loc f$ >>
+    |_ -> <:expr<
+      match $lid:"_"^f.f_name$ with [
+        None -> Sqlite3.Data.NULL
+       |Some $lid:"_"^f.f_name$ ->
+          let $idex$ in 
+           $field_to_sql_data _loc f$
+      ] 
+    >>
+  end
+  |_ -> 
+    <:expr< let $idex$ in $field_to_sql_data _loc f$ >>
+  in
+  <:expr< Sql_access.db_must_bind db stmt $`int:pos$ $v$ >>
+ 
+
 let save_expr ?(null_foreigns=false) env t =
     let _loc = Loc.ghost in
      (* the INSERT statement for this object *)
@@ -214,44 +253,8 @@ let save_expr ?(null_foreigns=false) env t =
     (* the Sqlite3.bind for each simple statement *)
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
-       let idex = if is_foreign f then  
-           <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns env f$ >>
-         else
-           <:binding<  >>
-       in
-       incr sql_bind_pos;
-       let v = match t.t_type with 
-       |Variant _ -> begin
-         match f.f_info with
-         |Internal_field -> (* this is the index *)
-           field_to_sql_data _loc f
-         |_ -> <:expr<
-           match $lid:t.t_name$ with [
-             $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
-               let $idex$ in
-               $field_to_sql_data _loc f$
-             | _ -> Sqlite3.Data.NULL
-           ] >>
-       end
-       |Optional -> begin
-         match f.f_info with
-         |Internal_field -> (* this is the isset *)
-           <:expr< $field_to_sql_data _loc f$ >>
-         |_ -> <:expr<
-            match $lid:"_"^f.f_name$ with [
-              None -> Sqlite3.Data.NULL
-             |Some $lid:"_"^f.f_name$ ->
-               let $idex$ in 
-               $field_to_sql_data _loc f$
-            ] 
-          >>
-       end
-       |_ -> <:expr< let $idex$ in $field_to_sql_data _loc f$ >> in
-
-       <:expr< 
-        Sql_access.db_must_ok db (fun () -> 
-               Sqlite3.bind stmt $`int:!sql_bind_pos$ $v$)
-       >>
+      incr sql_bind_pos;
+      sql_binding ~null_foreigns !sql_bind_pos env t f;
     ) (sql_fields_no_autoid env t.t_name) in
 
     (* last binding for update statement which also needs an id at the end *)
@@ -308,12 +311,6 @@ let construct_save_funs env =
           try
             match Hashtbl.find _cache ($str:t.t_name$ , _curobj_id) with [
               $uid:fpcachefn t$ -> (* partial entry found, save children and update ids *)
-                  $biList_to_expr _loc (List.map (fun f ->
-                     let ft = get_foreign_table env f in
-                        <:binding< $lid:"_"^f.f_name$ = 
-                              $lid:savefn ft$ ~_cache db $field_accessor f$ >>
-                     ) fsf) 
-                     <:expr< 
                        let sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;"
                          t.t_name (String.concat "," (List.map (fun f -> 
                            f.f_name ^ "=?") fsf))$ 
@@ -322,8 +319,7 @@ let construct_save_funs env =
                        do {
                          $exSem_of_list (
                            mapi (fun pos f -> 
-                             <:expr< Sql_access.db_must_bind db stmt
-                               $`int:pos$ (Sqlite3.Data.INT $lid:"_"^f.f_name$) >>
+                              sql_binding ~null_foreigns:false pos env t f
                            ) fsf
                          )$;
                         Sql_access.db_must_bind db stmt $`int:List.length fsf+1$
@@ -333,7 +329,6 @@ let construct_save_funs env =
                           $uid:fcachefn t$;
                         _curobj_id
                       }
-                      >>$
               | $uid:fcachefn t$ -> (* full entry found, just return its id *)
                 _curobj_id
               | _ -> assert False
