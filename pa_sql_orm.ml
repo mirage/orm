@@ -499,13 +499,19 @@ let construct_get_funs env =
         exSem_of_list (List.map bind_of_field fields)
       in
      
-      let body = <:expr< 
-        let stmt = Sqlite3.prepare db.Sql_access.db $sql$ in 
-        let sql_bind_pos = ref 0 in
-        do { 
-          $binds$; 
-          [] 
-        }
+      let body = <:expr<
+        let lookup () = 
+          let stmt = Sqlite3.prepare db.Sql_access.db $sql$ in 
+          let sql_bind_pos = ref 0 in
+          do { $binds$; [] }
+        in
+        (* check the id cache for the object first *)
+        match id with [
+          Some (`Id i) -> 
+            try [ $uid:rhashfn t$.find db.Sql_access.cache.$lid:tridfn t$ i ]
+            with [ Not_found -> lookup () ]
+        | None -> lookup ()
+        ]
         >> in
       body
     in
