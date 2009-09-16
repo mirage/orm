@@ -515,6 +515,17 @@ let construct_get_funs env =
           <:expr< {
               $rbSem_of_list rb$
             } >>
+        |Optional ->
+          let isset = listi (fun f -> f.f_info = Internal_field) t.t_fields in
+          let f = List.hd ef in
+          let pos = listi (fun x -> f.f_name = x.f_name) t.t_fields in
+          <:expr< match Sqlite3.column stmt $`int:isset$ with [
+             Sqlite3.Data.INT 0L -> None
+           | Sqlite3.Data.INT 1L -> Some (
+               let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
+               $sql_data_to_field _loc env f$)
+           | _ -> assert False ]
+          >>
         |Tuple ->
           let tp = mapi (fun pos f ->
              <:expr<
