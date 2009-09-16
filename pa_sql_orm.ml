@@ -71,7 +71,7 @@ let apply _loc f label_args =
 let access_array _loc a i =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
   Ast.ExAre (_loc, make a, Ast.ExInt (_loc, string_of_int i))
-	
+
 (* List.map with the integer position passed to the function *)
 let mapi fn =
   let pos = ref 0 in
@@ -460,13 +460,13 @@ let construct_get_funs env =
   let tables = tables_no_list_item env in
   let bs = biAnd_of_list (List.map (fun t ->
     let fields = exposed_fields env t.t_name in
-    let str_fields = List.map (fun f -> f.f_name) fields in
-    let get_fun_name = sprintf "%s_get" t.t_name in
+    let get_fun_name = getfn t in
 
     let get_body =
       (* build-up the SQL query *)
       let sql =
-        let select_clause = String.concat ", " str_fields in
+        let select_clause = String.concat ", " 
+          (List.map (fun f -> f.f_name) (sql_fields env t.t_name)) in
         let where_0 = <:binding< __accu = [] >> in
         let where_of_field f =
           <:binding< __accu = match $lid:f.f_name$ with [
@@ -494,16 +494,84 @@ let construct_get_funs env =
         let bind_of_field f =
           <:expr< match $lid:f.f_name$ with [
              None -> ()
-           | Some $lid:f.f_name$ -> $ocaml_variant_to_sql_binds _loc env f$ ]
+           | Some $lid:f.f_name$ -> 
+              $ocaml_variant_to_sql_binds _loc env f$ ]
           >> in
         exSem_of_list (List.map bind_of_field fields)
       in
-     
+    
+      (* construct the concrete value to return *)
+      let of_stmt =
+        let ef = exposed_fields_no_autoid env t.t_name in
+        match t.t_type with
+        |Exposed ->
+          let rb = mapi (fun pos f ->
+               <:rec_binding< 
+                  $lid:f.f_name$ =  
+                    let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
+                    $sql_data_to_field _loc env f$
+               >>
+            ) ef in
+          <:expr< {
+              $rbSem_of_list rb$
+            } >>
+        |Tuple ->
+          let tp = mapi (fun pos f ->
+             <:expr<
+               let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
+               $sql_data_to_field _loc env f$ >>
+           ) ef in
+          <:expr< ( $tup:exCom_of_list (List.rev tp)$ ) >>
+        |Variant vi ->
+          (* this assumes idx is the only Internal_field in table Variants *)
+          let idx = listi (fun f -> f.f_info = Internal_field) t.t_fields in
+          let mcs = Hashtbl.fold (fun vuid (id,args) a ->
+            let ex =
+              if args then begin
+                 let idx = listi (fun f -> f.f_name = String.lowercase vuid) t.t_fields in
+                 let f = List.nth t.t_fields idx in
+                <:expr< $uid:vuid$ 
+                  (let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:idx$ in
+                  $sql_data_to_field _loc env f$)
+                >>
+              end else
+                <:expr< $uid:vuid$ >> 
+              in
+              <:match_case< Sqlite3.Data.INT $`int64:id$ -> $ex$ >>  :: a
+            ) vi.v_indices [] in
+          <:expr< 
+            match Sqlite3.column stmt $`int:idx$ with [
+               $mcOr_of_list mcs$
+              |x -> failwith ("unexpected db return: " ^ (Sqlite3.Data.to_string x))
+             ]
+          >>
+        |_ -> <:expr< assert False >>
+      in
+
+      (* main body of the get call *)
       let body = <:expr<
         let lookup () = 
-          let stmt = Sqlite3.prepare db.Sql_access.db $sql$ in 
+          let of_stmt stmt = $of_stmt$ in
+          let sql = $sql$ in
+          let stmt = Sqlite3.prepare db.Sql_access.db sql in
           let sql_bind_pos = ref 0 in
-          do { $binds$; [] }
+          let $debug (getfn t) <:expr< sql >>$ in
+          do {
+            $binds$;
+            Sql_access.step_fold db stmt 
+             (fun stmt ->
+               let v = of_stmt stmt in
+               let _id = match Sqlite3.column stmt
+                  $`int:listi (fun f -> f.f_info = Internal_autoid) t.t_fields$ with [
+                   Sqlite3.Data.INT x -> x
+                  |_ -> failwith "id not found" ] in
+               do { 
+                 $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ v _id;
+                 $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ _id v;
+                 v
+               }
+             )
+          }
         in
         (* check the id cache for the object first *)
         match id with [

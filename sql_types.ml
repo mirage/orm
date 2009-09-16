@@ -197,6 +197,15 @@ let get_foreign_table env f = match f.f_info with
   | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
 let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
+(* return index in list or Not_found *)
+exception Found_item of int
+let listi fn l = try 
+    ignore(List.fold_left (fun a b -> 
+      if fn b then raise (Found_item a) else a+1
+    ) 0 l); 
+    raise Not_found 
+  with Found_item x -> x
+
 (* --- Accessor functions to filter the environment *)
 
 (* list of tables for top-level code generation *)
@@ -242,6 +251,18 @@ let exposed_fields =
      |External_foreign _ -> true
      |Internal_field -> false
    )
+
+(* list of fields suitable for external ocaml interface
+   with autoid filtered out (e.g. to construct objects) *)
+let exposed_fields_no_autoid =
+   filter_fields_with_table (fun f ->
+     match f.f_info with
+     |External_and_internal_field
+     |External_foreign _ -> true
+     |Internal_autoid
+     |Internal_field -> false
+   )
+
 
 (* list of fields suitable for SQL statements *)
 let sql_fields =
@@ -487,6 +508,10 @@ and check_foreign_refs env =
   ) env.e_tables in
   {env with e_tables=tables}
 
+let debug n e = 
+  let _loc = Loc.ghost in 
+  <:binding< () = prerr_endline ($str:n^": "$ ^ $e$) >>
+
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
   let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
@@ -503,44 +528,42 @@ let field_to_sql_data _loc f =
     <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
 
-let sql_data_to_field _loc f =
+let sql_data_to_field _loc env f =
+  let error = <:match_case< x -> failwith ("unexpected res: " ^ (Sqlite3.Data.to_string x)) >> in
   let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp< unit >> -> <:expr< () >>
   | <:ctyp< int >> -> 
       <:expr< match $id$ with 
-          [ Sqlite3.Data.INT x -> Int64.to_int x | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.INT x -> Int64.to_int x | $error$ ] >>
   | <:ctyp< int32 >> ->
       <:expr< match $id$ with 
-          [ Sqlite3.Data.INT x -> Int64.to_int32 x | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.INT x -> Int64.to_int32 x | $error$] >>
   | <:ctyp< int64 >> ->
       <:expr< match $id$ with 
-          [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.INT x -> x | $error$ ] >>
   | <:ctyp< float >> -> 
       <:expr< match $id$ with 
-          [ Sqlite3.Data.FLOAT x -> x | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.FLOAT x -> x | $error$] >>
   | <:ctyp< char >> -> 
       <:expr< match $id$ with 
-          [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | $error$ ] >>
   | <:ctyp< string >> -> 
       <:expr< match $id$ with 
-          [ Sqlite3.Data.TEXT x -> x | _ -> failwith "TODO" ] >>
+          [ Sqlite3.Data.TEXT x -> x | $error$ ] >>
   | <:ctyp< bool >> ->  
       <:expr< match $id$ with 
-          [ Sqlite3.Data.INT 1L -> True | Sqlite3.Data.INT 0L -> False | _ -> failwith "TODO" ] >>
-  | <:ctyp< option $t$ >> ->
-      <:expr<
-         match $id$ with [
-         Sqlite3.Data.NULL -> None
-         | x -> Some ($fn t$)
-         ]
-      >>
+          [ Sqlite3.Data.INT 1L -> True | Sqlite3.Data.INT 0L -> False | $error$] >>
   | _ -> <:expr< "FAIL" >>
   in
-  if is_foreign f then
-    <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | _ -> failwith "TODO" ] >>
-  else
-    fn f.f_ctyp
+  match f.f_info with
+  |External_foreign (_,(Some ft)) ->
+    with_table (fun env ft -> 
+      <:expr< match $id$ with [ 
+         Sqlite3.Data.INT id -> match $lid:getfn ft$ ~id:(`Id id) db with [ [x] -> x |[] -> failwith "no results" |_ -> failwith "too many results for id search" ]
+        |_ -> assert False ] >>
+    ) env ft
+  |_ -> fn f.f_ctyp
 
 let to_string _loc f =
   let id = <:expr< $lid:f.f_name$ >> in
@@ -554,14 +577,7 @@ let to_string _loc f =
   | <:ctyp@loc< char >> -> <:expr< String.make 1 $id$ >>
   | <:ctyp@loc< string >> -> <:expr< $id$ >>
   | <:ctyp@loc< bool >> ->  <:expr< string_of_bool $id$ >>
-  | <:ctyp@loc< option $t$ >> ->
-      <:expr<
-         match $id$ with [
-            None -> "NULL"
-           |Some $pid$ -> $fn t$
-         ]
-      >>
-  | _ -> failwith "to_string: unknown type"
+  | _ -> <:expr< "???" >>
   in
   if f.f_info = Internal_autoid then
     <:expr< Int64.to_string $id$ >>
@@ -601,7 +617,10 @@ let ocaml_variant_to_sql_request _loc f =
   | _                     -> <:expr< assert False >>
   in
   match f.f_info with
-  |Internal_autoid
+  |Internal_autoid ->
+     <:expr< match $id$ with [
+        `Id _ -> $str:f.f_name ^ "=?"$
+      ] >>
   |External_foreign _ ->
      <:expr< match $id$ with [
         `Id _ -> $str:f.f_name ^ "=?"$
@@ -612,9 +631,12 @@ let ocaml_variant_to_sql_request _loc f =
 let ocaml_variant_to_sql_binds _loc env f =
   let id = <:expr< $lid:f.f_name$ >> in
   let pid = <:patt< $lid:f.f_name$ >> in
-  let bind e = <:expr< 
+  let bind e = <:expr<
      incr sql_bind_pos;
-     Sql_access.db_must_bind db stmt !sql_bind_pos $e$ >> in
+     let __e = $e$ in
+     let $debug "bind" <:expr< string_of_int !sql_bind_pos ^ " <- "
+                                     ^ (Sqlite3.Data.to_string __e) >>$ in
+     Sql_access.db_must_bind db stmt !sql_bind_pos __e >> in
   let int_like_type conv =  <:expr< match $id$ with [
      `Eq i | `Neq i | `Le i | `Leq i |`Ge i |`Geq i ->
         do { $bind <:expr< Sqlite3.Data.INT $conv "i"$ >>$ }
