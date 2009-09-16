@@ -90,16 +90,18 @@ let construct_typedefs env =
   let nlit = tables_no_list_item env in
 
   let id_decl =
-    let ids = List.map (fun t ->
-      <:ctyp< $lid:tidfn t$ : $uid:whashfn t$.t int64 >> 
-    ) nlit in
+    let ids = List.flatten (List.map (fun t -> [
+      <:ctyp< $lid:tidfn t$ : $uid:whashfn t$.t int64 >> ;
+      <:ctyp< $lid:tridfn t$ : $uid:rhashfn t$.t $ctyp_of_table t$ >> 
+    ]) nlit) in
    declare_type _loc "_cache" <:ctyp< { $tySem_of_list ids$ } >>
   in
 
   let id_new = 
-    let ids = List.map (fun t ->
-      <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 1 >>
-    ) nlit in
+    let ids = List.flatten (List.map (fun t -> [
+      <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 1 >> ;
+      <:rec_binding< $lid:tridfn t$ = $uid:rhashfn t$.create 1 >>;
+     ]) nlit) in
     <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
   in
 
@@ -110,6 +112,13 @@ let construct_typedefs env =
             type t = $ctyp_of_table t$;
             value equal = ( == );
             value compare = ( == );
+            value hash = Hashtbl.hash;
+          end );
+      module $uid:rhashfn t$ = Weaktbl.Make (
+          struct
+            type t = int64;
+            value equal = (=);
+            value compare = Int64.compare;
             value hash = Hashtbl.hash;
           end );
     >>
@@ -273,6 +282,7 @@ let save_expr ?(null_foreigns=false) env t =
               let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
               do {
                 $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ __id;
+                $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ __id $lid:t.t_name$;
                 __id
               }
           |Some _id ->
@@ -403,6 +413,7 @@ let construct_save_funs env =
           let _newobj_id = $save_expr env t$ in
           do {
             $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
+            $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ _newobj_id $lid:t.t_name$;
             Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
               $uid:fcachefn t$; 
             $list_saves$;
@@ -442,6 +453,16 @@ let construct_save_funs env =
     ) (tables_no_list_item env)))
   in
   <:str_item< value rec $binds$ >>
+
+(* --- Get functions *)
+let construct_get_funs env =
+  let _loc = Loc.ghost in
+  let tables = tables_no_list_item env in
+  stSem_of_list (List.map (fun t ->
+    let fields = exposed_fields env t.t_name in
+    <:str_item< value rec foo = () >>
+  ) tables)
+
 
 (* --- Initialization functions to create tables and open the db handle *)
 
@@ -501,6 +522,7 @@ let () =
         module Orm = struct
           $construct_typedefs env$;
           $construct_save_funs env$;
+          $construct_get_funs env$;
           $construct_init env$;
         end
         >>
