@@ -86,17 +86,46 @@ let string_of_sql_type f =
 let string_of_field_info = function
   |External_and_internal_field -> "E+I"
   |Internal_field -> "I"
-  |External_foreign (f,t) -> sprintf "F[%s/%s]" f 
-      (match t with |None ->"?" |Some x -> x)
+  |External_foreign (f,t) -> sprintf "F[%s%s]" f 
+      (match t with |None ->"??" |Some x -> "")
   |Internal_autoid -> "A"
+
+let string_of_table_type = function
+ |Exposed -> "Exposed" |List -> "List" 
+ |List_items -> "List_items" |Variant _ -> "Variant" 
+ |Optional -> "Optional" |Tuple -> "Tuple"
 
 let string_of_field f =
   sprintf "%s (%s):%s" f.f_name (string_of_field_info f.f_info) (string_of_sql_type f)
 let string_of_table t =
-  sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (match t.t_type with |Exposed -> "Exposed" |List -> "List" | List_items -> "List_items" |Variant _ -> "Variant" |Optional -> "Optional" |Tuple -> "Tuple") (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
+  sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (string_of_table_type t.t_type)
+    (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
   List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
   string_map "\n" string_of_table e.e_tables 
+
+let dot_of_table env t =
+  let ft t = List.find (fun x -> x.t_name = t) env.e_tables in
+  let record_fields t =
+    String.concat " | " (sprintf "<%s> %s (%s)" t.t_name t.t_name (string_of_table_type t.t_type) :: List.rev_map (fun f -> 
+      sprintf "<%s> %s (%s)" f.f_name f.f_name (string_of_field_info f.f_info)) t.t_fields) in
+  let table_child t = 
+    String.concat "\n" (List.map (fun t' -> sprintf "\"%s\":%s -> \"%s\":%s [color=red];" 
+      t.t_name t.t_name t' t') t.t_child) in
+  let record_of_table t =
+    sprintf "\"%s\" [\nlabel = \"%s\"\nshape = \"record\"\nstyle=rounded];" 
+      t.t_name (record_fields t) in
+  let edges_of_table t =
+    String.concat "\n" (List.fold_left (fun a f ->
+      match f.f_info with
+      |External_foreign (id,_) -> 
+        sprintf "\"%s\":%s -> \"%s\":id [penwidth=1];" t.t_name f.f_name id :: a
+      |_ -> a
+      ) [] t.t_fields) in
+  sprintf "%s\n%s%s" (record_of_table t) (edges_of_table t) (table_child t)
+
+let dot_of_env e =
+  sprintf "digraph ORM { graph [ rankdir=\"LR\" overlap=false ];\n%s }" (String.concat "\n" (List.map (dot_of_table e) e.e_tables))
 
 (* --- Helper functions to manipulate environment *)
 
@@ -432,7 +461,8 @@ and process_type _loc t n ctyp env =
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "_idx" Int in
     process_type _loc name_items "_item" ctyp env 
-  | _ -> 
+  | x -> 
+    debug_ctyp x;
     failwith "unknown type"
 
 (* run through the fully-populated environment and check that all
