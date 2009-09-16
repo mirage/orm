@@ -573,32 +573,88 @@ let ocaml_variant_to_sql_request _loc f =
   let pid = <:patt< $lid:f.f_name$ >> in
   let int_like_type conv =
     <:expr< match $id$ with [ 
-        `Eq  i -> Printf.sprintf $str:f.f_name ^ "=%s" $ ($conv$ i)
-      | `Neq i -> Printf.sprintf $str:f.f_name ^ "!=%s"$ ($conv$ i)
-      | `Le  i -> Printf.sprintf $str:f.f_name ^ "<%s" $ ($conv$ i)
-      | `Leq i -> Printf.sprintf $str:f.f_name ^ "<=%s"$ ($conv$ i)
-      | `Ge  i -> Printf.sprintf $str:f.f_name ^ ">%s" $ ($conv$ i)
-      | `Geq i -> Printf.sprintf $str:f.f_name ^ ">=%s"$ ($conv$ i)
-      | `Between (b,e) ->
-                  Printf.sprintf $str:f.f_name^">%s AND "^f.f_name^"<%s"$ ($conv$ b) ($conv$ e) ] >> in
+        `Eq  _ -> $str:f.f_name^" = ?"$
+      | `Neq _ -> $str:f.f_name ^ " != ?"$
+      | `Le  _ -> $str:f.f_name ^ " < ?"$
+      | `Leq _ -> $str:f.f_name ^ " <= ?"$
+      | `Ge  _ -> $str:f.f_name ^ " > ?"$
+      | `Geq _ -> $str:f.f_name ^ " >= ?"$
+      | `Between _ ->
+          $str:sprintf "%s >= ? AND %s <= ?" f.f_name f.f_name$ ] >> in
   let rec fn = function
   | <:ctyp@loc< unit >>   -> <:expr< $str:f.f_name^"=1"$ >>
   | <:ctyp@loc< int >>    -> int_like_type <:expr< $lid:"string_of_int"$ >>
   | <:ctyp@loc< int32 >>  -> int_like_type <:expr< $uid:"Int32"$.$lid:"to_string"$ >>
   | <:ctyp@loc< int64 >>  -> int_like_type <:expr< $uid:"Int64"$.$lid:"to_string"$ >>
-  | <:ctyp@loc< float >>  -> int_like_type <:expr< $lid:"string_of_float"$ >>
   | <:ctyp@loc< char >>   -> int_like_type <:expr< $uid:"Char"$.$lid:"escaped"$ >>
+  | <:ctyp@loc< float >>  -> 
+      <:expr< match $id$ with [
+          `Geq _ -> $str:f.f_name ^ " >= ?"$
+        | `Leq _ -> $str:f.f_name ^ " <= ?"$
+        | `Between _ -> $str:sprintf "%s >= ? AND %s <= ?" f.f_name f.f_name$ ] >>
   | <:ctyp@loc< string >> -> 
       <:expr< match $id$ with [ 
-          `Eq e           -> Printf.sprintf $str:f.f_name^"='%s'"$ e
-        | `Contains e     -> $str:f.f_name^" like '%"$ ^ e ^ "%'" ]
+          `Eq _           -> $str:f.f_name^"=?"$
+        | `Contains _     -> $str:f.f_name^" like '%?%'"$ ]
       >>
-  | <:ctyp@loc< bool >>   -> <:expr< Printf.sprintf $str:f.f_name^"=%b"$ $id$ >>
-  | <:ctyp@loc< option $t$ >> ->
-      <:expr< match $id$ with [
-          `Is_none        -> $str:f.f_name^" IS NULL"$
-        | `Exists $pid$   -> $fn t$ ]
-      >>
+  | <:ctyp@loc< bool >>   -> <:expr< $str:f.f_name^"=?"$ >>
   | _                     -> <:expr< assert False >>
   in
-  fn f.f_ctyp
+  match f.f_info with
+  |Internal_autoid
+  |External_foreign _ ->
+     <:expr< match $id$ with [
+        `Id _ -> $str:f.f_name ^ "=?"$
+       |`Eq _ -> $str:f.f_name ^ "=?"$
+      ] >>
+  |_ -> fn f.f_ctyp
+
+let ocaml_variant_to_sql_binds _loc env f =
+  let id = <:expr< $lid:f.f_name$ >> in
+  let pid = <:patt< $lid:f.f_name$ >> in
+  let bind e = <:expr< 
+     incr sql_bind_pos;
+     Sql_access.db_must_bind db stmt !sql_bind_pos $e$ >> in
+  let int_like_type conv =  <:expr< match $id$ with [
+     `Eq i | `Neq i | `Le i | `Leq i |`Ge i |`Geq i ->
+        do { $bind <:expr< Sqlite3.Data.INT $conv "i"$ >>$ }
+   | `Between (l,u) -> 
+        do { $bind <:expr< Sqlite3.Data.INT $conv "l"$>>$;
+             $bind <:expr< Sqlite3.Data.INT $conv "u"$>>$; } ] >> in
+  let fn = function
+  | <:ctyp@loc< unit >>   -> <:expr< () >>
+  | <:ctyp@loc< int >>    -> int_like_type (fun i -> <:expr< Int64.of_int $lid:i$ >>)
+  | <:ctyp@loc< int32 >>  -> int_like_type (fun i -> <:expr< Int64.of_int32 $lid:i$ >>)
+  | <:ctyp@loc< int64 >>  -> int_like_type (fun i -> <:expr< $lid:i$ >>)
+  | <:ctyp@loc< char >>   -> int_like_type (fun i -> <:expr< Int64.of_int (Char.code $lid:i$) >>)
+  | <:ctyp@loc< float >>  -> 
+      <:expr< match $id$ with [
+          `Leq i |`Geq i ->  do { $bind <:expr< Sqlite3.Data.FLOAT i >>$ }
+        | `Between (l,u) ->  do { $bind <:expr< Sqlite3.Data.FLOAT l >>$;
+                                  $bind <:expr< Sqlite3.Data.FLOAT u >>$; } ] >> 
+  | <:ctyp@loc< string >> -> 
+      <:expr< match $id$ with [ 
+          `Eq e           -> do { $bind <:expr< Sqlite3.Data.TEXT e >>$ }
+        | `Contains e     -> do { $bind <:expr< Sqlite3.Data.TEXT e >>$ } ]
+      >>
+  | <:ctyp@loc< bool >>   -> int_like_type (fun i -> <:expr< if $lid:i$ then 1L else 0L >>)
+  | _                     -> <:expr< assert False >>
+  in
+  match f.f_info with
+  |Internal_autoid ->
+     <:expr< match $id$ with [
+        `Id i -> do { $bind <:expr< Sqlite3.Data.INT i >>$ }
+      ] >>
+  |External_foreign (_,(Some ft)) ->
+     with_table (fun env ft ->
+       <:expr< match $id$ with [
+          `Id i -> do { $bind <:expr< Sqlite3.Data.INT i >>$ }
+         |`Eq x -> 
+             let i = try 
+               $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ x 
+             with [ Not_found -> Int64.minus_one ] in
+             do { $bind <:expr< Sqlite3.Data.INT i >>$ }
+        ] >>
+     ) env ft 
+  |_ -> fn f.f_ctyp
+

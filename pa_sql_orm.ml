@@ -458,10 +458,71 @@ let construct_save_funs env =
 let construct_get_funs env =
   let _loc = Loc.ghost in
   let tables = tables_no_list_item env in
-  stSem_of_list (List.map (fun t ->
+  let bs = biAnd_of_list (List.map (fun t ->
     let fields = exposed_fields env t.t_name in
-    <:str_item< value rec foo = () >>
-  ) tables)
+    let str_fields = List.map (fun f -> f.f_name) fields in
+    let get_fun_name = sprintf "%s_get" t.t_name in
+
+    let get_body =
+      (* build-up the SQL query *)
+      let sql =
+        let select_clause = String.concat ", " str_fields in
+        let where_0 = <:binding< __accu = [] >> in
+        let where_of_field f =
+          <:binding< __accu = match $lid:f.f_name$ with [
+              None                -> __accu
+            | Some $lid:f.f_name$ -> [ $ocaml_variant_to_sql_request _loc f$ :: __accu ] ]
+          >> in
+        let where_of_custom =
+          <:binding< __accu = match fn with [
+              None    -> List.rev __accu
+            | Some fn -> List.rev [ $str:sprintf "custom_fn(%s)" select_clause$ :: __accu ] ]
+          >> in
+        let bindings =
+          where_0 ::
+            (List.map (fun f -> where_of_field f) fields)
+          @ [ where_of_custom ] in
+        biList_to_expr _loc bindings
+          <:expr<
+            let where_clause = String.concat " AND " __accu in
+            $str:"SELECT "^select_clause^" FROM "^t.t_name$ ^
+              (if where_clause = "" then "" else (" WHERE "^where_clause) ) 
+          >> in
+
+      (* build up SQL binds *)
+      let binds = 
+        let bind_of_field f =
+          <:expr< match $lid:f.f_name$ with [
+             None -> ()
+           | Some $lid:f.f_name$ -> $ocaml_variant_to_sql_binds _loc env f$ ]
+          >> in
+        exSem_of_list (List.map bind_of_field fields)
+      in
+     
+      let body = <:expr< 
+        let stmt = Sqlite3.prepare db.Sql_access.db $sql$ in 
+        let sql_bind_pos = ref 0 in
+        do { 
+          $binds$; 
+          [] 
+        }
+        >> in
+      body
+    in
+
+    let get_argument = <:patt< ? fn >> :: List.map (fun f ->
+        <:patt< ? $lid:f.f_name$ >>
+      ) (exposed_fields env t.t_name) in
+    let return_type = <:ctyp< list $ctyp_of_table t$ >> in
+    let get_binding = function_with_label_args _loc
+      ~fun_name:get_fun_name
+      ~final_ident:"db"
+      ~function_body:get_body
+      ~return_type
+      get_argument in
+    get_binding
+  ) tables) in
+  <:str_item< value rec $bs$ >>
 
 
 (* --- Initialization functions to create tables and open the db handle *)
@@ -512,6 +573,9 @@ let () =
       let _loc = Loc.ghost in
       let env = process tds in
       prerr_endline (Sql_types.string_of_env env);
+      let fout = open_out "debug.dot" in
+      Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
+      close_out fout;
       match tds, args with
       |_, None ->
         Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_sql_orm: arg required")
