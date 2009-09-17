@@ -8,3 +8,4 @@
 - ocamldoc
 - better error message with incorrect foreign type (currently failwith
 - type v = One of int*int fails, unless it is written as (int * int)
+- type constrain the polymorphic search  methods, since they are a bit crazy atm
