@@ -22,13 +22,13 @@ p_%: ../pa_sql_orm.cma
 
 # top_% makes a top-level for the ML file
 top_%: pc_%
-	ocamlfind ocamlmktop -package unix,sqlite3,sexplib -linkpkg -o $@ -I ../ sql_access.cma pc_$*.cmo
+	ocamlfind ocamlmktop -package unix,sqlite3 -linkpkg -o $@ -I ../ sql_access.cma pc_$*.cmo
 
 # pc_% compiles it via a temporary ML file (pc_%.ml) so that locations in generated code can be
 # seen in error messages as a debugging aid
 pc_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
-	ocamlfind ocamlc -verbose -linkpkg -g -annot -o $@ -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
+	ocamlfind ocamlc -verbose -linkpkg -g -annot -o $@ -package unix,sqlite3 $(BUILDINC) $@.ml
 
 # pr_% compiles and runs the code via the intermediate ML file
 pr_%: pc_%
@@ -36,12 +36,12 @@ pr_%: pc_%
 
 # c_% compiles the ML file directly by invoking camlp4 as -pp (how it is used in production)
 c_%: %.ml ../pa_sql_orm.cma
-	ocamlfind ocamlc -verbose -o $@ -linkpkg -g -package unix,sqlite3,sexplib \
+	ocamlfind ocamlc -verbose -o $@ -linkpkg -g -package unix,sqlite3 \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo pa_sql_orm.cma " \
 	  $(BUILDINC) $*.ml
 
 nc_%: %.ml
-	ocamlfind ocamlopt -o $@ -linkpkg -package unix,sqlite3,sexplib \
+	ocamlfind ocamlopt -o $@ -linkpkg -package unix,sqlite3 \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo pa_sql_orm.cma " \
 	  -I ../ sql_access.cmx $*.ml
 
@@ -52,13 +52,13 @@ r_%: c_%
 # i_% displays the inferred OCaml interface of the generated functions
 .PHONY: i_%
 i_%: %.ml ../pa_sql_orm.cma
-	ocamlfind ocamlc -i -verbose -linkpkg -g -package unix,sqlite3,sexplib \
+	ocamlfind ocamlc -i -verbose -linkpkg -g -package unix,sqlite3 \
 	  -pp "camlp4orf $(P4INC) pa_type_conv.cmo pa_sql_orm.cma" $(BUILDINC) $*.ml
 
 # pi_% prints to a temporary file and then displays the Ocaml interface
 pi_%: %.ml ../pa_sql_orm.cma
 	camlp4orf $(P4INC) pa_type_conv.cmo -parser pa_sql_orm.cma -printer o $*.ml > $@.ml
-	ocamlfind ocamlc -verbose -i -linkpkg -g -package unix,sqlite3,sexplib $(BUILDINC) $@.ml
+	ocamlfind ocamlc -verbose -i -linkpkg -g -package unix,sqlite3 $(BUILDINC) $@.ml
 	
 .PHONY: clean
 clean:
