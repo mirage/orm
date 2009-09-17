@@ -666,7 +666,9 @@ let ocaml_variant_to_sql_binds _loc env f =
           `Eq e           -> do { $bind <:expr< Sqlite3.Data.TEXT e >>$ }
         | `Contains e     -> do { $bind <:expr< Sqlite3.Data.TEXT e >>$ } ]
       >>
-  | <:ctyp@loc< bool >>   -> int_like_type (fun i -> <:expr< if $lid:i$ then 1L else 0L >>)
+  | <:ctyp@loc< bool >>   -> 
+      <:expr< do { $bind <:expr< 
+        if $id$ then Sqlite3.Data.INT 1L else Sqlite3.Data.INT 0L >>$ } >>
   | _                     -> <:expr< assert False >>
   in
   match f.f_info with
