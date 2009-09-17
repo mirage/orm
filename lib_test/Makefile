@@ -4,7 +4,7 @@ BUILDINC := -I ../ sql_access.cma
 P4INC := -I$(shell ocamlfind query type-conv) -I$(shell ocamlfind query sqlite3) -I ../
 
 TESTS := alltypes foreign_and_variant list_foreign list_simple nested_tuple simple_option \
-	tuple variant_tuple \
+	tuple variant_tuple simple_alltypes \
 	array_simple foreign_nested list_list list_tuple recursive simple_twodefs variant \
 	foreign foreign_tuple list_recursive nested_option simple variant_nested
 
