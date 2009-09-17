@@ -321,7 +321,7 @@ let auto_id_field =
 let list_item_field =
   with_table (fun env table ->
     assert(table.t_type = List_items);
-    match List.filter (fun f -> f.f_name = "_idx") table.t_fields with
+    match List.filter (fun f -> f.f_name = "_item") table.t_fields with
     |[f] -> f
     |[] -> failwith (sprintf "list_item_type: %s: no entry" table.t_name)
     |_ -> failwith (sprintf "list_item_type: %s: multiple entries" table.t_name)
@@ -378,6 +378,13 @@ let rhashfn t   = sprintf "R_%s"      t.t_name
 let tparentidfn t = match t.t_parent with 
   |None ->  failwith "no parent table"
   |Some p -> "_"^p^"_id"
+
+let whashex fn t =
+  let _loc = Loc.ghost in
+  <:expr< $uid:whashfn t$.$lid:fn$ db.Sql_access.cache.$lid:tidfn t$ >>
+let rhashex fn t =
+  let _loc = Loc.ghost in
+  <:expr< $uid:rhashfn t$.$lid:fn$ db.Sql_access.cache.$lid:tridfn t$ >>
 
 (* --- Process functions to convert OCaml types into SQL *)
 

@@ -504,6 +504,45 @@ let construct_get_funs env =
       let of_stmt =
         let ef = exposed_fields_no_autoid env t.t_name in
         match t.t_type with
+        |List ->
+          let lit = match t.t_child with [lit] -> lit |_ -> assert false in
+          let lif = list_item_field env lit in
+          let sql = sprintf 
+            "SELECT %s.id,%s._idx,%s._item from %s LEFT JOIN %s ON %s.id = %s.id"
+              lit lit lit lit t.t_name lit t.t_name in
+          let id_sql = <:expr<
+            match id with [ Some (`Id _) -> $str:sprintf " WHERE %s.id=?" t.t_name$
+                          | None -> "" ] >> in
+          <:expr<
+            let sql = $str:sql$ ^ $id_sql$ ^ " ORDER BY _idx DESC" in
+            let $debug t.t_name <:expr< sql >>$ in
+            let stmt = Sqlite3.prepare db.Sql_access.db sql in
+            do {
+              match id with [
+                None -> ()
+              | Some (`Id i) -> Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT i)
+              ];
+              let _id = ref (Sqlite3.Data.NULL) in
+              let l = Sql_access.step_fold db stmt (fun stmt ->
+                let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
+                do {
+                  _id.val := Sqlite3.column stmt 0;
+                  $sql_data_to_field _loc env lif$
+                }
+              ) in
+              match l with [
+                [] -> l (* empty list, no need for an id *)
+              | _  ->
+                let _id = match _id.val with [
+                  Sqlite3.Data.INT x -> x |x -> failwith (Sqlite3.Data.to_string x) ] in
+                do {
+                  $whashex "add" t$ l _id;
+                  $rhashex "add" t$ _id l;
+                  l
+                }
+              ]
+            }
+          >>
         |Exposed ->
           let rb = mapi (fun pos f ->
                <:rec_binding< 
@@ -577,8 +616,8 @@ let construct_get_funs env =
                    Sqlite3.Data.INT x -> x
                   |_ -> failwith "id not found" ] in
                do { 
-                 $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ v _id;
-                 $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ _id v;
+                 $whashex "add" t$ v _id;
+                 $rhashex "add" t$ _id v;
                  v
                }
              )
