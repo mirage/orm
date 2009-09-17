@@ -15,4 +15,5 @@ let _ =
   let db = init "recursive.db" in
   let rec vt = { t1= "hello"; t2=vx }
   and vx = { x1=vt; x2='z' } in
-  s_to_db db vt 
+  ignore(s_to_db db vt );
+  Orm.s_of_db db
