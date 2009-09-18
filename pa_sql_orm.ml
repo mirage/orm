@@ -656,7 +656,7 @@ let init_db_funs env =
   let exs = Ast.exSem_of_list (
     List.map (fun table ->
       (* open function to first access a sqlite3 db *)
-      let sql =
+      let sql_create =
         let fields = sql_fields env table.t_name in
         let sql_fields = List.map (fun f ->
           sprintf "%s %s%s" f.f_name (string_of_sql_type f) 
@@ -669,10 +669,34 @@ let init_db_funs env =
           |List_items -> ", PRIMARY KEY(id, _idx)"
           |_ -> "" in
         sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
-          table.t_name (String.concat ", " sql_fields) prim_key 
+          table.t_name (String.concat ", " sql_fields) prim_key
       in
+
+      let sql_cascade_delete =
+        let fields = foreign_single_fields env table.t_name in
+        let sqls = List.map (fun f ->
+          sprintf
+            ("CREATE TRIGGER IF NOT EXISTS %s_cascade_delete AFTER DELETE ON %s FOR EACH ROW BEGIN DELETE FROM %s WHERE id = OLD.%s; END;")
+            table.t_name table.t_name (get_foreign f) f.f_name)
+            fields in
+        String.concat " " sqls in
+
+      let sql_prevent_delete =
+        let fields = foreign_single_fields env table.t_name in
+        let sqls = List.map (fun f ->
+          let foreign_table = get_foreign f in
+          sprintf
+            ("CREATE TRIGGER IF NOT EXISTS %s_%s_prevent_delete BEFORE DELETE ON %s FOR EACH ROW BEGIN SELECT RAISE(IGNORE) WHERE (SELECT id FROM %s WHERE %s = OLD.id) IS NOT NULL; END;")
+            table.t_name f.f_name foreign_table table.t_name f.f_name)
+            fields in
+        String.concat " " sqls in
+     
       <:expr< 
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql$)
+      do{
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_create$);
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_cascade_delete$);
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_prevent_delete$);
+      }
       >>
   ) (sql_tables env)) in
   <:expr< do { $exs$ } >>
@@ -686,6 +710,25 @@ let construct_init env =
         $init_db_funs env$; db
       };
   >>
+
+(* TODO: take objects instead of id *)
+let construct_delete env =
+  let _loc = Loc.ghost in
+  let tables = tables_no_list_item env in
+  let fn table =
+    let sql = sprintf "DELETE FROM %s WHERE id=" table.t_name in 
+    let body =
+      <:expr<
+        let sql = $str:sql$ ^ Int64.to_string id in
+        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql) >>
+    in
+    function_with_label_args _loc
+      ~fun_name:(table.t_name^"_delete")
+      ~final_ident:"db"
+      ~function_body:body
+      ~return_type:<:ctyp< unit >>
+      [ <:patt< ~id >> ] in
+   <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 
 (* Register the persist keyword with type-conv *)
 let () =
@@ -712,6 +755,7 @@ let () =
           $construct_save_funs env$;
           $construct_get_funs env$;
           $construct_init env$;
+          $construct_delete env$;
         end
         >>
       )
