@@ -37,10 +37,10 @@ let declare_type _loc name ty =
   Ast.TyDcl (_loc, name, [], ty, [])
 
 (* defines the Ast.binding for a function of form:
-let fun_name ?(opt_arg1) ?(opt_arg2) final_ident = function_body ...
+let fun_name ?(opt_arg1) ?(opt_arg2) ident1 ident2 = function_body ...
 *)
-let function_with_label_args _loc ~fun_name ~final_ident ~function_body ~return_type opt_args =
-   let opt_args = opt_args @ [ <:patt< $lid:final_ident$ >> ] in
+let function_with_label_args _loc ~fun_name ~idents ~function_body ~return_type opt_args =
+   let opt_args = opt_args @ (List.map (fun x -> <:patt< $lid:x$ >>) idents) in
    <:binding< $lid:fun_name$ = 
       $List.fold_right (fun b a ->
         <:expr<fun $b$ -> $a$ >>
@@ -55,18 +55,14 @@ let biList_to_expr _loc bindings final =
     <:expr< let $b$ in $a$ >>
   ) bindings final
 
-(* build something like 'f ~x1 ~x2 ~x3 ... xn' *)
+(* build something like 'f ?x1 ?x2 ?x3 ... xn' *)
 let apply _loc f label_args =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
-  let make_label x = Ast.ExLab (_loc, x, Ast.ExId (_loc, Ast.IdLid (_loc, x))) in
+  let make_label x = Ast.ExOlb (_loc, x, Ast.ExNil _loc) in
   let rec aux = function
-  | []   -> Ast.ExApp (_loc, make f, make "()")
-  | [h]  -> Ast.ExApp (_loc, make f, make_label h)
+  | []   -> make f
   | h::t -> Ast.ExApp (_loc, aux t , make_label h) in
-  let aux0 = function
-  | [] -> aux []
-  | h::t -> Ast.ExApp (_loc, aux t , make h) in
-  aux0 (List.rev label_args)
+  aux (List.rev label_args)
 
 let access_array _loc a i =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
@@ -126,8 +122,9 @@ let construct_typedefs env =
 
   let cache_decls =
     let sum_type = List.flatten (List.map (fun t ->
-      [ (_loc, (fcachefn t), [ ]) ;
-        (_loc, (fpcachefn t), [ ] ) ]
+      [ (_loc, (fcachefn t), [ ]) ;  (* Full cache entry C_t *)
+        (_loc, (fpcachefn t), [ ]) ; (* Partial cache entry P_t *)
+        (_loc, (fecachefn t), [ ]) ] (* Embryonic cache entry E_t *)
     ) nlit)
     in
     let sum_type =
@@ -458,9 +455,10 @@ let construct_save_funs env =
 let construct_get_funs env =
   let _loc = Loc.ghost in
   let tables = tables_no_list_item env in
-  let bs = biAnd_of_list (List.map (fun t ->
+  let bs = biAnd_of_list (List.flatten (List.map (fun t ->
     let fields = exposed_fields env t.t_name in
     let get_fun_name = getfn t in
+    let ext_get_fun_name = extgetfn t in
 
     let get_body =
       (* build-up the SQL query *)
@@ -634,18 +632,33 @@ let construct_get_funs env =
       body
     in
 
+    let str_fields = "fn" :: (List.map (fun f -> f.f_name) (exposed_fields env t.t_name)) in
+    let ext_get_body =
+      (* just assume recursive for the moment, so pass in a cache *)
+      <:expr< 
+       let _cache = Hashtbl.create 1 in
+       $apply _loc (getfn t) str_fields$ _cache db
+      >> 
+    in
+
     let get_argument = <:patt< ? fn >> :: List.map (fun f ->
         <:patt< ? $lid:f.f_name$ >>
       ) (exposed_fields env t.t_name) in
     let return_type = <:ctyp< list $ctyp_of_table t$ >> in
-    let get_binding = function_with_label_args _loc
+    let int_get_binding = function_with_label_args _loc
       ~fun_name:get_fun_name
-      ~final_ident:"db"
+      ~idents:["_cache"; "db"]
       ~function_body:get_body
       ~return_type
       get_argument in
-    get_binding
-  ) tables) in
+    let ext_get_binding = function_with_label_args _loc
+     ~fun_name:ext_get_fun_name
+     ~idents:["db"]
+     ~function_body:ext_get_body
+     ~return_type
+      get_argument in
+    [ int_get_binding; ext_get_binding ]
+  ) tables)) in
   <:str_item< value rec $bs$ >>
 
 
@@ -726,7 +739,7 @@ let construct_delete env =
     in
     function_with_label_args _loc
       ~fun_name:(table.t_name^"_delete")
-      ~final_ident:"db"
+      ~idents:["db"]
       ~function_body:body
       ~return_type:<:ctyp< unit >>
       [ <:patt< ~id >> ] in

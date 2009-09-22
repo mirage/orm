@@ -343,6 +343,10 @@ let is_recursive_table env t =
        raise Is_recursive
     else begin
       Hashtbl.add h t.t_name ();
+      let fields = match t.t_type with
+      |List -> with_table (fun env t' -> t'.t_fields) env
+         (match t.t_child with [x] -> x |_ -> assert false)
+      |_ -> t.t_fields in
       List.iter (fun f ->
         match f.f_info with
         |External_foreign (id,(Some t')) ->
@@ -350,7 +354,7 @@ let is_recursive_table env t =
         |External_foreign (_,None) -> 
           failwith (sprintf "incomplete type for EF: %s" (string_of_field f))
         |_ -> ()
-      ) t.t_fields
+      ) fields
     end
   in
   try fn t; false
@@ -365,13 +369,15 @@ let field_accessor f =
 let savefn t    = sprintf "__%s_to_db" t.t_name
 let extsavefn t = sprintf "%s_to_db" t.t_name
 
-let getfn  t    = sprintf "%s_of_db"  t.t_name
+let getfn  t    = sprintf "__%s_of_db" t.t_name
+let extgetfn t  = sprintf "%s_of_db"  t.t_name
 let tidfn t     = sprintf "%s__id"    t.t_name
 let tridfn t    = sprintf "%s__val"   t.t_name
 let tnewfn t    = sprintf "%s__new"   t.t_name
 let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
 let fcachefn t  = sprintf "C_%s"      t.t_name
 let fpcachefn t = sprintf "P_%s"      t.t_name
+let fecachefn t = sprintf "E_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 let whashfn t   = sprintf "W_%s"      t.t_name
 let rhashfn t   = sprintf "R_%s"      t.t_name
@@ -567,7 +573,7 @@ let sql_data_to_field _loc env f =
   |External_foreign (_,(Some ft)) ->
     with_table (fun env ft -> 
       <:expr< match $id$ with [ 
-         Sqlite3.Data.INT id -> match $lid:getfn ft$ ~id:(`Id id) db with [ [x] -> x |[] -> failwith "no results" |_ -> failwith "too many results for id search" ]
+         Sqlite3.Data.INT id -> match $lid:getfn ft$ ~id:(`Id id) _cache db with [ [x] -> x |[] -> failwith "no results" |_ -> failwith "too many results for id search" ]
         |_ -> assert False ] >>
     ) env ft
   |_ -> fn f.f_ctyp
