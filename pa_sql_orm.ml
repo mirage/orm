@@ -755,7 +755,7 @@ let () =
           $construct_save_funs env$;
           $construct_get_funs env$;
           $construct_init env$;
-          $construct_delete env$;
+  (*        $construct_delete env$; *)
         end
         >>
       )
