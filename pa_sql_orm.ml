@@ -694,8 +694,10 @@ let init_db_funs env =
       <:expr< 
       do{
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_create$);
+(*
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_cascade_delete$);
         Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_prevent_delete$);
+*)
       }
       >>
   ) (sql_tables env)) in
