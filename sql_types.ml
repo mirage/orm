@@ -252,12 +252,17 @@ let exposed_fields =
      |Internal_field -> false
    )
 
-let foreign_fields =
+let list_or_option_fields env =
   filter_fields_with_table (fun f ->
     match f.f_info with
-    |External_foreign _ -> true
+    |External_foreign (_,(Some ft)) -> 
+      with_table (fun env ft' -> 
+          match ft'.t_type with
+          |List |Optional -> true
+          |_ -> false
+        ) env ft
     |_ -> false
-  )
+  ) env
 
 (* list of fields suitable for external ocaml interface
    with autoid filtered out (e.g. to construct objects) *)
@@ -384,7 +389,6 @@ let tnewfn t    = sprintf "%s__new"   t.t_name
 let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
 let fcachefn t  = sprintf "C_%s"      t.t_name
 let fpcachefn t = sprintf "P_%s"      t.t_name
-let fecachefn t = sprintf "E_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 let whashfn t   = sprintf "W_%s"      t.t_name
 let rhashfn t   = sprintf "R_%s"      t.t_name

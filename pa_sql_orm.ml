@@ -124,7 +124,7 @@ let construct_typedefs env =
     let sum_type = List.flatten (List.map (fun t ->
       [ (_loc, (fcachefn t), [ ]) ;  (* Full cache entry C_t *)
         (_loc, (fpcachefn t), [ ]) ; (* Partial cache entry P_t *)
-        (_loc, (fecachefn t), [ ]) ] (* Embryonic cache entry E_t *)
+      ]
     ) nlit)
     in
     let sum_type =
@@ -455,7 +455,9 @@ let construct_save_funs env =
 
 (* construct the concrete value to return *)
 let of_stmt env t =
-  let null_foreigns = false in
+  (* When we add checks for recursive types specifically, this can be set to false
+     in the non-recursive case *)
+  let null_foreigns = true in
   let _loc = Loc.ghost in
   let ef = exposed_fields_no_autoid env t.t_name in
   match t.t_type with
@@ -482,7 +484,7 @@ let of_stmt env t =
           let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
           do {
             _id.val := Sqlite3.column stmt 0;
-            $sql_data_to_field ~null_foreigns _loc env lif$
+            $sql_data_to_field ~null_foreigns:false _loc env lif$
           }
         ) in
         match l with [
@@ -501,7 +503,7 @@ let of_stmt env t =
     let rb = mapi (fun pos f ->
       <:rec_binding< 
         $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-            $sql_data_to_field ~null_foreigns _loc env f$
+            $sql_data_to_field ~null_foreigns:true _loc env f$
       >>
     ) ef in
     <:expr< { $rbSem_of_list rb$ } >>
@@ -514,14 +516,14 @@ let of_stmt env t =
           Sqlite3.Data.INT 0L -> None
         | Sqlite3.Data.INT 1L -> Some (
           let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
-          $sql_data_to_field ~null_foreigns _loc env f$)
+          $sql_data_to_field ~null_foreigns:false _loc env f$)
         | _ -> assert False ]
     >>
   |Tuple ->
     let tp = mapi (fun pos f ->
         <:expr<
           let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-          $sql_data_to_field ~null_foreigns _loc env f$ >>
+          $sql_data_to_field ~null_foreigns:false _loc env f$ >>
         ) ef in
       <:expr< ( $tup:exCom_of_list (List.rev tp)$ ) >>
   |Variant vi ->
@@ -533,7 +535,7 @@ let of_stmt env t =
           let f = List.nth t.t_fields idx in
           <:expr< $uid:vuid$ 
             (let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:idx$ in
-                  $sql_data_to_field ~null_foreigns _loc env f$)
+                  $sql_data_to_field ~null_foreigns:false _loc env f$)
           >>
         end else
           <:expr< $uid:vuid$ >> in
@@ -545,6 +547,29 @@ let of_stmt env t =
         | x -> failwith ("unexpected db return: " ^ (Sqlite3.Data.to_string x))
         ] >>
   |List_items -> assert false
+
+let of_stmt_final env t =
+  let _loc = Loc.ghost in
+  match list_or_option_fields env t with
+  |[] -> <:expr< __v >> (* no list/option fields so no rewriting necessary *)
+  |lof ->
+    with_table (fun env t ->
+      let rbs = List.map (fun f ->
+        let pos = listi (fun f' -> f'.f_name = f.f_name) t.t_fields  in
+        <:rec_binding< 
+          $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
+              $sql_data_to_field ~null_foreigns:false _loc env f$
+        >>
+       ) lof in
+      <:expr<
+        let __v' = { (__v) with $rbSem_of_list rbs$ } in
+        do {
+          $whashex "replace" t$ __v' __id;
+          $rhashex "replace" t$ __id __v';
+          __v'
+        }
+      >>
+    ) env t
  
 let construct_get_funs env =
   let _loc = Loc.ghost in
@@ -596,6 +621,7 @@ let construct_get_funs env =
       let body = <:expr<
         let lookup () =
           let of_stmt stmt = $of_stmt env t$ in
+          let of_stmt_final stmt __id __v = $of_stmt_final env t.t_name$ in
           let sql = $sql$ in
           let stmt = Sqlite3.prepare db.Sql_access.db sql in
           let sql_bind_pos = ref 0 in
@@ -604,15 +630,15 @@ let construct_get_funs env =
             $binds$;
             Sql_access.step_fold db stmt 
              (fun stmt ->
-               let v = of_stmt stmt in
-               let _id = match Sqlite3.column stmt
+               let __v = of_stmt stmt in
+               let __id = match Sqlite3.column stmt
                   $`int:listi (fun f -> f.f_info = Internal_autoid) t.t_fields$ with [
                    Sqlite3.Data.INT x -> x
                   |_ -> failwith "id not found" ] in
                do { 
-                 $whashex "add" t$ v _id;
-                 $rhashex "add" t$ _id v;
-                 v
+                 $whashex "add" t$ __v __id;
+                 $rhashex "add" t$ __id __v;
+                 of_stmt_final stmt __id __v
                }
              )
           } in
