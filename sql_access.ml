@@ -108,6 +108,10 @@ let step_fold db stmt iterfn =
     in
     fn []
 
+(* iterate over a result set and return an array *)
+let step_fold_array db stmt iterfn =
+  Array.of_list (step_fold db stmt iterfn)
+
 (* List version of Array.iteri *)
 let list_iteri fn =
   let p = ref 0 in

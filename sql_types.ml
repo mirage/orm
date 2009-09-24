@@ -552,6 +552,18 @@ let field_to_sql_data _loc f =
     <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
 
+let empty_list_expr_of_ctyp =
+  let _loc = Loc.ghost in function
+  | <:ctyp< list $_$ >> -> <:expr< [] >>
+  | <:ctyp< array $_$ >> -> <:expr< [| |] >>
+  | _ -> assert false
+
+let empty_list_patt_of_ctyp =
+  let _loc = Loc.ghost in function
+  | <:ctyp< list $_$ >> -> <:patt< [] >>
+  | <:ctyp< array $_$ >> -> <:patt< [| |] >>
+  | _ -> assert false
+
 let sql_data_to_field ~null_foreigns _loc env f =
   let error = <:match_case< x -> failwith ("unexpected res: " ^ (Sqlite3.Data.to_string x)) >> in
   let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
@@ -586,8 +598,7 @@ let sql_data_to_field ~null_foreigns _loc env f =
       match ft.t_type, null_foreigns with
       | Optional,true ->
         <:expr< None >>
-      | List, true ->
-        <:expr< [] >>
+      | List, true -> empty_list_expr_of_ctyp f.f_ctyp
       | _ ->
         <:expr< 
           match $id$ with [ 

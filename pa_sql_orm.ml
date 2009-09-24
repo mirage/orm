@@ -467,6 +467,10 @@ let of_stmt env t =
       match id with [ 
         Some (`Id _) -> $str:sprintf " WHERE %s.id=?" t.t_name$
       | None -> "" ] >> in
+    let fold_fn = match t.t_ctyp with
+      | <:ctyp< list $_$ >> -> "step_fold"
+      | <:ctyp< array $_$ >> -> "step_fold_array"
+      | _ -> assert false in
     <:expr<
       let sql = $str:sql$ ^ $id_sql$ ^ " ORDER BY _idx DESC" in
       let $debug t.t_name <:expr< sql >>$ in
@@ -477,7 +481,7 @@ let of_stmt env t =
         | Some (`Id i) -> Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT i)
         ];
         let _id = ref (Sqlite3.Data.NULL) in
-        let l = Sql_access.step_fold db stmt (fun stmt ->
+        let l = Sql_access.$lid:fold_fn$ db stmt (fun stmt ->
           let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
           do {
             _id.val := Sqlite3.column stmt 0;
@@ -485,7 +489,7 @@ let of_stmt env t =
           }
         ) in
         match l with [
-          [] -> l (* empty list, no need for an id *)
+          $empty_list_patt_of_ctyp t.t_ctyp$ -> l (* empty list, no need for an id *)
         | _  -> let _id = match _id.val with [
           Sqlite3.Data.INT x -> x |x -> failwith (Sqlite3.Data.to_string x) ] in
           do {
