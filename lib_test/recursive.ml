@@ -11,9 +11,13 @@ and x = {
 with persist ()
 
 open Orm
+open Printf
+
+let ps s = eprintf "{ t1=%s t2=%c }\n" s.t1 (match s.t2 with |None -> '?' |Some x -> x.x2)
+
 let _ = 
   let db = init "recursive.db" in
   let rec vt = { t1= "hello"; t2=(Some vx) }
   and vx = { x1=(Some vt); x2='z' } in
   ignore(s_to_db db vt );
-  Orm.s_of_db db
+  List.iter ps (Orm.s_of_db db)
