@@ -556,7 +556,8 @@ let construct_get_funs env =
           let isset = listi (fun f -> f.f_info = Internal_field) t.t_fields in
           let f = List.hd ef in
           let pos = listi (fun x -> f.f_name = x.f_name) t.t_fields in
-          <:expr< match Sqlite3.column stmt $`int:isset$ with [
+          <:expr<
+             match Sqlite3.column stmt $`int:isset$ with [
              Sqlite3.Data.INT 0L -> None
            | Sqlite3.Data.INT 1L -> Some (
                let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
@@ -595,10 +596,9 @@ let construct_get_funs env =
           >>
         |_ -> <:expr< assert False >>
       in
-
       (* main body of the get call *)
       let body = <:expr<
-        let lookup () = 
+        let lookup () =
           let of_stmt stmt = $of_stmt$ in
           let sql = $sql$ in
           let stmt = Sqlite3.prepare db.Sql_access.db sql in
@@ -619,8 +619,7 @@ let construct_get_funs env =
                  v
                }
              )
-          }
-        in
+          } in
         (* check the id cache for the object first *)
         match id with [
           Some (`Id i) -> 

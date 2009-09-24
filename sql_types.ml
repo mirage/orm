@@ -252,6 +252,13 @@ let exposed_fields =
      |Internal_field -> false
    )
 
+let foreign_fields =
+  filter_fields_with_table (fun f ->
+    match f.f_info with
+    |External_foreign _ -> true
+    |_ -> false
+  )
+
 (* list of fields suitable for external ocaml interface
    with autoid filtered out (e.g. to construct objects) *)
 let exposed_fields_no_autoid =
@@ -572,9 +579,15 @@ let sql_data_to_field _loc env f =
   match f.f_info with
   |External_foreign (_,(Some ft)) ->
     with_table (fun env ft -> 
-      <:expr< match $id$ with [ 
-         Sqlite3.Data.INT id -> match $lid:getfn ft$ ~id:(`Id id) _cache db with [ [x] -> x |[] -> failwith "no results" |_ -> failwith "too many results for id search" ]
-        |_ -> assert False ] >>
+      <:expr< 
+        match $id$ with [ 
+          Sqlite3.Data.INT id -> 
+            match $lid:getfn ft$ ~id:(`Id id) _cache db with [ 
+              [x] -> x 
+            | [] -> failwith "no results" 
+            | _ -> failwith "too many results for id search" ]
+        | _ -> assert False ] 
+      >>
     ) env ft
   |_ -> fn f.f_ctyp
 
