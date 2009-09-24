@@ -603,7 +603,7 @@ let sql_data_to_field ~null_foreigns _loc env f =
         <:expr< 
           match $id$ with [ 
             Sqlite3.Data.INT id -> 
-              match $lid:getfn ft$ ~id:(`Id id) _cache db with [ 
+              match $lid:getfn ft$ ~id:(`Id id) db with [ 
                 [x] -> x 
               | [] -> failwith "no results" 
               | _ -> failwith "too many results for id search" ]

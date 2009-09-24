@@ -664,8 +664,7 @@ let construct_get_funs env =
     let ext_get_body =
       (* just assume recursive for the moment, so pass in a cache *)
       <:expr< 
-       let _cache = Hashtbl.create 1 in
-       $apply _loc (getfn t) str_fields$ _cache db
+       $apply _loc (getfn t) str_fields$ db
       >> 
     in
 
@@ -675,7 +674,7 @@ let construct_get_funs env =
     let return_type = <:ctyp< list $ctyp_of_table t$ >> in
     let int_get_binding = function_with_label_args _loc
       ~fun_name:get_fun_name
-      ~idents:["_cache"; "db"]
+      ~idents:["db"]
       ~function_body:get_body
       ~return_type
       get_argument in
