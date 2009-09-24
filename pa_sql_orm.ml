@@ -455,9 +455,6 @@ let construct_save_funs env =
 
 (* construct the concrete value to return *)
 let of_stmt env t =
-  (* When we add checks for recursive types specifically, this can be set to false
-     in the non-recursive case *)
-  let null_foreigns = true in
   let _loc = Loc.ghost in
   let ef = exposed_fields_no_autoid env t.t_name in
   match t.t_type with
@@ -550,26 +547,32 @@ let of_stmt env t =
 
 let of_stmt_final env t =
   let _loc = Loc.ghost in
-  match list_or_option_fields env t with
-  |[] -> <:expr< __v >> (* no list/option fields so no rewriting necessary *)
-  |lof ->
-    with_table (fun env t ->
-      let rbs = List.map (fun f ->
+  with_table (fun env t -> 
+    match list_or_option_fields env t.t_name, t.t_type with
+    |[],_ -> <:expr< __v >> (* no list/option fields so no rewriting necessary *)
+    |lof,Exposed ->
+      let rbs = rbSem_of_list (List.map (fun f ->
         let pos = listi (fun f' -> f'.f_name = f.f_name) t.t_fields  in
         <:rec_binding< 
           $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
               $sql_data_to_field ~null_foreigns:false _loc env f$
         >>
-       ) lof in
+       ) lof) in
+      Printf.eprintf "X=%d %d\n" (List.length lof) (List.length (exposed_fields env t.t_name));
+      let v' = if List.length lof = (List.length (exposed_fields_no_autoid env t.t_name)) then
+          <:expr< { $rbs$ } >>
+        else
+          <:expr< { (__v) with $rbs$ } >> in
       <:expr<
-        let __v' = { (__v) with $rbSem_of_list rbs$ } in
+        let __v' = $v'$ in
         do {
           $whashex "replace" t$ __v' __id;
           $rhashex "replace" t$ __id __v';
           __v'
         }
       >>
-    ) env t
+    |_ -> <:expr< __v >> (* not an record, so no rewriting needed *)
+  ) env t
  
 let construct_get_funs env =
   let _loc = Loc.ghost in
