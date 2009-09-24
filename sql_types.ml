@@ -105,7 +105,6 @@ let string_of_env e =
   string_map "\n" string_of_table e.e_tables 
 
 let dot_of_table env t =
-  let ft t = List.find (fun x -> x.t_name = t) env.e_tables in
   let record_fields t =
     String.concat " | " (sprintf "<%s> %s (%s)" t.t_name t.t_name (string_of_table_type t.t_type) :: List.rev_map (fun f -> 
       sprintf "<%s> %s (%s)" f.f_name f.f_name (string_of_field_info f.f_info)) t.t_fields) in
@@ -538,7 +537,6 @@ let debug n e =
 
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
-  let pid = <:patt< $lid:"_" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >>   -> <:expr< Sqlite3.Data.INT 1L >>
   | <:ctyp@loc< int >>    -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
@@ -614,7 +612,6 @@ let sql_data_to_field ~null_foreigns _loc env f =
 
 let to_string _loc f =
   let id = <:expr< $lid:f.f_name$ >> in
-  let pid = <:patt< $lid:f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< "1" >>
   | <:ctyp@loc< int >> -> <:expr< string_of_int $id$ >>
@@ -633,7 +630,6 @@ let to_string _loc f =
  
 let ocaml_variant_to_sql_request _loc f =
   let id = <:expr< $lid:f.f_name$ >> in
-  let pid = <:patt< $lid:f.f_name$ >> in
   let int_like_type conv =
     <:expr< match $id$ with [ 
         `Eq  _ -> $str:f.f_name^" = ?"$
@@ -677,7 +673,6 @@ let ocaml_variant_to_sql_request _loc f =
 
 let ocaml_variant_to_sql_binds _loc env f =
   let id = <:expr< $lid:f.f_name$ >> in
-  let pid = <:patt< $lid:f.f_name$ >> in
   let bind e = <:expr<
      incr sql_bind_pos;
      let __e = $e$ in
