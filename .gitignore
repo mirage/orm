@@ -30,3 +30,4 @@ pi_*.ml
 *.db
 *_debug.ml
 *_debug.mli
+*.dot
