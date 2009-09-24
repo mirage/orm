@@ -548,7 +548,7 @@ let field_to_sql_data _loc f =
     <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
 
-let sql_data_to_field _loc env f =
+let sql_data_to_field ~null_foreigns _loc env f =
   let error = <:match_case< x -> failwith ("unexpected res: " ^ (Sqlite3.Data.to_string x)) >> in
   let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
   let rec fn = function
@@ -579,15 +579,21 @@ let sql_data_to_field _loc env f =
   match f.f_info with
   |External_foreign (_,(Some ft)) ->
     with_table (fun env ft -> 
-      <:expr< 
-        match $id$ with [ 
-          Sqlite3.Data.INT id -> 
-            match $lid:getfn ft$ ~id:(`Id id) _cache db with [ 
-              [x] -> x 
-            | [] -> failwith "no results" 
-            | _ -> failwith "too many results for id search" ]
-        | _ -> assert False ] 
-      >>
+      match ft.t_type, null_foreigns with
+      | Optional,true ->
+        <:expr< None >>
+      | List, true ->
+        <:expr< [] >>
+      | _ ->
+        <:expr< 
+          match $id$ with [ 
+            Sqlite3.Data.INT id -> 
+              match $lid:getfn ft$ ~id:(`Id id) _cache db with [ 
+                [x] -> x 
+              | [] -> failwith "no results" 
+              | _ -> failwith "too many results for id search" ]
+          | _ -> assert False ] 
+        >>
     ) env ft
   |_ -> fn f.f_ctyp
 

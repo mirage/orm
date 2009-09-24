@@ -455,6 +455,7 @@ let construct_save_funs env =
 
 (* construct the concrete value to return *)
 let of_stmt env t =
+  let null_foreigns = false in
   let _loc = Loc.ghost in
   let ef = exposed_fields_no_autoid env t.t_name in
   match t.t_type with
@@ -481,7 +482,7 @@ let of_stmt env t =
           let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
           do {
             _id.val := Sqlite3.column stmt 0;
-            $sql_data_to_field _loc env lif$
+            $sql_data_to_field ~null_foreigns _loc env lif$
           }
         ) in
         match l with [
@@ -500,7 +501,7 @@ let of_stmt env t =
     let rb = mapi (fun pos f ->
       <:rec_binding< 
         $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-            $sql_data_to_field _loc env f$
+            $sql_data_to_field ~null_foreigns _loc env f$
       >>
     ) ef in
     <:expr< { $rbSem_of_list rb$ } >>
@@ -513,14 +514,14 @@ let of_stmt env t =
           Sqlite3.Data.INT 0L -> None
         | Sqlite3.Data.INT 1L -> Some (
           let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
-          $sql_data_to_field _loc env f$)
+          $sql_data_to_field ~null_foreigns _loc env f$)
         | _ -> assert False ]
     >>
   |Tuple ->
     let tp = mapi (fun pos f ->
         <:expr<
           let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-          $sql_data_to_field _loc env f$ >>
+          $sql_data_to_field ~null_foreigns _loc env f$ >>
         ) ef in
       <:expr< ( $tup:exCom_of_list (List.rev tp)$ ) >>
   |Variant vi ->
@@ -532,7 +533,7 @@ let of_stmt env t =
           let f = List.nth t.t_fields idx in
           <:expr< $uid:vuid$ 
             (let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:idx$ in
-                  $sql_data_to_field _loc env f$)
+                  $sql_data_to_field ~null_foreigns _loc env f$)
           >>
         end else
           <:expr< $uid:vuid$ >> in
