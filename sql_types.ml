@@ -387,7 +387,6 @@ let tridfn t    = sprintf "%s__val"   t.t_name
 let tnewfn t    = sprintf "%s__new"   t.t_name
 let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
 let fcachefn t  = sprintf "C_%s"      t.t_name
-let fpcachefn t = sprintf "P_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 let whashfn t   = sprintf "W_%s"      t.t_name
 let rhashfn t   = sprintf "R_%s"      t.t_name
