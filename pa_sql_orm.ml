@@ -123,7 +123,6 @@ let construct_typedefs env =
   let cache_decls =
     let sum_type = List.flatten (List.map (fun t ->
       [ (_loc, (fcachefn t), [ ]) ;  (* Full cache entry C_t *)
-        (_loc, (fpcachefn t), [ ]) ; (* Partial cache entry P_t *)
       ]
     ) nlit)
     in
@@ -200,14 +199,22 @@ let id_for_field_expr ~null_foreigns env f =
       ]
     >>   
 
-let sql_binding ~null_foreigns pos env t f =
+let sql_binding ?(null_options=true) ~null_foreigns pos env t f =
   let _loc = Loc.ghost in
-  let idex = if is_foreign f then  
+  let idex = if is_foreign f then
     <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns env f$ >>
   else
     <:binding<  >>
   in
   let v = match t.t_type with 
+  |Exposed ->
+    let ex () = <:expr< let $idex$ in $field_to_sql_data _loc f$ >> in
+    if is_foreign f && null_options then begin
+       let ft = get_foreign_table env f in
+       match ft.t_type with
+       |Optional |List -> <:expr< Sqlite3.Data.NULL >>
+       |_ -> ex ()
+    end else ex ()
   |Variant _ -> begin
     match f.f_info with
     |Internal_field -> (* this is the index *)
@@ -236,10 +243,15 @@ let sql_binding ~null_foreigns pos env t f =
   |_ -> 
     <:expr< let $idex$ in $field_to_sql_data _loc f$ >>
   in
-  <:expr< Sql_access.db_must_bind db stmt $`int:pos$ $v$ >>
+  <:expr< 
+    let __v = $v$ in
+    let $debug "save" <:expr< $str:string_of_int pos ^ " <- "$ 
+      ^ (Sqlite3.Data.to_string __v) >>$ in
+    Sql_access.db_must_bind db stmt $`int:pos$ __v
+  >>
  
 
-let save_expr ?(null_foreigns=false) env t =
+let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
     let _loc = Loc.ghost in
      (* the INSERT statement for this object *)
     let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
@@ -260,7 +272,7 @@ let save_expr ?(null_foreigns=false) env t =
     let sql_bind_pos = ref 0 in
     let sql_bind_expr = List.map (fun f ->
       incr sql_bind_pos;
-      sql_binding ~null_foreigns !sql_bind_pos env t f;
+      sql_binding ~null_options ~null_foreigns !sql_bind_pos env t f;
     ) (sql_fields_no_autoid env t.t_name) in
 
     (* last binding for update statement which also needs an id at the end *)
@@ -294,56 +306,55 @@ let save_expr ?(null_foreigns=false) env t =
       <:expr<
        match $lid:tidfn t$ with [
         None -> 
-          let stmt = Sqlite3.prepare db.Sql_access.db $str:insert_sql$ in
+          let __sql = $str:insert_sql$ in
+          let $debug "save" <:expr< __sql >>$ in
+          let stmt = Sqlite3.prepare db.Sql_access.db __sql in
           $sql_stmts$
        |Some _id -> _id
        ] 
       >>
     else <:expr<
-       let stmt = Sqlite3.prepare db.Sql_access.db 
-         (match $lid:tidfn t$ with [
+       let __sql = match $lid:tidfn t$ with [
             None -> $str:insert_sql$
            |Some _ -> $str:update_sql$
-          ]) 
-       in $sql_stmts$
+         ] in
+       let $debug "save" <:expr< __sql >>$ in
+       let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+       $sql_stmts$
     >>
 
 let construct_save_funs env = 
   let _loc = Loc.ghost in
   let binds = biAnd_of_list (List.flatten (List.map (fun t ->
-    let fsf = foreign_single_fields env t.t_name in
     let save_after_cache_check =
       if is_recursive_table env t then
         <:expr<
-          try
-            match Hashtbl.find _cache ($str:t.t_name$ , _curobj_id) with [
-              $uid:fpcachefn t$ -> (* partial entry found, save children and update ids *)
-                       let sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;"
-                         t.t_name (String.concat "," (List.map (fun f -> 
-                           f.f_name ^ "=?") fsf))$ 
-                       in 
-                       let stmt = Sqlite3.prepare db.Sql_access.db sql in
-                       do {
-                         $exSem_of_list (
-                           mapi (fun pos f -> 
-                              sql_binding ~null_foreigns:false pos env t f
-                           ) fsf
-                         )$;
-                        Sql_access.db_must_bind db stmt $`int:List.length fsf+1$
-                          (Sqlite3.Data.INT _curobj_id);
-                        Sql_access.db_must_step db stmt;
-                        Hashtbl.replace _cache ($str:t.t_name$ , _curobj_id) 
-                          $uid:fcachefn t$;
-                        _curobj_id
-                      }
-              | $uid:fcachefn t$ -> (* full entry found, just return its id *)
-                _curobj_id
-              | _ -> assert False
-            ]
-          with [ Not_found -> save () ]
+           match Hashtbl.mem _cache ($str:t.t_name$ , _curobj_id) with [
+             True -> (* full entry found, just return its id *)
+               _curobj_id
+           |  False -> save () ]
         >>
-    else <:expr< save () >>
-    in
+    else <:expr< save () >> in
+
+  (* save and update the list/options after the save *)
+  let post_saves = 
+    match list_or_option_fields env t.t_name with
+    | [] -> <:expr< >>
+    | fs -> <:expr< 
+      let __sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name 
+        (String.concat "," (List.map (fun f -> f.f_name ^ "=?") fs))$ in 
+      let $debug "post_save" <:expr< __sql >>$ in
+      let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+      do {
+        $exSem_of_list (
+          mapi (fun pos f -> 
+            sql_binding ~null_options:false ~null_foreigns:false pos env t f
+          ) fs)$;
+        Sql_access.db_must_bind db stmt $`int:List.length fs+1$ (Sqlite3.Data.INT _newobj_id);
+        Sql_access.db_must_step db stmt;
+        Hashtbl.replace _cache ($str:t.t_name$ , _newobj_id) $uid:fcachefn t$;
+      } >>
+  in
 
   let list_saves = match t.t_type with
     |List -> begin
@@ -375,18 +386,20 @@ let construct_save_funs env =
         <:expr<  $access_fn$ (fun pos __item ->
             let __idx = Int64.of_int pos in
             let _id = _newobj_id in
-            let stmt = Sqlite3.prepare db.Sql_access.db 
+            let __sql = 
               $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s);" listitem.t_name 
-               (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $
-            in
+               (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $ in
+            let $debug "save_list" <:expr< __sql >>$ in
+            let stmt = Sqlite3.prepare db.Sql_access.db __sql in
             do { 
               $sql_bind_exprs$;  
               Sql_access.db_must_step db stmt;
-              let stmt = Sqlite3.prepare db.Sql_access.db
-                $`str:sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?);" listitem.t_name$ in
+              let __sql = $`str:sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?);" 
+                listitem.t_name$ in
+              let $debug "save_list" <:expr< __sql >>$ in
+              let stmt = Sqlite3.prepare db.Sql_access.db __sql in
               do {
                 Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
-                (* XXX check for off-by-one here *)
                 Sql_access.db_must_bind db stmt 2
                  (Sqlite3.Data.INT (Int64.of_int ($length_fn$ $lid:t.t_name$)));
                 Sql_access.db_must_step db stmt
@@ -399,7 +412,7 @@ let construct_save_funs env =
     |_ -> <:expr< >>
   in
   let int_binding =
-      <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
+     <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
             $uid:whashfn t$.find 
                db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
@@ -411,9 +424,9 @@ let construct_save_funs env =
           do {
             $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
             $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ _newobj_id $lid:t.t_name$;
-            Hashtbl.replace _cache ($str:t.t_name$,_newobj_id)
-              $uid:fcachefn t$; 
+            Hashtbl.replace _cache ( $str:t.t_name$ , _newobj_id ) $uid:fcachefn t$; 
             $list_saves$;
+            $post_saves$;
             _newobj_id
           } 
         in
@@ -429,20 +442,7 @@ let construct_save_funs env =
     let ext_binding = 
       <:binding< $lid:extsavefn t$ db $lid:t.t_name$ =
         let _cache = Hashtbl.create 1 in
-        let $lid:tidfn t$ = try Some ( 
-            $uid:whashfn t$.find 
-               db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
-           with [ Not_found -> None ] in
-
-        (* first break the chain by inserting a partial save *)
-        let $field_var_binds env t $ in
-        let _curobj_id = $save_expr ~null_foreigns:true env t$ in
-        (* add in a partial cache entry *)
-        do {
-          Hashtbl.add _cache ( $str:t.t_name$, _curobj_id ) $uid:fpcachefn t$;
-          $uid:whashfn t$.replace db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _curobj_id;
-          $lid:savefn t$ ~_cache db $lid:t.t_name$
-        }
+        $lid:savefn t$ ~_cache db $lid:t.t_name$
       >>
     in 
     int_binding ::  (if t.t_type = Exposed then [ ext_binding ] else [])
