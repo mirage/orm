@@ -377,11 +377,11 @@ let field_accessor f =
 
 (* --- Name functions *)
 
-let savefn t    = sprintf "__%s_to_db" t.t_name
-let extsavefn t = sprintf "%s_to_db" t.t_name
+let savefn t    = sprintf "__%s_save" t.t_name
+let extsavefn t = sprintf "%s_save" t.t_name
 
-let getfn  t    = sprintf "__%s_of_db" t.t_name
-let extgetfn t  = sprintf "%s_of_db"  t.t_name
+let getfn  t    = sprintf "__%s_get" t.t_name
+let extgetfn t  = sprintf "%s_get"  t.t_name
 let tidfn t     = sprintf "%s__id"    t.t_name
 let tridfn t    = sprintf "%s__val"   t.t_name
 let tnewfn t    = sprintf "%s__new"   t.t_name
