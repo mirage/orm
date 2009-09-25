@@ -126,12 +126,8 @@ let construct_typedefs env =
       ]
     ) nlit)
     in
-    let sum_type =
-      if List.length sum_type = 1 then
-        <:ctyp< $lid:(List.hd tables).t_name$ >>
-      else
-        <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
-      declare_type _loc "cache_elt" sum_type in
+    let sum_type = <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
+    declare_type _loc "cache_elt" sum_type in
 
   stSem_of_list [ 
     <:str_item< $list:wh_decls$ >>;
