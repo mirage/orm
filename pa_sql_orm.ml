@@ -95,8 +95,8 @@ let construct_typedefs env =
 
   let id_new = 
     let ids = List.flatten (List.map (fun t -> [
-      <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 1 >> ;
-      <:rec_binding< $lid:tridfn t$ = $uid:rhashfn t$.create 1 >>;
+      <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 7 >> ;
+      <:rec_binding< $lid:tridfn t$ = $uid:rhashfn t$.create 7 >>;
      ]) nlit) in
     <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
   in
@@ -437,8 +437,8 @@ let construct_save_funs env =
     in
     let ext_binding = 
       <:binding< $lid:extsavefn t$ db $lid:t.t_name$ =
-        let _cache = Hashtbl.create 1 in
-        $lid:savefn t$ ~_cache db $lid:t.t_name$
+        let _cache = Hashtbl.create 7 in
+        ignore($lid:savefn t$ ~_cache db $lid:t.t_name$)
       >>
     in 
     int_binding ::  (if t.t_type = Exposed then [ ext_binding ] else [])
