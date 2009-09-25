@@ -620,6 +620,7 @@ let construct_get_funs env =
       in
     
       (* main body of the get call *)
+      let autoid_pos = listi (fun f -> f.f_info = Internal_autoid) t.t_fields in
       let body = <:expr<
         let lookup () =
           let of_stmt stmt = $of_stmt env t$ in
@@ -632,16 +633,23 @@ let construct_get_funs env =
             $binds$;
             Sql_access.step_fold db stmt 
              (fun stmt ->
-               let __v = of_stmt stmt in
-               let __id = match Sqlite3.column stmt
-                  $`int:listi (fun f -> f.f_info = Internal_autoid) t.t_fields$ with [
+               let __id = match Sqlite3.column stmt $`int:autoid_pos$ with [
                    Sqlite3.Data.INT x -> x
-                  |_ -> failwith "id not found" ] in
-               do { 
-                 $whashex "add" t$ __v __id;
-                 $rhashex "add" t$ __id __v;
-                 of_stmt_final stmt __id __v
-               }
+                 |_ -> failwith "id not found" ] in
+               (* check id cache to see if a value is in there already *)
+               try
+                 let __v = $rhashex "find" t$ __id in
+                 let $debug (getfn t) <:expr< "cache hit, id " ^ (Int64.to_string __id) >>$ in
+                 __v
+               with [ Not_found ->
+                 let $debug (getfn t) <:expr< "cache miss, id " ^ (Int64.to_string __id) >>$ in
+                 let __v = of_stmt stmt in
+                 do { 
+                   $whashex "add" t$ __v __id;
+                   $rhashex "add" t$ __id __v;
+                   of_stmt_final stmt __id __v
+                 }
+               ]
              )
           } in
         (* check the id cache for the object first *)
