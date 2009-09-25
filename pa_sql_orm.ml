@@ -558,7 +558,6 @@ let of_stmt_final env t =
               $sql_data_to_field ~null_foreigns:false _loc env f$
         >>
        ) lof) in
-      Printf.eprintf "X=%d %d\n" (List.length lof) (List.length (exposed_fields env t.t_name));
       let v' = if List.length lof = (List.length (exposed_fields_no_autoid env t.t_name)) then
           <:expr< { $rbs$ } >>
         else
@@ -646,11 +645,21 @@ let construct_get_funs env =
              )
           } in
         (* check the id cache for the object first *)
-        match id with [
-          Some (`Id i) -> 
-            try [ $uid:rhashfn t$.find db.Sql_access.cache.$lid:tridfn t$ i ]
-            with [ Not_found -> lookup () ]
-        | None -> lookup ()
+        match id with 
+        [ Some (`Id i) -> 
+            try [ 
+              let __v = $uid:rhashfn t$.find db.Sql_access.cache.$lid:tridfn t$ i in
+              let $debug (getfn t) <:expr< "cache hit" >>$ in
+              __v
+            ]
+            with [ 
+              Not_found -> 
+                let $debug (getfn t) <:expr< "cache miss" >>$ in
+                lookup () 
+            ]
+        | None -> 
+           let $debug (getfn t) <:expr< "no id provided" >>$ in
+           lookup ()
         ]
         >> in
       body
@@ -777,7 +786,6 @@ let () =
       prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
       let env = process tds in
-      prerr_endline (Sql_types.string_of_env env);
       let fout = open_out "debug.dot" in
       Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
       close_out fout;
