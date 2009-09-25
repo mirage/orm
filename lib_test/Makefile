@@ -1,5 +1,9 @@
 OCAMLMAKEFILE=../OCamlMakefile
 
+.PHONY: run
+run: dc
+	./$(RESULT)
+
 export INCDIRS = ..
 export LIBDIRS = ..
 export LIBS = sql_access

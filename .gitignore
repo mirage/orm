@@ -31,3 +31,4 @@ pi_*.ml
 *_debug.ml
 *_debug.mli
 *.dot
+run_tests
