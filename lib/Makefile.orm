@@ -1,0 +1,15 @@
+export OCAMLMAKEFILE = ../OCamlMakefile
+
+ANNOTATE = yes
+SOURCES = weaktbl.ml sql_access.ml
+RESULT = orm
+PACKS = sqlite3
+LIB_PACK_NAME = orm
+
+LIBINSTALL_FILES = orm.cmx orm.cmxa orm.a orm.cmi
+
+.PHONY: all
+all: ncl dcl
+	@ :
+
+include $(OCAMLMAKEFILE)

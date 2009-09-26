@@ -103,14 +103,14 @@ let construct_typedefs env =
 
   let wh_decls = List.map (fun t ->
     <:str_item< 
-      module $uid:whashfn t$ = Weaktbl.Make (
+      module $uid:whashfn t$ = Orm.Weaktbl.Make (
           struct 
             type t = $ctyp_of_table t$;
             value equal = ( == );
             value compare = ( == );
             value hash = Hashtbl.hash;
           end );
-      module $uid:rhashfn t$ = Weaktbl.Make (
+      module $uid:rhashfn t$ = Orm.Weaktbl.Make (
           struct
             type t = int64;
             value equal = (=);
@@ -184,7 +184,7 @@ let id_for_field_expr ~null_foreigns env f =
   else
     <:expr< 
       try 
-        let __i = $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ 
+        let __i = $uid:whashfn ft$.find db.OS.cache.$lid:tidfn ft$ 
           $field_accessor f$ in
         match Hashtbl.mem _cache ( $str:ft.t_name$ , __i ) with [
           True -> __i
@@ -243,7 +243,7 @@ let sql_binding ?(null_options=true) ~null_foreigns pos env t f =
     let __v = $v$ in
     let $debug "save" <:expr< $str:string_of_int pos ^ " <- "$ 
       ^ (Sqlite3.Data.to_string __v) >>$ in
-    Sql_access.db_must_bind db stmt $`int:pos$ __v
+    OS.db_must_bind db stmt $`int:pos$ __v
   >>
  
 
@@ -279,15 +279,15 @@ let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
          match $lid:tidfn t$ with [
            None -> ()
           |Some _id -> 
-            Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT _id)
+            OS.db_must_bind db stmt $`int:!sql_bind_pos$ (Sqlite3.Data.INT _id)
          ];
-         Sql_access.db_must_step db stmt;
+         OS.db_must_step db stmt;
          match $lid:tidfn t$ with [
            None ->
-              let __id = Sqlite3.last_insert_rowid db.Sql_access.db in
+              let __id = Sqlite3.last_insert_rowid db.OS.db in
               do {
-                $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ __id;
-                $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ __id $lid:t.t_name$;
+                $uid:whashfn t$.add db.OS.cache.$lid:tidfn t$ $lid:t.t_name$ __id;
+                $uid:rhashfn t$.add db.OS.cache.$lid:tridfn t$ __id $lid:t.t_name$;
                 __id
               }
           |Some _id ->
@@ -304,7 +304,7 @@ let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
         None -> 
           let __sql = $str:insert_sql$ in
           let $debug "save" <:expr< __sql >>$ in
-          let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+          let stmt = Sqlite3.prepare db.OS.db __sql in
           $sql_stmts$
        |Some _id -> _id
        ] 
@@ -315,7 +315,7 @@ let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
            |Some _ -> $str:update_sql$
          ] in
        let $debug "save" <:expr< __sql >>$ in
-       let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+       let stmt = Sqlite3.prepare db.OS.db __sql in
        $sql_stmts$
     >>
 
@@ -340,14 +340,14 @@ let construct_save_funs env =
       let __sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name 
         (String.concat "," (List.map (fun f -> f.f_name ^ "=?") fs))$ in 
       let $debug "post_save" <:expr< __sql >>$ in
-      let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+      let stmt = Sqlite3.prepare db.OS.db __sql in
       do {
         $exSem_of_list (
           mapi (fun pos f -> 
             sql_binding ~null_options:false ~null_foreigns:false pos env t f
           ) fs)$;
-        Sql_access.db_must_bind db stmt $`int:List.length fs+1$ (Sqlite3.Data.INT _newobj_id);
-        Sql_access.db_must_step db stmt;
+        OS.db_must_bind db stmt $`int:List.length fs+1$ (Sqlite3.Data.INT _newobj_id);
+        OS.db_must_step db stmt;
         Hashtbl.replace _cache ($str:t.t_name$ , _newobj_id) $uid:fcachefn t$;
       } >>
   in
@@ -369,14 +369,14 @@ let construct_save_funs env =
            let v = field_to_sql_data _loc f in
            <:expr< 
              let $idex$ in
-             Sql_access.db_must_bind db stmt $`int:!sql_bind_pos$ $v$ 
+             OS.db_must_bind db stmt $`int:!sql_bind_pos$ $v$ 
            >>
         ) (sql_fields_no_autoid env listitem.t_name)) in
 
         (* decide which iterator to use depending on the list type *)
         let access_fn, length_fn = match t.t_ctyp with
           | <:ctyp< array $c$ >> -> <:expr< Array.iteri >> , <:expr< Array.length >>
-          | <:ctyp< list $c$ >> ->  <:expr< Sql_access.list_iteri >> , <:expr< List.length >>
+          | <:ctyp< list $c$ >> ->  <:expr< OS.list_iteri >> , <:expr< List.length >>
           | _ -> failwith "table not array or list" in
 
         <:expr<  $access_fn$ (fun pos __item ->
@@ -386,19 +386,19 @@ let construct_save_funs env =
               $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s);" listitem.t_name 
                (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $ in
             let $debug "save_list" <:expr< __sql >>$ in
-            let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+            let stmt = Sqlite3.prepare db.OS.db __sql in
             do { 
               $sql_bind_exprs$;  
-              Sql_access.db_must_step db stmt;
+              OS.db_must_step db stmt;
               let __sql = $`str:sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?);" 
                 listitem.t_name$ in
               let $debug "save_list" <:expr< __sql >>$ in
-              let stmt = Sqlite3.prepare db.Sql_access.db __sql in
+              let stmt = Sqlite3.prepare db.OS.db __sql in
               do {
-                Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
-                Sql_access.db_must_bind db stmt 2
+                OS.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
+                OS.db_must_bind db stmt 2
                  (Sqlite3.Data.INT (Int64.of_int ($length_fn$ $lid:t.t_name$)));
-                Sql_access.db_must_step db stmt
+                OS.db_must_step db stmt
               }
             }
           ) $lid:t.t_name$ 
@@ -411,15 +411,15 @@ let construct_save_funs env =
      <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
         let $lid:tidfn t$ = try Some ( 
             $uid:whashfn t$.find 
-               db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ )
+               db.OS.cache.$lid:tidfn t$ $lid:t.t_name$ )
            with [ Not_found -> None ] in
 
         let $field_var_binds env t$ in
         let save () =
           let _newobj_id = $save_expr env t$ in
           do {
-            $uid:whashfn t$.add db.Sql_access.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
-            $uid:rhashfn t$.add db.Sql_access.cache.$lid:tridfn t$ _newobj_id $lid:t.t_name$;
+            $uid:whashfn t$.add db.OS.cache.$lid:tidfn t$ $lid:t.t_name$ _newobj_id;
+            $uid:rhashfn t$.add db.OS.cache.$lid:tridfn t$ _newobj_id $lid:t.t_name$;
             Hashtbl.replace _cache ( $str:t.t_name$ , _newobj_id ) $uid:fcachefn t$; 
             $list_saves$;
             $post_saves$;
@@ -470,14 +470,14 @@ let of_stmt env t =
     <:expr<
       let sql = $str:sql$ ^ $id_sql$ ^ " ORDER BY _idx DESC" in
       let $debug t.t_name <:expr< sql >>$ in
-      let stmt = Sqlite3.prepare db.Sql_access.db sql in
+      let stmt = Sqlite3.prepare db.OS.db sql in
       do {
         match id with [
           None -> ()
-        | Some (`Id i) -> Sql_access.db_must_bind db stmt 1 (Sqlite3.Data.INT i)
+        | Some (`Id i) -> OS.db_must_bind db stmt 1 (Sqlite3.Data.INT i)
         ];
         let _id = ref (Sqlite3.Data.NULL) in
-        let l = Sql_access.$lid:fold_fn$ db stmt (fun stmt ->
+        let l = OS.$lid:fold_fn$ db stmt (fun stmt ->
           let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
           do {
             _id.val := Sqlite3.column stmt 0;
@@ -626,12 +626,12 @@ let construct_get_funs env =
           let of_stmt stmt = $of_stmt env t$ in
           let of_stmt_final stmt __id __v = $of_stmt_final env t.t_name$ in
           let sql = $sql$ in
-          let stmt = Sqlite3.prepare db.Sql_access.db sql in
+          let stmt = Sqlite3.prepare db.OS.db sql in
           let sql_bind_pos = ref 0 in
           let $debug (getfn t) <:expr< sql >>$ in
           do {
             $binds$;
-            Sql_access.step_fold db stmt 
+            OS.step_fold db stmt 
              (fun stmt ->
                let __id = match Sqlite3.column stmt $`int:autoid_pos$ with [
                    Sqlite3.Data.INT x -> x
@@ -656,7 +656,7 @@ let construct_get_funs env =
         match id with 
         [ Some (`Id i) -> 
             try [ 
-              let __v = $uid:rhashfn t$.find db.Sql_access.cache.$lid:tridfn t$ i in
+              let __v = $uid:rhashfn t$.find db.OS.cache.$lid:tridfn t$ i in
               let $debug (getfn t) <:expr< "cache hit" >>$ in
               __v
             ]
@@ -746,10 +746,10 @@ let init_db_funs env =
      
       <:expr< 
       do{
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_create$);
+        OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$);
 (*
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_cascade_delete$);
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db $str:sql_prevent_delete$);
+        OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_cascade_delete$);
+        OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_prevent_delete$);
 *)
       }
       >>
@@ -760,7 +760,7 @@ let construct_init env =
   let _loc = Loc.ghost in
   <:str_item<
     value init db_name = 
-      let db = Sql_access.new_state (_cache_new ()) db_name in
+      let db = OS.new_state (_cache_new ()) db_name in
       do {
         $init_db_funs env$; db
       };
@@ -775,7 +775,7 @@ let construct_delete env =
     let body =
       <:expr<
         let sql = $str:sql$ ^ Int64.to_string id in
-        Sql_access.db_must_ok db (fun () -> Sqlite3.exec db.Sql_access.db sql) >>
+        OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db sql) >>
     in
     function_with_label_args _loc
       ~fun_name:(table.t_name^"_delete")
@@ -804,6 +804,7 @@ let () =
         let _loc = Loc.ghost in
        (* XXX default name is Orm until its parsed into environment *)
         <:str_item<
+        module OS = Orm.Sql_access;
         module Orm = struct
           $construct_typedefs env$;
           $construct_save_funs env$;

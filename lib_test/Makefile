@@ -6,7 +6,7 @@ run: dc
 
 export INCDIRS = ../lib
 export LIBDIRS = ../lib
-export LIBS = sql_access
+export LIBS = orm
 export PACKS = unix sqlite3 oUnit
 
 RESULT= run_test

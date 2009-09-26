@@ -1,4 +1,4 @@
-(*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_sql_orm.cma *)
+(*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_orm.cma *)
 
 TYPE_CONV_PATH "Variant"
 
@@ -61,7 +61,6 @@ let test_get () =
 let test_save_get () =
   let db = open_db init name in
   x_save db x1;
-  let i = x_get db in
   match x_get db with
   [i] -> "structurally equal after get" @? ( x1 == i)
   |_ -> assert false

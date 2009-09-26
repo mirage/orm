@@ -1,0 +1,13 @@
+OCAMLMAKEFILE = ../OCamlMakefile
+ANNOTATE = yes
+
+SOURCES = sql_types.ml pa_orm.ml
+PACKS = type-conv
+RESULT = pa_orm
+USE_CAMLP4 = yes
+
+.PHONY: all
+all: dcl ncl
+	@ :
+
+include $(OCAMLMAKEFILE)

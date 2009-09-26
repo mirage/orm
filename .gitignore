@@ -18,4 +18,4 @@ pi_*.ml
 *_debug.ml
 *_debug.mli
 *.dot
-run_tests
+lib_test/run_test

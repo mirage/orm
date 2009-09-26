@@ -1,4 +1,4 @@
-(*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_sql_orm.cma *)
+(*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_orm.cma *)
 
 TYPE_CONV_PATH "Simple"
 open Printf

@@ -396,10 +396,10 @@ let tparentidfn t = match t.t_parent with
 
 let whashex fn t =
   let _loc = Loc.ghost in
-  <:expr< $uid:whashfn t$.$lid:fn$ db.Sql_access.cache.$lid:tidfn t$ >>
+  <:expr< $uid:whashfn t$.$lid:fn$ db.OS.cache.$lid:tidfn t$ >>
 let rhashex fn t =
   let _loc = Loc.ghost in
-  <:expr< $uid:rhashfn t$.$lid:fn$ db.Sql_access.cache.$lid:tridfn t$ >>
+  <:expr< $uid:rhashfn t$.$lid:fn$ db.OS.cache.$lid:tridfn t$ >>
 
 (* --- Process functions to convert OCaml types into SQL *)
 
@@ -677,7 +677,7 @@ let ocaml_variant_to_sql_binds _loc env f =
      let __e = $e$ in
      let $debug "bind" <:expr< string_of_int !sql_bind_pos ^ " <- "
                                      ^ (Sqlite3.Data.to_string __e) >>$ in
-     Sql_access.db_must_bind db stmt !sql_bind_pos __e >> in
+     OS.db_must_bind db stmt !sql_bind_pos __e >> in
   let int_like_type conv =  <:expr< match $id$ with [
      `Eq i | `Neq i | `Le i | `Leq i |`Ge i |`Geq i ->
         do { $bind <:expr< Sqlite3.Data.INT $conv "i"$ >>$ }
@@ -716,7 +716,7 @@ let ocaml_variant_to_sql_binds _loc env f =
           `Id i -> do { $bind <:expr< Sqlite3.Data.INT i >>$ }
          |`Eq x -> 
              let i = try 
-               $uid:whashfn ft$.find db.Sql_access.cache.$lid:tidfn ft$ x 
+               $uid:whashfn ft$.find db.OS.cache.$lid:tidfn ft$ x 
              with [ Not_found -> Int64.minus_one ] in
              do { $bind <:expr< Sqlite3.Data.INT i >>$ }
         ] >>
