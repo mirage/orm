@@ -4,8 +4,8 @@ OCAMLMAKEFILE=../OCamlMakefile
 run: dc
 	./$(RESULT)
 
-export INCDIRS = ..
-export LIBDIRS = ..
+export INCDIRS = ../lib
+export LIBDIRS = ../lib
 export LIBS = sql_access
 export PACKS = unix sqlite3 oUnit
 
