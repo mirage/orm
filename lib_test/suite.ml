@@ -7,7 +7,9 @@ let suites = [
   Variant.suite;
   Alltypes.suite;
   Foreign.suite;
+  Recursive.suite;
+  Array_simple.suite;
 ]
 
 let _ =
-  run_test_tt_main ("ORM test" >::: (List.flatten suites))
+  run_test_tt_main ("ORM" >::: (List.flatten suites))
