@@ -1,3 +1,6 @@
+0.3:
+* Rewrite to a camlp4 (3.11+) code base and remove old extension [26 Sep 2009]
+
 0.2:
 * Add support for unique indices of groups of fields [16 May 2009]
 * Add a 'real' function for floating point datatypes. [16 May 2009]

@@ -1,42 +1,17 @@
-OCAMLMAKEFILE = OCamlMakefile
-
-ANNOTATE = yes
-export ANNOTATE
-DEBUG = yes
-export DEBUG
-
-OCAMLRUNPARAM=b
-export OCAMLRUNPARAM
-
-DOC_FILES=sql_orm
-
-SOURCES=printer_utils.ml sql_orm_header.ml sql_orm.ml
-PACKS=unix sqlite3
-RESULT=sql_orm
-
-TRASH=sql_orm_header.ml
-
 .PHONY: all
-all: depend ncl bcl
-	@ :
-
-sql_orm_header.ml: sql_access.ml convert.ml
-	ocaml convert.ml $< $@
-
-.PHONY: depend
-depend: sql_orm_header.ml
-	@ :
+all:
+	@cd lib && $(MAKE)
+	@cd lib_test && $(MAKE)
 
 .PHONY: install
-install: depend libinstall
-	@ :
+install:
+	@cd lib && $(MAKE) $@
 
 .PHONY: uninstall
-uninstall: libuninstall
-	@ :	
+uninstall:
+	@cd lib && $(MAKE) $@
 
-.PHONY: realclean
-realclean: clean
-	cd tests && $(MAKE) clean && make -f Makefile.test clean && rm -rf tests/doc doc
-
-include $(OCAMLMAKEFILE)
+.PHONY: clean
+clean:
+	@cd lib && $(MAKE) clean
+	@cd lib_test && $(MAKE) clean
