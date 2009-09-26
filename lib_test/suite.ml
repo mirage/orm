@@ -5,6 +5,7 @@ let suites = [
   Simple.suite;
   Tuple.suite;
   Variant.suite;
+  Alltypes.suite;
 ]
 
 let _ =
