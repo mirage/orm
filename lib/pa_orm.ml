@@ -803,7 +803,7 @@ let construct_delete env =
 let parse_keys =
   List.fold_left (fun env -> function
     |Unique fl -> { env with e_unique = fl :: env.e_unique }
-    |Name n -> prerr_endline "XXXXXXXXXXXX"; { env with e_name=n }
+    |Name n -> { env with e_name=n }
     |Debug modes -> List.fold_left (fun env -> function
       |"sql" -> { env with debug_sql=true } 
       |"binds" -> { env with debug_binds=true }
