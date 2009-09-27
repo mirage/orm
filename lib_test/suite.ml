@@ -9,6 +9,7 @@ let suites = [
   Foreign.suite;
   Recursive.suite;
   Array_simple.suite;
+  Foreign_and_variant.suite;
 ]
 
 let _ =
