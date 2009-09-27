@@ -52,6 +52,12 @@ type field_info =
 and env = {
   e_tables: table list;
   e_types: (string * ctyp) list;
+  e_unique: string list list;
+  e_name: string;
+  debug_sql: bool;
+  debug_binds: bool;
+  debug_cache: bool;
+  debug_dot: string option;
 }
 and table = {
   t_name: string;
@@ -128,7 +134,8 @@ let dot_of_env e =
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env () = { e_tables = []; e_types=[] }
+let empty_env () = { e_tables = []; e_types=[]; e_unique=[]; e_name="orm";
+  debug_sql=false; debug_binds=false; debug_cache=false; debug_dot=None }
 
 let find_table env name =
   try
@@ -403,9 +410,9 @@ let rhashex fn t =
 
 (* --- Process functions to convert OCaml types into SQL *)
 
-let rec process tds =
+let rec process tds env =
   let _loc = Loc.ghost in
-  let env = process_type_declarations _loc tds (empty_env ()) in
+  let env = process_type_declarations _loc tds env in
   check_foreign_refs env
 
 and process_type_declarations _loc ctyp env =
@@ -530,9 +537,15 @@ and check_foreign_refs env =
   ) env.e_tables in
   {env with e_tables=tables}
 
-let debug n e = 
+let debug env ty n e = 
   let _loc = Loc.ghost in 
-  <:binding< () = prerr_endline ($str:n^": "$ ^ $e$) >>
+  let d () = <:binding< () = prerr_endline ($str:n^": "$ ^ $e$) >> in
+  let b () = <:binding< () = () >> in
+  if (match ty with
+    |`Sql -> env.debug_sql
+    |`Cache -> env.debug_cache
+    |`Binds -> env.debug_binds
+  ) then d() else b()
 
 let field_to_sql_data _loc f =
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
@@ -675,7 +688,7 @@ let ocaml_variant_to_sql_binds _loc env f =
   let bind e = <:expr<
      incr sql_bind_pos;
      let __e = $e$ in
-     let $debug "bind" <:expr< string_of_int !sql_bind_pos ^ " <- "
+     let $debug env `Binds "bind" <:expr< string_of_int !sql_bind_pos ^ " <- "
                                      ^ (Sqlite3.Data.to_string __e) >>$ in
      OS.db_must_bind db stmt !sql_bind_pos __e >> in
   let int_like_type conv =  <:expr< match $id$ with [

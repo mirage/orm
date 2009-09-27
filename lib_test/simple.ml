@@ -7,9 +7,13 @@ type x = {
   foo: int;
   bar: string
 } with
-persist()
+persist(
+ debug: all;
+ dot: "simple.dot";
+ modname: "My_simple"
+)
 
-open Orm
+open My_simple
 open OUnit
 open Test_utils
 

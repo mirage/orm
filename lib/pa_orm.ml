@@ -10,21 +10,36 @@ open Syntax
 open Pa_type_conv
 
 (* Extend grammar with options for SQL tables *)
-let sql_parms = Gram.Entry.mk "sql_parms"
+type p_keys =
+  | Unique of string list
+  | Debug of string list
+  | Dot of string
+  | Name of string
+
+let string_of_p_keys = function
+  | Unique sl ->  "unique: " ^ ( String.concat "," sl )
+  | Debug d -> "debug: " ^ (String.concat "," d)
+  | Dot f -> "dot: " ^ f
+  | Name n -> "name: " ^ n
+
+let orm_parms = Gram.Entry.mk "orm_parms"
 EXTEND Gram
 
-GLOBAL: sql_parms;
+GLOBAL: orm_parms;
 
-svars: [
+orm_svars: [
   [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
-];
+  ];
 
-param: [
-  [ "unique"; ":"; x = svars -> x ]
-];
+orm_param: [[ 
+     "unique"; ":" ; x = orm_svars -> Unique x 
+   | "debug";  ":" ; x = orm_svars -> Debug x 
+   | "dot";    ":" ; x = STRING -> Dot x 
+   | "modname";":" ; x = STRING -> Name x
+]];
 
-sql_parms: [
-  [ l = LIST0 [ param ] SEP ";" -> l ]
+orm_parms: [
+  [ l = LIST0 [ orm_param ] SEP ";" -> l ]
 ];
 
 END
@@ -241,7 +256,7 @@ let sql_binding ?(null_options=true) ~null_foreigns pos env t f =
   in
   <:expr< 
     let __v = $v$ in
-    let $debug "save" <:expr< $str:string_of_int pos ^ " <- "$ 
+    let $debug env `Binds "save" <:expr< $str:string_of_int pos ^ " <- "$ 
       ^ (Sqlite3.Data.to_string __v) >>$ in
     OS.db_must_bind db stmt $`int:pos$ __v
   >>
@@ -303,7 +318,7 @@ let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
        match $lid:tidfn t$ with [
         None -> 
           let __sql = $str:insert_sql$ in
-          let $debug "save" <:expr< __sql >>$ in
+          let $debug env `Sql "save" <:expr< __sql >>$ in
           let stmt = Sqlite3.prepare db.OS.db __sql in
           $sql_stmts$
        |Some _id -> _id
@@ -314,7 +329,7 @@ let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
             None -> $str:insert_sql$
            |Some _ -> $str:update_sql$
          ] in
-       let $debug "save" <:expr< __sql >>$ in
+       let $debug env `Sql "save" <:expr< __sql >>$ in
        let stmt = Sqlite3.prepare db.OS.db __sql in
        $sql_stmts$
     >>
@@ -339,7 +354,7 @@ let construct_save_funs env =
     | fs -> <:expr< 
       let __sql = $str:sprintf "UPDATE %s SET %s WHERE id=?;" t.t_name 
         (String.concat "," (List.map (fun f -> f.f_name ^ "=?") fs))$ in 
-      let $debug "post_save" <:expr< __sql >>$ in
+      let $debug env `Sql "post_save" <:expr< __sql >>$ in
       let stmt = Sqlite3.prepare db.OS.db __sql in
       do {
         $exSem_of_list (
@@ -385,14 +400,14 @@ let construct_save_funs env =
             let __sql = 
               $`str:sprintf "INSERT OR REPLACE INTO %s VALUES(%s);" listitem.t_name 
                (String.concat "," (List.map (fun _ -> "?") (sql_fields env listitem.t_name))) $ in
-            let $debug "save_list" <:expr< __sql >>$ in
+            let $debug env `Sql "save_list" <:expr< __sql >>$ in
             let stmt = Sqlite3.prepare db.OS.db __sql in
             do { 
               $sql_bind_exprs$;  
               OS.db_must_step db stmt;
               let __sql = $`str:sprintf "DELETE FROM %s WHERE (id=?) AND (_idx > ?);" 
                 listitem.t_name$ in
-              let $debug "save_list" <:expr< __sql >>$ in
+              let $debug env `Sql "save_list" <:expr< __sql >>$ in
               let stmt = Sqlite3.prepare db.OS.db __sql in
               do {
                 OS.db_must_bind db stmt 1 (Sqlite3.Data.INT _id);
@@ -469,7 +484,7 @@ let of_stmt env t =
       | _ -> assert false in
     <:expr<
       let sql = $str:sql$ ^ $id_sql$ ^ " ORDER BY _idx DESC" in
-      let $debug t.t_name <:expr< sql >>$ in
+      let $debug env `Sql t.t_name <:expr< sql >>$ in
       let stmt = Sqlite3.prepare db.OS.db sql in
       do {
         match id with [
@@ -628,7 +643,7 @@ let construct_get_funs env =
           let sql = $sql$ in
           let stmt = Sqlite3.prepare db.OS.db sql in
           let sql_bind_pos = ref 0 in
-          let $debug (getfn t) <:expr< sql >>$ in
+          let $debug env `Sql (getfn t) <:expr< sql >>$ in
           do {
             $binds$;
             OS.step_fold db stmt 
@@ -639,10 +654,10 @@ let construct_get_funs env =
                (* check id cache to see if a value is in there already *)
                try
                  let __v = $rhashex "find" t$ __id in
-                 let $debug (getfn t) <:expr< "cache hit, id " ^ (Int64.to_string __id) >>$ in
+                 let $debug env `Cache (getfn t) <:expr< "cache hit, id " ^ (Int64.to_string __id) >>$ in
                  __v
                with [ Not_found ->
-                 let $debug (getfn t) <:expr< "cache miss, id " ^ (Int64.to_string __id) >>$ in
+                 let $debug env `Cache (getfn t) <:expr< "cache miss, id " ^ (Int64.to_string __id) >>$ in
                  let __v = of_stmt stmt in
                  do { 
                    $whashex "add" t$ __v __id;
@@ -657,16 +672,16 @@ let construct_get_funs env =
         [ Some (`Id i) -> 
             try [ 
               let __v = $uid:rhashfn t$.find db.OS.cache.$lid:tridfn t$ i in
-              let $debug (getfn t) <:expr< "cache hit" >>$ in
+              let $debug env `Cache (getfn t) <:expr< "cache hit" >>$ in
               __v
             ]
             with [ 
               Not_found -> 
-                let $debug (getfn t) <:expr< "cache miss" >>$ in
+                let $debug env `Cache (getfn t) <:expr< "cache miss" >>$ in
                 lookup () 
             ]
         | None -> 
-           let $debug (getfn t) <:expr< "no id provided" >>$ in
+           let $debug env `Cache (getfn t) <:expr< "no id provided" >>$ in
            lookup ()
         ]
         >> in
@@ -785,27 +800,46 @@ let construct_delete env =
       [ <:patt< ~id >> ] in
    <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 
+let parse_keys =
+  List.fold_left (fun env -> function
+    |Unique fl -> { env with e_unique = fl :: env.e_unique }
+    |Name n -> prerr_endline "XXXXXXXXXXXX"; { env with e_name=n }
+    |Debug modes -> List.fold_left (fun env -> function
+      |"sql" -> { env with debug_sql=true } 
+      |"binds" -> { env with debug_binds=true }
+      |"cache" -> { env with debug_cache=true }
+      |"all" -> { env with debug_cache=true; debug_binds=true; debug_sql=true }
+      |_ -> failwith "unknown debug mode"
+      ) env modes
+    |Dot file -> { env with debug_dot=(Some file) }
+  ) (empty_env ()) 
+
+let debug_dot env =
+  match env.debug_dot with
+  |None -> ()
+  |Some fl ->
+    let fout = open_out fl in
+    Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
+    close_out fout
+
 (* Register the persist keyword with type-conv *)
 let () =
   add_generator_with_arg
     "persist"
-    sql_parms
+    orm_parms
     (fun tds args ->
-      prerr_endline "in add_generator_with_arg: persist";
       let _loc = Loc.ghost in
-      let env = process tds in
-      let fout = open_out "debug.dot" in
-      Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
-      close_out fout;
       match tds, args with
       |_, None ->
         Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_sql_orm: arg required")
-      |_, Some name ->
+      |_, Some pkeys ->
+        let env = process tds (parse_keys pkeys) in
+        debug_dot env;
+        List.iter (fun x -> prerr_endline (string_of_p_keys x)) pkeys;
         let _loc = Loc.ghost in
-       (* XXX default name is Orm until its parsed into environment *)
         <:str_item<
         module OS = Orm.Sql_access;
-        module Orm = struct
+        module $uid:String.capitalize env.e_name$ = struct
           $construct_typedefs env$;
           $construct_save_funs env$;
           $construct_get_funs env$;

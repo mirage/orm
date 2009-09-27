@@ -12,8 +12,9 @@ and x = {
   second: s;
   third: int;
 }
-with persist ()
-
+with persist (
+ debug:sql
+)
 
 let name = "foreign.db"
 let s1 = { foo="hello"; bar=100L; xyz='a' }
