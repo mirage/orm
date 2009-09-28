@@ -14,6 +14,7 @@ let suites = [
   List_simple.suite;
   List_foreign.suite;
   List_tuple.suite;
+  List_list.suite;
 ]
 
 let _ =
