@@ -13,6 +13,7 @@ let suites = [
   Foreign_tuple.suite;
   List_simple.suite;
   List_foreign.suite;
+  List_tuple.suite;
 ]
 
 let _ =
