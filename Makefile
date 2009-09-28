@@ -15,3 +15,4 @@ uninstall:
 clean:
 	@cd lib && $(MAKE) clean
 	@cd lib_test && $(MAKE) clean
+	@cd lib_test && $(MAKE) -f Makefile.debug clean

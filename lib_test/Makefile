@@ -12,7 +12,7 @@ export PACKS = unix sqlite3 oUnit
 RESULT= run_test
 TESTS=  simple tuple variant alltypes foreign recursive array_simple \
 	foreign_and_variant foreign_tuple list_foreign list_simple \
-	list_tuple list_list
+	list_tuple list_list nested_tuple nested_option
  
 SOURCES= test_utils.ml $(TESTS:%=%.ml) suite.ml
 
