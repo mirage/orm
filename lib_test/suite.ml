@@ -11,6 +11,8 @@ let suites = [
   Array_simple.suite;
   Foreign_and_variant.suite;
   Foreign_tuple.suite;
+  List_simple.suite;
+  List_foreign.suite;
 ]
 
 let _ =
