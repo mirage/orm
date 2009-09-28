@@ -10,6 +10,7 @@ let suites = [
   Recursive.suite;
   Array_simple.suite;
   Foreign_and_variant.suite;
+  Foreign_tuple.suite;
 ]
 
 let _ =
