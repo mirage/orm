@@ -10,7 +10,7 @@ and x = {
   x1: s option;
   x2: char
 }
-with persist ()
+with orm ()
 
 open Orm
 open Test_utils

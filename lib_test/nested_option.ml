@@ -6,7 +6,7 @@ type x = {
   foo: int option option;
   bar: string option option option
 } with
-persist()
+orm()
 
 open Orm
 open OUnit

@@ -4,7 +4,7 @@ type x = {
   foo: int option;
   bar: string option
 } with
-persist()
+orm()
 
 let _ = 
   let db = Orm.init "simple_option.db" in

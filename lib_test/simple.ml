@@ -7,7 +7,7 @@ type x = {
   foo: int;
   bar: string
 } with
-persist(
+orm(
  debug: all;
  dot: "simple.dot";
  modname: "My_simple"

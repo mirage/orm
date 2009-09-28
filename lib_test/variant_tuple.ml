@@ -10,7 +10,7 @@ x = {
   first : s;
   o: int list;
 }
-with persist()
+with orm()
 
 let _ = 
   let db = Orm.init "variant_tuple.db" in

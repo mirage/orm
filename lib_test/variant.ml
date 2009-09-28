@@ -11,7 +11,7 @@ x = {
   foo: s;
   bar: s;
 }
-with persist()
+with orm()
 
 open Printf
 open Orm

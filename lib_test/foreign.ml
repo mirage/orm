@@ -12,7 +12,7 @@ and x = {
   second: s;
   third: int;
 }
-with persist (
+with orm (
  debug:sql
 )
 

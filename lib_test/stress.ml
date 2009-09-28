@@ -1,4 +1,4 @@
-type t = { a : int; b : int } with persist ()
+type t = { a : int; b : int } with orm ()
 
 let time = Unix.gettimeofday
 let _ =

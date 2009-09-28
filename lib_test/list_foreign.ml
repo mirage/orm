@@ -10,7 +10,7 @@ and x = {
   one: s list;
 }
 with
-persist()
+orm()
 
 let t1 = {foo=1; bar="t1"}
 let t2 = {foo=2; bar="t2"}

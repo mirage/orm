@@ -6,7 +6,7 @@ type x = {
   foo: int32;
   bar: string * char
 }
-with persist()
+with orm()
 
 open Orm
 open OUnit

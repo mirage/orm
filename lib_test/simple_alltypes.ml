@@ -9,7 +9,7 @@ type v =
 and x = {
   foo: v option;
   bar: x list;
-} with persist()
+} with orm()
 
 let _ = 
   let db = Orm.init "simple_alltypes.db" in

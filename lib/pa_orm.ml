@@ -9,41 +9,6 @@ open Ast
 open Syntax
 open Pa_type_conv
 
-(* Extend grammar with options for SQL tables *)
-type p_keys =
-  | Unique of string list
-  | Debug of string list
-  | Dot of string
-  | Name of string
-
-let string_of_p_keys = function
-  | Unique sl ->  "unique: " ^ ( String.concat "," sl )
-  | Debug d -> "debug: " ^ (String.concat "," d)
-  | Dot f -> "dot: " ^ f
-  | Name n -> "name: " ^ n
-
-let orm_parms = Gram.Entry.mk "orm_parms"
-EXTEND Gram
-
-GLOBAL: orm_parms;
-
-orm_svars: [
-  [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
-  ];
-
-orm_param: [[ 
-     "unique"; ":" ; x = orm_svars -> Unique x 
-   | "debug";  ":" ; x = orm_svars -> Debug x 
-   | "dot";    ":" ; x = STRING -> Dot x 
-   | "modname";":" ; x = STRING -> Name x
-]];
-
-orm_parms: [
-  [ l = LIST0 [ orm_param ] SEP ";" -> l ]
-];
-
-END
-
 (* Begin implementation *)
 
 (* convenience function to wrap the TyDcl constructor since I cant
@@ -800,6 +765,42 @@ let construct_delete env =
       [ <:patt< ~id >> ] in
    <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 
+module Syntax = struct
+(* Extend grammar with options for SQL tables *)
+type p_keys =
+  | Unique of string list
+  | Debug of string list
+  | Dot of string
+  | Name of string
+
+let string_of_p_keys = function
+  | Unique sl ->  "unique: " ^ ( String.concat "," sl )
+  | Debug d -> "debug: " ^ (String.concat "," d)
+  | Dot f -> "dot: " ^ f
+  | Name n -> "name: " ^ n
+
+let orm_parms = Gram.Entry.mk "orm_parms"
+EXTEND Gram
+
+GLOBAL: orm_parms;
+
+orm_svars: [
+  [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
+  ];
+
+orm_param: [[ 
+     "unique"; ":" ; x = orm_svars -> Unique x 
+   | "debug";  ":" ; x = orm_svars -> Debug x 
+   | "dot";    ":" ; x = STRING -> Dot x 
+   | "modname";":" ; x = STRING -> Name x
+]];
+
+orm_parms: [
+  [ l = LIST0 [ orm_param ] SEP ";" -> l ]
+];
+
+END
+
 let parse_keys =
   List.fold_left (fun env -> function
     |Unique fl -> { env with e_unique = fl :: env.e_unique }
@@ -822,29 +823,27 @@ let debug_dot env =
     Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
     close_out fout
 
-(* Register the persist keyword with type-conv *)
-let () =
-  add_generator_with_arg
-    "persist"
+let _ = 
+  add_generator_with_arg "orm"
     orm_parms
     (fun tds args ->
       let _loc = Loc.ghost in
       match tds, args with
       |_, None ->
-        Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_sql_orm: arg required")
+        Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_orm: arg required")
       |_, Some pkeys ->
         let env = process tds (parse_keys pkeys) in
         debug_dot env;
-        List.iter (fun x -> prerr_endline (string_of_p_keys x)) pkeys;
         let _loc = Loc.ghost in
         <:str_item<
-        module OS = Orm.Sql_access;
-        module $uid:String.capitalize env.e_name$ = struct
-          $construct_typedefs env$;
-          $construct_save_funs env$;
-          $construct_get_funs env$;
-          $construct_init env$;
-  (*        $construct_delete env$; *)
-        end
+	        module OS = Orm.Sql_access;
+	        module $uid:String.capitalize env.e_name$ = struct
+	          $construct_typedefs env$;
+	          $construct_save_funs env$;
+	          $construct_get_funs env$;
+	          $construct_init env$;
+	  	(*        $construct_delete env$; *)
+	        end
         >>
       )
+end

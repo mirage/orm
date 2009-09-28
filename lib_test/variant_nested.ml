@@ -15,7 +15,7 @@ s = {
   bar: n;
   xyz: int;
 }
-with persist()
+with orm()
 
 let _ = 
   let db = Orm.init "variant_nested.db" in

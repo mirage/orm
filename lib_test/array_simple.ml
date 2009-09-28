@@ -5,7 +5,7 @@ type s = {
   foo: int array;
   bar: string
 } with
-persist()
+orm()
 
 open Printf
 open Orm

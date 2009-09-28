@@ -8,7 +8,7 @@ and x = {
   x1: s list;
   x2: char
 }
-with persist ()
+with orm ()
 
 open Printf
 let ps s = eprintf "[t1=%s t2=[%s]]\n" 

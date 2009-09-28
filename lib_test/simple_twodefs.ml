@@ -9,7 +9,7 @@ x = {
   foo2: char;
   foo3: int32
 }
-with persist()
+with orm()
 
 let _ = 
   let db = Orm.init "simple_twodefs.db" in

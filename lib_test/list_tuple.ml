@@ -6,7 +6,7 @@ type x = {
   foo: (int * char list) list;
   bar: string
 } with
-persist()
+orm()
 
 open Printf
 open Orm
