@@ -6,7 +6,6 @@ open Lexing
 open Camlp4
 open PreCast
 open Ast
-open Syntax
 open Pa_type_conv
 
 (* Begin implementation *)
