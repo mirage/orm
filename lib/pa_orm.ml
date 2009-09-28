@@ -11,52 +11,8 @@ open Pa_type_conv
 
 (* Begin implementation *)
 
-(* convenience function to wrap the TyDcl constructor since I cant
-   find an appropriate quotation to use for this *)
-let declare_type _loc name ty =
-  Ast.TyDcl (_loc, name, [], ty, [])
-
-(* defines the Ast.binding for a function of form:
-let fun_name ?(opt_arg1) ?(opt_arg2) ident1 ident2 = function_body ...
-*)
-let function_with_label_args _loc ~fun_name ~idents ~function_body ~return_type opt_args =
-   let opt_args = opt_args @ (List.map (fun x -> <:patt< $lid:x$ >>) idents) in
-   <:binding< $lid:fun_name$ = 
-      $List.fold_right (fun b a ->
-        <:expr<fun $b$ -> $a$ >>
-       ) opt_args <:expr< ( $function_body$ : $return_type$ ) >>
-      $ >>
-
-(* convert a list of bindings into an expr fragment:
-   let x = 1 in y = 2 in z = 3 in ()
-*)
-let biList_to_expr _loc bindings final =
-  List.fold_right (fun b a -> 
-    <:expr< let $b$ in $a$ >>
-  ) bindings final
-
-(* build something like 'f ?x1 ?x2 ?x3 ... xn' *)
-let apply _loc f label_args =
-  let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
-  let make_label x = Ast.ExOlb (_loc, x, Ast.ExNil _loc) in
-  let rec aux = function
-  | []   -> make f
-  | h::t -> Ast.ExApp (_loc, aux t , make_label h) in
-  aux (List.rev label_args)
-
-let access_array _loc a i =
-  let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
-  Ast.ExAre (_loc, make a, Ast.ExInt (_loc, string_of_int i))
-
-(* List.map with the integer position passed to the function *)
-let mapi fn =
-  let pos = ref 0 in
-  List.map (fun x ->
-    incr pos;
-    fn !pos x
-  ) 
-    
 open Sql_types
+open P4_utils
 
 (* declare the types used to pass SQL objects back and forth *)
 let construct_typedefs env =
@@ -766,84 +722,84 @@ let construct_delete env =
    <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 
 module Syntax = struct
-(* Extend grammar with options for SQL tables *)
-type p_keys =
-  | Unique of string list
-  | Debug of string list
-  | Dot of string
-  | Name of string
+	(* Extend grammar with options for SQL tables *)
+	type p_keys =
+	  | Unique of string list
+	  | Debug of string list
+	  | Dot of string
+	  | Name of string
 
-let string_of_p_keys = function
-  | Unique sl ->  "unique: " ^ ( String.concat "," sl )
-  | Debug d -> "debug: " ^ (String.concat "," d)
-  | Dot f -> "dot: " ^ f
-  | Name n -> "name: " ^ n
+	let string_of_p_keys = function
+	  | Unique sl ->  "unique: " ^ ( String.concat "," sl )
+	  | Debug d -> "debug: " ^ (String.concat "," d)
+	  | Dot f -> "dot: " ^ f
+	  | Name n -> "name: " ^ n
 
-let orm_parms = Gram.Entry.mk "orm_parms"
-EXTEND Gram
+	let orm_parms = Gram.Entry.mk "orm_parms"
+	EXTEND Gram
 
-GLOBAL: orm_parms;
+	GLOBAL: orm_parms;
 
-orm_svars: [
-  [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
-  ];
+	orm_svars: [
+	  [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
+	  ];
 
-orm_param: [[ 
-     "unique"; ":" ; x = orm_svars -> Unique x 
-   | "debug";  ":" ; x = orm_svars -> Debug x 
-   | "dot";    ":" ; x = STRING -> Dot x 
-   | "modname";":" ; x = STRING -> Name x
-]];
+	orm_param: [[ 
+	     "unique"; ":" ; x = orm_svars -> Unique x 
+	   | "debug";  ":" ; x = orm_svars -> Debug x 
+	   | "dot";    ":" ; x = STRING -> Dot x 
+	   | "modname";":" ; x = STRING -> Name x
+	]];
 
-orm_parms: [
-  [ l = LIST0 [ orm_param ] SEP ";" -> l ]
-];
+	orm_parms: [
+	  [ l = LIST0 [ orm_param ] SEP ";" -> l ]
+	];
 
-END
+	END
 
-let parse_keys =
-  List.fold_left (fun env -> function
-    |Unique fl -> { env with e_unique = fl :: env.e_unique }
-    |Name n -> { env with e_name=n }
-    |Debug modes -> List.fold_left (fun env -> function
-      |"sql" -> { env with debug_sql=true } 
-      |"binds" -> { env with debug_binds=true }
-      |"cache" -> { env with debug_cache=true }
-      |"all" -> { env with debug_cache=true; debug_binds=true; debug_sql=true }
-      |_ -> failwith "unknown debug mode"
-      ) env modes
-    |Dot file -> { env with debug_dot=(Some file) }
-  ) (empty_env ()) 
+	let parse_keys =
+	  List.fold_left (fun env -> function
+	    |Unique fl -> { env with e_unique = fl :: env.e_unique }
+	    |Name n -> { env with e_name=n }
+	    |Debug modes -> List.fold_left (fun env -> function
+	      |"sql" -> { env with debug_sql=true } 
+	      |"binds" -> { env with debug_binds=true }
+	      |"cache" -> { env with debug_cache=true }
+	      |"all" -> { env with debug_cache=true; debug_binds=true; debug_sql=true }
+	      |_ -> failwith "unknown debug mode"
+	      ) env modes
+	    |Dot file -> { env with debug_dot=(Some file) }
+	  ) (empty_env ()) 
 
-let debug_dot env =
-  match env.debug_dot with
-  |None -> ()
-  |Some fl ->
-    let fout = open_out fl in
-    Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
-    close_out fout
+	let debug_dot env =
+	  match env.debug_dot with
+	  |None -> ()
+	  |Some fl ->
+	    let fout = open_out fl in
+	    Printf.fprintf fout "%s" (Sql_types.dot_of_env env);
+	    close_out fout
 
-let _ = 
-  add_generator_with_arg "orm"
-    orm_parms
-    (fun tds args ->
-      let _loc = Loc.ghost in
-      match tds, args with
-      |_, None ->
-        Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_orm: arg required")
-      |_, Some pkeys ->
-        let env = process tds (parse_keys pkeys) in
-        debug_dot env;
-        let _loc = Loc.ghost in
-        <:str_item<
-	        module OS = Orm.Sql_access;
-	        module $uid:String.capitalize env.e_name$ = struct
-	          $construct_typedefs env$;
-	          $construct_save_funs env$;
-	          $construct_get_funs env$;
-	          $construct_init env$;
-	  	(*        $construct_delete env$; *)
-	        end
-        >>
-      )
+	let _ = 
+	  add_generator_with_arg "orm"
+	    orm_parms
+	    (fun tds args ->
+	      let _loc = Loc.ghost in
+	      match tds, args with
+	      |_, None ->
+	        Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_orm: arg required")
+	      |_, Some pkeys ->
+	        let env = process tds (parse_keys pkeys) in
+	        debug_dot env;
+	        let _loc = Loc.ghost in
+	        <:str_item<
+		        module OS = Orm.Sql_access;
+		        module $uid:String.capitalize env.e_name$ = struct
+		          $construct_typedefs env$;
+		          $construct_save_funs env$;
+		          $construct_get_funs env$;
+		          $construct_init env$;
+		  	(*        $construct_delete env$; *)
+		        end
+	        >>
+	      )
 end
