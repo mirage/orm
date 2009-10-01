@@ -663,10 +663,22 @@ module Init = struct
         in
         <:expr< OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$) >>
      ) (sql_tables env)) in
+
+    let cache_trigger_exs = Ast.exSem_of_list (
+      List.map (fun table ->
+         let sql_update_cache = sprintf
+            "CREATE TRIGGER IF NOT EXISTS %s_update_cache AFTER DELETE ON %s FOR EACH ROW BEGIN SELECT SYNC_ID_CACHE(OLD.id); END;"
+              table.t_name table.t_name in
+          <:expr<
+           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_update_cache$)
+          >>
+      ) (tables_no_list_item env)) in
+
     let trigger_exs = Ast.exSem_of_list (
       List.map (fun table ->
+        let fields = foreign_single_fields env table.t_name in
+
         let sql_cascade_delete =
-          let fields = foreign_single_fields env table.t_name in
           let sqls = List.map (fun f ->
             sprintf
               ("CREATE TRIGGER IF NOT EXISTS %s_cascade_delete AFTER DELETE ON %s FOR EACH ROW BEGIN DELETE FROM %s WHERE id = OLD.%s; END;")
@@ -675,7 +687,6 @@ module Init = struct
           String.concat " " sqls in
 
         let sql_prevent_delete =
-          let fields = foreign_single_fields env table.t_name in
           let sqls = List.map (fun f ->
             let foreign_table = get_foreign f in
             sprintf
@@ -690,7 +701,31 @@ module Init = struct
         }
         >>
     ) (sql_tables env)) in
-    <:expr< do { $create_exs$; $trigger_exs$ } >>
+    <:expr< do { $create_exs$; $trigger_exs$; $cache_trigger_exs$ } >>
+
+  (* construct custom trigger function to delete ids/values from the weak hash
+     after a delete has gone through *)
+  let delete_trigger_funs env = 
+    let _loc = Loc.ghost in
+    Ast.exSem_of_list (List.map (fun t ->
+      <:expr<
+        Sqlite3.create_fun1 db.OS.db "SYNC_ID_CACHE" 
+        (fun [
+           Sqlite3.Data.INT id -> 
+             try
+               let v = $rhashex "find" t$ id in
+               let $debug env `Cache "delete_cache" <:expr< "removing id: " ^ Int64.to_string id >>$ in
+               do {
+                 $whashex "remove" t$ v;
+                 $rhashex "remove" t$ id;
+                 Sqlite3.Data.NULL
+               }
+             with [ Not_found -> Sqlite3.Data.NULL ]
+          | _ -> assert False
+         ]
+        )
+      >>
+    ) (tables_no_list_item env))
  
   let construct env =
     let _loc = Loc.ghost in
@@ -698,6 +733,7 @@ module Init = struct
       value init db_name = 
         let db = OS.new_state (_cache_new ()) db_name in
         do {
+          $delete_trigger_funs env$;
           $init_db_funs env$; db
         };
     >>
