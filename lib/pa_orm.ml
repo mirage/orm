@@ -717,16 +717,16 @@ module Delete = struct
             let $debug env `Sql "delete" <:expr< __sql >>$ in
             OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db __sql) 
           with [
-            Not_found -> ()
+            Not_found -> raise Not_found
           ]
         >>
       in
       function_with_label_args _loc
         ~fun_name:(table.t_name^"_delete")
-        ~idents:["db"]
+        ~idents:["db"; "x"]
         ~function_body:body
         ~return_type:<:ctyp< unit >>
-        [ <:patt< x >> ] in
+        [] in
      <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 end
 
