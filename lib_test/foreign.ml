@@ -61,7 +61,6 @@ let suite = [
   "foreign_init" >:: test_init;
   "foreign_save" >:: test_save;
   "foreign_update" >:: test_update;
-  "foreign_update" >:: test_update;
   "foreign_get" >:: test_get;
   "foreign_save_get" >:: test_save_get;
 ]

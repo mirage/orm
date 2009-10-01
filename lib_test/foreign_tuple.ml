@@ -59,7 +59,6 @@ let suite = [
   "foreign_tuple_init" >:: test_init;
   "foreign_tuple_save" >:: test_save;
   "foreign_tuple_update" >:: test_update;
-  "foreign_tuple_update" >:: test_update;
   "foreign_tuple_get" >:: test_get;
   "foreign_tuple_save_get" >:: test_save_get;
 ]

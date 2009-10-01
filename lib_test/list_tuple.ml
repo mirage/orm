@@ -62,7 +62,6 @@ let suite = [
   "list_tuple_init" >:: test_init;
   "list_tuple_save" >:: test_save;
   "list_tuple_update" >:: test_update;
-  "list_tuple_update" >:: test_update;
   "list_tuple_get" >:: test_get;
   "list_tuple_save_get" >:: test_save_get;
 ]

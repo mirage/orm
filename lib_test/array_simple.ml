@@ -57,7 +57,6 @@ let suite = [
   "array_simple_init" >:: test_init;
   "array_simple_save" >:: test_save;
   "array_simple_update" >:: test_update;
-  "array_simple_update" >:: test_update;
   "array_simple_get" >:: test_get;
   "array_simple_save_get" >:: test_save_get;
 ]

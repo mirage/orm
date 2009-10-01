@@ -58,7 +58,6 @@ let suite = [
   "list_foreign_init" >:: test_init;
   "list_foreign_save" >:: test_save;
   "list_foreign_update" >:: test_update;
-  "list_foreign_update" >:: test_update;
   "list_foreign_get" >:: test_get;
   "list_foreign_save_get" >:: test_save_get;
 ]

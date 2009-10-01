@@ -60,7 +60,7 @@ let test_get () =
   "values match" @? (i.six = x.six)
 
 let test_save_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db init name in
   x_save db x;
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
@@ -72,7 +72,7 @@ let suite = [
   "alltypes_init" >:: test_init;
   "alltypes_save" >:: test_save;
   "alltypes_update" >:: test_update;
-  "alltypes_update" >:: test_update;
   "alltypes_get" >:: test_get;
+  "alltypes_save_get" >:: test_save_get;
 ]
 

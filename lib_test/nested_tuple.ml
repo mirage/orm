@@ -49,7 +49,6 @@ let suite = [
   "nested_tuple_init" >:: test_init;
   "nested_tuple_save" >:: test_save;
   "nested_tuple_update" >:: test_update;
-  "nested_tuple_update" >:: test_update;
   "nested_tuple_get" >:: test_get;
   "nested_tuple_save_get" >:: test_save_get;
 ]
