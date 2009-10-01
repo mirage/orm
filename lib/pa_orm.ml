@@ -704,7 +704,6 @@ module Init = struct
 end
 
 module Delete = struct
-  (* TODO: take objects instead of id *)
   let construct env =
     let _loc = Loc.ghost in
     let tables = tables_no_list_item env in
@@ -712,15 +711,22 @@ module Delete = struct
       let sql = sprintf "DELETE FROM %s WHERE id=" table.t_name in 
       let body =
         <:expr<
-          let sql = $str:sql$ ^ Int64.to_string id in
-          OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db sql) >>
+          try
+            let __id = $whashex "find" table$ x in
+            let __sql = $str:sql$ ^ Int64.to_string __id in
+            let $debug env `Sql "delete" <:expr< __sql >>$ in
+            OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db __sql) 
+          with [
+            Not_found -> ()
+          ]
+        >>
       in
       function_with_label_args _loc
         ~fun_name:(table.t_name^"_delete")
         ~idents:["db"]
         ~function_body:body
         ~return_type:<:ctyp< unit >>
-        [ <:patt< ~id >> ] in
+        [ <:patt< x >> ] in
      <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 end
 
