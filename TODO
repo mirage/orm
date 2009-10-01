@@ -1,6 +1,5 @@
 - create indexes
 - foreign keys (Frefs)
-- no delete
 - no fold
 - let type t work via type alias (clashes with Functor atm)
 - custom triggers

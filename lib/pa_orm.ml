@@ -16,7 +16,6 @@ module Typedefs = struct
   let construct env =
     let _loc = Loc.ghost in
 
-    let tables = exposed_tables env in
     let nlit = tables_no_list_item env in
 
     let id_decl =
@@ -644,7 +643,7 @@ end
 module Init = struct
   let init_db_funs env =
     let _loc = Loc.ghost in
-    let exs = Ast.exSem_of_list (
+    let create_exs = Ast.exSem_of_list (
       List.map (fun table ->
         (* open function to first access a sqlite3 db *)
         let sql_create =
@@ -662,7 +661,10 @@ module Init = struct
           sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
             table.t_name (String.concat ", " sql_fields) prim_key
         in
-
+        <:expr< OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$) >>
+     ) (sql_tables env)) in
+    let trigger_exs = Ast.exSem_of_list (
+      List.map (fun table ->
         let sql_cascade_delete =
           let fields = foreign_single_fields env table.t_name in
           let sqls = List.map (fun f ->
@@ -681,18 +683,14 @@ module Init = struct
               table.t_name f.f_name foreign_table table.t_name f.f_name)
               fields in
           String.concat " " sqls in
-     
         <:expr< 
         do{
-          OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$);
-  (*
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_cascade_delete$);
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_prevent_delete$);
-  *)
         }
         >>
     ) (sql_tables env)) in
-    <:expr< do { $exs$ } >>
+    <:expr< do { $create_exs$; $trigger_exs$ } >>
  
   let construct env =
     let _loc = Loc.ghost in
@@ -802,7 +800,7 @@ module Syntax = struct
               $Typedefs.construct env$;
               $Save.construct env$;
               $Get.construct env$;
-         (* $Delete.construct env$; *)
+              $Delete.construct env$;
               $Init.construct env$;
             end
           >>
