@@ -53,12 +53,28 @@ let test_save_get () =
   "structural values equal" @? ( t3 = i);
   "physical values equal" @? ( t3 == i)
 
+let test_delete () =
+  let db = open_db init name in
+  s_save db t1;
+  s_save db t2;
+  s_save db t3;
+  "3 in db" @? (List.length (s_get db) = 3);
+  s_delete db t2;
+  "2 in db" @? (List.length (s_get db) = 2);
+  (match s_get db with
+  [a3;a1] -> "equal" @? (a3=t3 && a1=t1)
+  |_ -> assert false);
+  s_delete db t1;
+  s_delete db t3;
+  "0 in db" @? (List.length (s_get db) = 0)
+
 let suite = [
   "array_simple_init" >:: test_init;
   "array_simple_save" >:: test_save;
   "array_simple_update" >:: test_update;
   "array_simple_get" >:: test_get;
   "array_simple_save_get" >:: test_save_get;
+  "array_simple_delete" >:: test_delete;
 ]
 
 
