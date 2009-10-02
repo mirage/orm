@@ -24,6 +24,10 @@ Blocker:
 
 - Interface file for Sql_access to hide internals.
 
+- Toplevel types which aren't records cause an error; if we
+  know what they are (e.g. type x = int * int) appropriate functions
+  should be generated for them as well.
+
 Interface changes:
 -----------------
 
