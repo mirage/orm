@@ -1,10 +1,70 @@
-- foreign keys (Frefs)
-- no fold
-- let type t work via type alias (clashes with Functor atm)
-- custom triggers
-- sig generator
-- ocamldoc
-- better error message with incorrect foreign type (currently failwith
+Known issues and TODO list before a 1.0 release. Until then, the 
+ORM is a work-in-progress and anything is subject to change dramatically!
+
+Blocker:
+-------
+
+- Delete is broken at the moment for recursive types; we need
+  something smarter than the existing TRIGGER functions to
+  null out options and remove the value from lists.
+
+- Type checking of ORM: enforce the recursion constrain of only going
+  via list/option types, check that foreign references to types are
+  already present, ensure that list/option types are mutable.
+
+- Record the OCaml types in an admin table in the db and version
+  check on attach.  Initially just a strict check is sufficient.
+
+- Add support for object signatures (only records work atm)
+
+- Wrap all the writes in Sql_access.tranaaction.
+
+- Interface file for Sql_access to hide internals.
+
+Interface changes:
+-----------------
+
+- Add a x_fold function to match the x_get function
+
+- Signature generator to hide all the messy internals and make the
+  db handle an abstract type.
+
+Optimization:
+------------
+
+- Since we enforce that recursion is only allowed through lists
+  and options now, the ORM should be able to do JOINs via a 
+  fixed-point function for everything except option/lists.
+
+- When updating a record, only update non-mutable fields instead
+  of all of them.
+
+- Bind sqlite3_profile to make that information available.
+
+- Weave in read/write barriers to facilitate a distributed version.
+
+- Permit in-memory SQL databases to be opened.
+
+Nice to have:
+------------
+
+- Support polymorphic variant types and reference types.
+
+- Add foreign key constraints for sanity checking in debug mode.
+  Not strictly needed, but an additional integrity check
+
+- "type t with orm" will currently fail due to implicit recursive
+  type decls being default in OCaml, and clashing with the Weaktbl
+  hashtable signature.  Need to rewrite the type t to be t_alias, but
+  this is tricky due to there being no type-checking info available
+  in the syntax extension.  For now, dont use "type t with orm()".
+
+- Be able to register custom triggers to OCaml functions when an 
+  object is modified.  Unsure if this should be exposed or just
+  used internally (e.g. by the delete function to sync the id cache)
+
+- Generate smart ocamldoc; not sure if this is possible with camlp4
+  extensions without a custom doc generator.
+
 - type v = One of int*int fails, unless it is written as (int * int)
-- type constrain the polymorphic search  methods, since they are a bit crazy atm
-- wrap transactions
+  for some rason.
