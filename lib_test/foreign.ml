@@ -13,7 +13,9 @@ and x = {
   third: int;
 }
 with orm (
- debug:sql
+ debug:sql;
+ unique: s<xyz>, s<bar>;
+ index: x<first,second>
 )
 
 let name = "foreign.db"

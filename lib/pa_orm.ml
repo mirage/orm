@@ -701,7 +701,15 @@ module Init = struct
         }
         >>
     ) (sql_tables env)) in
-    <:expr< do { $create_exs$; $trigger_exs$; $cache_trigger_exs$ } >>
+
+    let create_indices = Ast.exSem_of_list (List.map (fun (unique,t,fs) ->
+      let s = sprintf "CREATE %sINDEX IF NOT EXISTS idx_%s_%s ON %s (%s);"
+       (match unique with true -> "UNIQUE " |false -> "")
+       t (String.concat "_" fs) t (String.concat "," fs) in
+      <:expr< OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:s$) >>
+    ) env.e_indices) in
+
+    <:expr< do { $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>
 
   (* construct custom trigger function to delete ids/values from the weak hash
      after a delete has gone through *)
@@ -769,13 +777,14 @@ end
 module Syntax = struct
   (* Extend grammar with options for SQL tables *)
   type p_keys =
-    | Unique of string list
+    | Unique of (bool * string * string list) list (* unique, table, fields *)
     | Debug of string list
     | Dot of string
     | Name of string
 
   let string_of_p_keys = function
-    | Unique sl ->  "unique: " ^ ( String.concat "," sl )
+    | Unique sl ->  "unique: " ^ ( String.concat "," 
+       (List.map (fun (u,x,y) -> sprintf "%s(%s:%b)" x (String.concat "," y) u) sl ))
     | Debug d -> "debug: " ^ (String.concat "," d)
     | Dot f -> "dot: " ^ f
     | Name n -> "name: " ^ n
@@ -785,12 +794,15 @@ module Syntax = struct
 
   GLOBAL: orm_parms;
 
-  orm_svars: [
-    [ l = LIST0 [ `LIDENT(x) -> x ] SEP "," -> l ]
-    ];
+  orm_svars: [[ l = LIST1 [ `LIDENT(x) -> x ] SEP "," -> l ]];
+
+  orm_table: [[ x = LIDENT; "<"; y = orm_svars; ">" -> (x, y) ]];
+
+  orm_tables: [[ l = LIST1 [ orm_table ] SEP "," -> l ]];
 
   orm_param: [[ 
-       "unique"; ":" ; x = orm_svars -> Unique x 
+       "unique"; ":" ; x = orm_tables -> Unique (List.map (fun (x,y) -> (true,x,y)) x)
+     | "index"; ":" ; x = orm_tables -> Unique (List.map (fun (x,y) -> (false,x,y)) x)
      | "debug";  ":" ; x = orm_svars -> Debug x 
      | "dot";    ":" ; x = STRING -> Dot x 
      | "modname";":" ; x = STRING -> Name x
@@ -804,7 +816,7 @@ module Syntax = struct
 
   let parse_keys =
     List.fold_left (fun env -> function
-      |Unique fl -> { env with e_unique = fl :: env.e_unique }
+      |Unique fl -> { env with e_indices = fl @ env.e_indices }
       |Name n -> { env with e_name=n }
       |Debug modes -> List.fold_left (fun env -> function
         |"sql" -> { env with debug_sql=true } 

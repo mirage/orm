@@ -8,6 +8,7 @@ type x = {
   bar: string
 } with
 orm(
+ unique: x<foo,bar>, x<bar>;
  debug: all;
  dot: "simple.dot";
  modname: "My_simple"

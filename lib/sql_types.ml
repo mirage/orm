@@ -52,7 +52,7 @@ type field_info =
 and env = {
   e_tables: table list;
   e_types: (string * ctyp) list;
-  e_unique: string list list;
+  e_indices: (bool * string * string list) list;
   e_name: string;
   debug_sql: bool;
   debug_binds: bool;
@@ -134,7 +134,7 @@ let dot_of_env e =
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env () = { e_tables = []; e_types=[]; e_unique=[]; e_name="orm";
+let empty_env () = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm";
   debug_sql=false; debug_binds=false; debug_cache=false; debug_dot=None }
 
 let find_table env name =

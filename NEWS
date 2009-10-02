@@ -1,4 +1,5 @@
 0.3:
+* Add support for index (both lookup and unique) [2 Oct 2009]
 * Rewrite to a camlp4 (3.11+) code base and remove old extension [26 Sep 2009]
 
 0.2:

@@ -1,4 +1,3 @@
-- create indexes
 - foreign keys (Frefs)
 - no fold
 - let type t work via type alias (clashes with Functor atm)
