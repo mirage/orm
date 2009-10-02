@@ -16,4 +16,14 @@ TESTS=  simple tuple variant alltypes foreign recursive array_simple \
  
 SOURCES= test_utils.ml $(TESTS:%=%.ml) suite.ml
 
+pc_%:
+	$(MAKE) -f Makefile.debug $@
+
+p_%:
+	$(MAKE) -f Makefile.debug $@
+
+pi_%:
+	$(MAKE) -f Makefile.debug $@
+
+
 -include $(OCAMLMAKEFILE)
