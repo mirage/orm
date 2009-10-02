@@ -28,6 +28,9 @@ Blocker:
   know what they are (e.g. type x = int * int) appropriate functions
   should be generated for them as well.
 
+- A field name of "id" in a record will cause an error; type
+  checker should reject these or rewrite them into something different.
+
 Interface changes:
 -----------------
 
