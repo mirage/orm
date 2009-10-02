@@ -5,11 +5,11 @@ all:
 
 .PHONY: install
 install:
-	@cd lib && $(MAKE) $@
+	@cd lib && $(MAKE) libinstall
 
 .PHONY: uninstall
 uninstall:
-	@cd lib && $(MAKE) $@
+	@cd lib && $(MAKE) libuninstall
 
 .PHONY: clean
 clean:
