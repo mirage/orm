@@ -10,7 +10,7 @@ and x = {
   x1: s option;
   x2: char
 }
-with orm ()
+with orm ( debug: all; dot: "recursive.dot" )
 
 open Orm
 open Test_utils
@@ -54,12 +54,21 @@ let test_save_get () =
   let i = List.hd i in
   "physical values equal" @? ( vx == i)
 
+let test_delete () = 
+  let db = open_db init name in
+  x_save db vx;
+  "1 x in db" @? (List.length (x_get db) = 1);
+  "1 s in db" @? (List.length (s_get db) = 1);
+  x_delete db vx;
+  "0 x in db" @? (List.length (x_get db) = 0);
+  "1 s in db" @? (List.length (s_get db) = 1)
+
 let suite = [
   "recursive_init" >:: test_init;
   "recursive_save" >:: test_save;
   "recursive_update" >:: test_update;
-  "recursive_update" >:: test_update;
   "recursive_get" >:: test_get;
   "recursive_save_get" >:: test_save_get;
+  "recursive_delete" >:: test_delete;
 ]
 
