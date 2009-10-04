@@ -9,4 +9,4 @@ clean:
 	$(MAKE) -f Makefile.orm $@
 
 libinstall: all
-	ocamlfind install orm META orm.cmx orm.cmxa orm.a orm.cmi pa_orm.cma
+	ocamlfind install orm META orm.cma orm.cmx orm.cmxa orm.a orm.cmi pa_orm.cma
