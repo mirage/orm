@@ -661,7 +661,9 @@ module Init = struct
           sprintf "CREATE TABLE IF NOT EXISTS %s (%s%s)" 
             table.t_name (String.concat ", " sql_fields) prim_key
         in
-        <:expr< OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$) >>
+        <:expr<
+           let $debug env `Sql "init" <:expr< $str:sql_create$ >>$ in
+           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_create$) >>
      ) (sql_tables env)) in
 
     let cache_trigger_exs = Ast.exSem_of_list (
@@ -670,6 +672,7 @@ module Init = struct
             "CREATE TRIGGER IF NOT EXISTS %s_update_cache AFTER DELETE ON %s FOR EACH ROW BEGIN SELECT SYNC_ID_CACHE(OLD.id); END;"
               table.t_name table.t_name in
           <:expr<
+           let $debug env `Sql "init" <:expr< $str:sql_update_cache$ >>$ in
            OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_update_cache$)
           >>
       ) (tables_no_list_item env)) in
@@ -696,7 +699,9 @@ module Init = struct
           String.concat " " sqls in
         <:expr< 
         do{
+          let $debug env `Sql "init" <:expr< $str:sql_cascade_delete$ >>$ in
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_cascade_delete$);
+          let $debug env `Sql "init" <:expr< $str:sql_prevent_delete$ >>$ in
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:sql_prevent_delete$);
         }
         >>
@@ -706,7 +711,10 @@ module Init = struct
       let s = sprintf "CREATE %sINDEX IF NOT EXISTS idx_%s_%s ON %s (%s);"
        (match unique with true -> "UNIQUE " |false -> "")
        t (String.concat "_" fs) t (String.concat "," fs) in
-      <:expr< OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:s$) >>
+      <:expr< 
+          let $debug env `Sql "init" <:expr< $str:s$ >>$ in
+          OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:s$) 
+      >>
     ) env.e_indices) in
 
     <:expr< do { $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>

@@ -1,6 +1,6 @@
 0.4:
 
-*
+* More debugging in SQL mode for index/trigger creation [7 Oct 2009]
 
 0.3:
 * Add support for index (both lookup and unique) [2 Oct 2009]
