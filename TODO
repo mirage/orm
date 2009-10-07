@@ -58,6 +58,9 @@ Optimization:
 Nice to have:
 ------------
 
+- Warn on reserved keywords in types (id, from) which are not
+  valid SQL field names (or transform them to be safe).
+
 - Support polymorphic variant types and reference types.
 
 - Add foreign key constraints for sanity checking in debug mode.
