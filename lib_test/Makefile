@@ -7,7 +7,7 @@ run: dc
 export INCDIRS = ../lib
 export LIBDIRS = ../lib
 export LIBS = orm
-export PACKS = unix sqlite3 oUnit
+export PACKS = unix sqlite3 ounit
 
 RESULT= run_test
 TESTS=  simple tuple variant alltypes foreign recursive array_simple \

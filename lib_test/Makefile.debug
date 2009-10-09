@@ -1,6 +1,6 @@
 # Makefile to build and run the test files in a variety of ways
 
-BUILDINC := -I ../lib orm.cma
+BUILDINC := -I ../lib orm.cma test_utils.cmo
 P4INC := -I$(shell ocamlfind query type-conv) -I$(shell ocamlfind query sqlite3) -I ../lib
 
 TESTS := alltypes foreign_and_variant list_foreign list_simple nested_tuple simple_option \
@@ -9,7 +9,7 @@ TESTS := alltypes foreign_and_variant list_foreign list_simple nested_tuple simp
 	foreign foreign_tuple list_recursive nested_option simple variant_nested 
 #	delete
 
-PACKS= -package unix,sqlite3,oUnit
+PACKS= -package unix,sqlite3,ounit
 
 .PHONY: all
 all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
