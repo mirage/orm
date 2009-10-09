@@ -38,7 +38,8 @@ module Typedefs = struct
       <:str_item< 
         module $uid:whashfn t$ = Orm.Weaktbl.Make (
             struct 
-              type t = $ctyp_of_table t$;
+              type __t__ = $ctyp_of_table t$;
+              type t = __t__;
               value equal = ( == );
               value compare = ( == );
               value hash = Hashtbl.hash;
