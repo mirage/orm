@@ -66,12 +66,6 @@ Nice to have:
 - Add foreign key constraints for sanity checking in debug mode.
   Not strictly needed, but an additional integrity check
 
-- "type t with orm" will currently fail due to implicit recursive
-  type decls being default in OCaml, and clashing with the Weaktbl
-  hashtable signature.  Need to rewrite the type t to be t_alias, but
-  this is tricky due to there being no type-checking info available
-  in the syntax extension.  For now, dont use "type t with orm()".
-
 - Be able to register custom triggers to OCaml functions when an 
   object is modified.  Unsure if this should be exposed or just
   used internally (e.g. by the delete function to sync the id cache)
