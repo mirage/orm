@@ -2,19 +2,19 @@
 
 TYPE_CONV_PATH "Foreign"
 
-type s = {
+type t = {
   foo: string;
   bar: int64;
   xyz: char;
 }
 and x = {
-  first: s;
-  second: s;
+  first: t;
+  second: t;
   third: int;
 }
 with orm (
  debug:sql;
- unique: s<xyz>, s<bar>;
+ unique: t<xyz>, t<bar>;
  index: x<first,second>
 )
 

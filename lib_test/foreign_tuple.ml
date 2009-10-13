@@ -2,13 +2,13 @@
 
 TYPE_CONV_PATH "Foreign_tuple"
 
-type s = {
+type t = {
   foo: string;
   bar: int64;
 }
 and x = {
-  first: (string * int64 * s);
-  second: s;
+  first: (string * int64 * t);
+  second: t;
   third: int;
 }
 with orm ()
