@@ -75,3 +75,11 @@ Nice to have:
 
 - type v = One of int*int fails, unless it is written as (int * int)
   for some rason.
+
+- Given a type t that has been generated externally, create a
+  function that can look it up from the database and return the
+  DB version of that value. This would require a unique index to 
+  be declared to know how to query the DB, but its a very common
+  pattern in a AJAX webserver (JSON -> DB).  Also refer to 
+  Fieldslib to see if it can be extended to do this (possibly if
+  it has a mutable-only iterator rather than all fields).
