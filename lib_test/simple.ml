@@ -3,17 +3,26 @@
 TYPE_CONV_PATH "Simple"
 open Printf
 
-type x = {
-  foo: int;
-  bar: string
-} with
-orm(
- unique: x<foo,bar>, x<bar>;
- debug: all;
- dot: "simple.dot";
- modname: "My_simple"
-)
+module A = struct
+  type x = {
+    foo: int;
+    bar: string
+  } with
+  orm(
+    unique: x<foo,bar>, x<bar>;
+    debug: all;
+    dot: "simple.dot";
+    modname: "My_simple"
+  )
+end
 
+module B = struct
+  type x = {
+    foo: int64;
+  } with orm (debug: all; modname: "My_simple")
+end
+
+open A
 open My_simple
 open OUnit
 open Test_utils
@@ -35,6 +44,13 @@ let test_update () =
   let db = open_db init name in
   x_save db x;
   x_save db x
+
+let test_subtype () =
+  let db = open_db ~rm:false B.My_simple.init name in
+  let i = B.My_simple.x_get db in
+  "2 in db" @? (List.length i = 1);
+  let i = List.hd i in
+  "values match" @? (i.B.foo = Int64.of_int x.foo)
 
 let test_get () =
   let db = open_db ~rm:false init name in
@@ -74,6 +90,7 @@ let suite = [
   "simple_save" >:: test_save;
   "simple_update" >:: test_update;
   "simple_get" >:: test_get;
+  "simple_subtype" >:: test_subtype;
   "simple_save_get" >:: test_save_get;
   "simple_delete" >:: test_delete;
 ]
