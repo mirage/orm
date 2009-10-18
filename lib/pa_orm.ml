@@ -642,8 +642,57 @@ end
 
 (* --- Initialization functions to create tables and open the db handle *)
 module Init = struct
+  let gen_types_funs _loc env =
+    let bindings =
+      List.map
+        (fun table -> Ml_types.create_fun _loc table.t_name table.t_ctyp)
+        (sql_tables env) in
+    biAnd_of_list bindings
+
   let init_db_funs env =
     let _loc = Loc.ghost in
+    let init_type_table =
+      let type_name_fn t = Ml_types.make_name t.t_name in
+      let type_name t = t.t_name ^ "_type" in
+      let create = "CREATE TABLE IF NOT EXISTS __types__ (n TEXT, t TEXT)" in
+      let select = "SELECT t FROM __types__ WHERE n=?" in
+      let insert = "INSERT INTO __types__ (n,t) VALUES (?,?)" in
+      <:expr<
+        let $debug env `Sql "init" <:expr< $str:create$ >>$ in
+        do {
+          OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:create$);
+          $biList_to_expr _loc
+            (List.map (fun table -> <:binding< $lid:type_name table$ = do { $lid:type_name_fn table$ $str:table.t_name$ } >>) (sql_tables env))
+            <:expr< do {
+              $exSem_of_list (List.map (fun table ->
+                <:expr<
+                  let $debug env `Sql "init" <:expr< $str:select$ >>$ in
+                  let stmt = Sqlite3.prepare db.OS.db $str:select$ in
+                  do {
+                    OS.db_must_bind db stmt 1 (Sqlite3.Data.TEXT $str:table.t_name$);
+                    let results = OS.step_fold db stmt
+                      (fun stmt -> OT.of_string
+                        (match Sqlite3.column stmt 0 with [ Sqlite3.Data.TEXT x -> x | _ -> failwith "bad type" ])) in
+                    if results = [] then (
+                      let $debug env `Sql "init" <:expr< $str:insert$ >>$ in
+                      let stmt = Sqlite3.prepare db.OS.db $str:insert$ in
+                      do {
+                        OS.db_must_bind db stmt 1 (Sqlite3.Data.TEXT $str:table.t_name$);
+                        OS.db_must_bind db stmt 2 (Sqlite3.Data.TEXT (OT.to_string $lid:type_name table$));
+                        OS.db_must_step db stmt
+                      }
+                    ) else
+                      List.iter
+                        (fun table_type ->
+                          if OT.is_subtype_of $lid:type_name table$ table_type then ()
+                          else raise ( OT.Subtype_error (OT.to_string $lid:type_name table$, OT.to_string table_type)) )
+                        results
+                  }
+                >>) (sql_tables env))$ }
+            >>$
+        }
+      >> in
+
     let create_exs = Ast.exSem_of_list (
       List.map (fun table ->
         (* open function to first access a sqlite3 db *)
@@ -718,7 +767,7 @@ module Init = struct
       >>
     ) env.e_indices) in
 
-    <:expr< do { $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>
+    <:expr< do { $init_type_table$; $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>
 
   (* construct custom trigger function to delete ids/values from the weak hash
      after a delete has gone through *)
@@ -747,6 +796,7 @@ module Init = struct
   let construct env =
     let _loc = Loc.ghost in
     <:str_item<
+      value rec $gen_types_funs _loc env$;
       value init db_name = 
         let db = OS.new_state (_cache_new ()) db_name in
         do {
@@ -858,8 +908,9 @@ module Syntax = struct
           debug_dot env;
           let _loc = Loc.ghost in
           <:str_item<
-            module OS = Orm.Sql_access;
             module $uid:String.capitalize env.e_name$ = struct
+              module OS = Orm.Sql_access;
+              module OT = Orm.Types;
               $Typedefs.construct env$;
               $Save.construct env$;
               $Get.construct env$;

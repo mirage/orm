@@ -20,10 +20,7 @@ open Printf
 open Camlp4
 open PreCast
 open Ast
-
-module PP = Camlp4.Printers.OCaml.Make(Syntax)
-let pp = new PP.printer ()
-let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
+open P4_utils
 
 (* --- Type definitions *)
 

@@ -1,7 +1,7 @@
 OCAMLMAKEFILE = ../OCamlMakefile
 ANNOTATE = yes
 
-SOURCES = p4_utils.ml sql_types.ml pa_orm.ml
+SOURCES = p4_utils.ml sql_types.ml ml_types.ml pa_orm.ml
 PACKS = type-conv
 RESULT = pa_orm
 USE_CAMLP4 = yes
