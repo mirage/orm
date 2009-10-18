@@ -12,9 +12,6 @@ Blocker:
   via list/option types, check that foreign references to types are
   already present, ensure that list/option types are mutable.
 
-- Record the OCaml types in an admin table in the db and version
-  check on attach.  Initially just a strict check is sufficient.
-
 - Add support for object signatures (only records work atm)
 
 - Wrap all the writes in Sql_access.tranaaction.  Need to think
