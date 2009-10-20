@@ -28,15 +28,17 @@ let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
 
 (* convenience function to wrap the TyDcl constructor since I cant
    find an appropriate quotation to use for this *)
-let declare_type _loc name ty =
+let declare_type name ty =
+  let _loc = loc_of_ctyp ty in
   Ast.TyDcl (_loc, name, [], ty, [])
 
 (* defines the Ast.binding for a function of form:
 let fun_name ?(opt_arg1) ?(opt_arg2) ident1 ident2 = function_body ...
 *)
-let function_with_label_args _loc ~fun_name ~idents ~function_body ~return_type opt_args =
-   let opt_args = opt_args @ (List.map (fun x -> <:patt< $lid:x$ >>) idents) in
-   <:binding< $lid:fun_name$ = 
+let function_with_label_args ~fun_name ~idents ~function_body ~return_type opt_args =
+  let _loc = loc_of_expr function_body in
+  let opt_args = opt_args @ (List.map (fun x -> <:patt< $lid:x$ >>) idents) in
+    <:binding< $lid:fun_name$ = 
       $List.fold_right (fun b a ->
         <:expr<fun $b$ -> $a$ >>
        ) opt_args <:expr< ( $function_body$ : $return_type$ ) >>
@@ -45,7 +47,8 @@ let function_with_label_args _loc ~fun_name ~idents ~function_body ~return_type 
 (* convert a list of bindings into an expr fragment:
    let x = 1 in y = 2 in z = 3 in ()
 *)
-let biList_to_expr _loc bindings final =
+let biList_to_expr bindings final =
+  let _loc = loc_of_expr final in
   List.fold_right (fun b a -> 
     <:expr< let $b$ in $a$ >>
   ) bindings final

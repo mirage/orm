@@ -24,7 +24,8 @@ open P4_utils
 let make_name t =
   "type_of_"^t
 
-let create_fun _loc name ctyp =
+let create_fun name ctyp =
+  let _loc = loc_of_ctyp ctyp in
   let rec aux = function
     | <:ctyp< unit >> -> <:expr< `Unit >>
     | <:ctyp< int >> -> <:expr< `Int >>

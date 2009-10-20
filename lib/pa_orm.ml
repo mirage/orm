@@ -14,20 +14,22 @@ open P4_utils
 module Typedefs = struct
   (* declare the types used to pass SQL objects back and forth *)
   let construct env =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
 
     let nlit = tables_no_list_item env in
 
     let id_decl =
-      let ids = List.flatten (List.map (fun t -> [
+      let ids = List.flatten (List.map (fun t ->
+        let _loc = loc_of_ctyp t.t_ctyp in [
         <:ctyp< $lid:tidfn t$ : $uid:whashfn t$.t int64 >> ;
         <:ctyp< $lid:tridfn t$ : $uid:rhashfn t$.t $ctyp_of_table t$ >> 
       ]) nlit) in
-     declare_type _loc "_cache" <:ctyp< { $tySem_of_list ids$ } >>
+     declare_type "_cache" <:ctyp< { $tySem_of_list ids$ } >>
     in
 
     let id_new = 
-      let ids = List.flatten (List.map (fun t -> [
+      let ids = List.flatten (List.map (fun t ->
+        let _loc = loc_of_ctyp t.t_ctyp in [
         <:rec_binding< $lid:tidfn t$ = $uid:whashfn t$.create 7 >> ;
         <:rec_binding< $lid:tridfn t$ = $uid:rhashfn t$.create 7 >>;
        ]) nlit) in
@@ -35,6 +37,7 @@ module Typedefs = struct
     in
 
     let wh_decls = List.map (fun t ->
+      let _loc = loc_of_ctyp t.t_ctyp in
       <:str_item< 
         module $uid:whashfn t$ = Orm.Weaktbl.Make (
             struct 
@@ -61,7 +64,7 @@ module Typedefs = struct
       ) nlit)
       in
       let sum_type = <:ctyp< [ $sum_type_of_list sum_type$ ] >> in
-      declare_type _loc "cache_elt" sum_type in
+      declare_type "cache_elt" sum_type in
 
     stSem_of_list [ 
       <:str_item< $list:wh_decls$ >>;
@@ -75,7 +78,7 @@ end
 module Save = struct
   (* bind a variable to the contents of the current thing being saved *)
   let field_var_binds env t =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp t.t_ctyp in
     let snif = sql_fields_no_autoid env t.t_name in
     let bs = match t.t_type with
       | Exposed -> 
@@ -109,8 +112,8 @@ module Save = struct
     in biAnd_of_list bs
 
   (* get an expression which can resolve an id and lookup cache correctly *)
-  let id_for_field_expr ~null_foreigns env f = 
-    let _loc = Loc.ghost in
+  let id_for_field_expr ~null_foreigns env f =
+    let _loc = loc_of_ctyp f.f_ctyp in
     let ft = get_foreign_table env f in
     match ft.t_type with
       |List_items  -> failwith "list item encountered"
@@ -132,7 +135,7 @@ module Save = struct
       >>   
 
   let sql_binding ?(null_options=true) ~null_foreigns pos env t f =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp f.f_ctyp in
     let idex = if is_foreign f then
       <:binding< $lid:"_"^f.f_name^"_id"$ = $id_for_field_expr ~null_foreigns env f$ >>
     else
@@ -140,7 +143,7 @@ module Save = struct
     in
     let v = match t.t_type with 
     |Exposed ->
-      let ex () = <:expr< let $idex$ in $field_to_sql_data _loc f$ >> in
+      let ex () = <:expr< let $idex$ in $field_to_sql_data f$ >> in
       if is_foreign f && null_options then begin
          let ft = get_foreign_table env f in
          match ft.t_type with
@@ -150,30 +153,30 @@ module Save = struct
     |Variant _ -> begin
       match f.f_info with
       |Internal_field -> (* this is the index *)
-        field_to_sql_data _loc f
+        field_to_sql_data f
       |_ -> <:expr<
          match $lid:t.t_name$ with [
            $uid:String.capitalize f.f_name$ $lid:"_"^f.f_name$ -> 
              let $idex$ in
-             $field_to_sql_data _loc f$
+             $field_to_sql_data f$
            | _ -> Sqlite3.Data.NULL
          ] >>
     end
     |Optional -> begin
       match f.f_info with
       |Internal_field -> (* this is the isset *)
-        <:expr< $field_to_sql_data _loc f$ >>
+        <:expr< $field_to_sql_data f$ >>
       |_ -> <:expr<
         match $lid:"_"^f.f_name$ with [
           None -> Sqlite3.Data.NULL
          |Some $lid:"_"^f.f_name$ ->
             let $idex$ in 
-             $field_to_sql_data _loc f$
+             $field_to_sql_data f$
         ] 
       >>
     end
     |_ -> 
-      <:expr< let $idex$ in $field_to_sql_data _loc f$ >>
+      <:expr< let $idex$ in $field_to_sql_data f$ >>
     in
     <:expr< 
       let __v = $v$ in
@@ -184,7 +187,8 @@ module Save = struct
  
 
   let save_expr ?(null_options=true) ?(null_foreigns=false) env t =
-      let _loc = Loc.ghost in
+      let _loc = loc_of_ctyp t.t_ctyp in
+
        (* the INSERT statement for this object *)
       let insert_sql = sprintf "INSERT INTO %s VALUES(%s);" t.t_name
         (String.concat "," (List.map (fun f -> 
@@ -255,8 +259,8 @@ module Save = struct
          $sql_stmts$
       >>
 
-  let construct env = 
-    let _loc = Loc.ghost in
+  let construct env =
+    let _loc = loc_of_ctyp env.e_ctyp in
     let binds = biAnd_of_list (List.flatten (List.map (fun t ->
       let save_after_cache_check =
         if is_recursive_table env t then
@@ -302,7 +306,7 @@ module Save = struct
                <:binding<  >>
              in
              incr sql_bind_pos;
-             let v = field_to_sql_data _loc f in
+             let v = field_to_sql_data f in
              <:expr< 
                let $idex$ in
                OS.db_must_bind db stmt $`int:!sql_bind_pos$ $v$ 
@@ -389,7 +393,7 @@ module Get = struct
   
   (* construct the concrete value to return *)
   let of_stmt env t =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp t.t_ctyp in
     let ef = exposed_fields_no_autoid env t.t_name in
     match t.t_type with
     |List ->
@@ -419,7 +423,7 @@ module Get = struct
             let $lid:"__"^lif.f_name$ = Sqlite3.column stmt 2 in
             do {
               _id.val := Sqlite3.column stmt 0;
-              $sql_data_to_field ~null_foreigns:false _loc env lif$
+              $sql_data_to_field ~null_foreigns:false env lif$
             }
           ) in
           match l with [
@@ -438,7 +442,7 @@ module Get = struct
       let rb = mapi (fun pos f ->
         <:rec_binding< 
           $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-              $sql_data_to_field ~null_foreigns:true _loc env f$
+              $sql_data_to_field ~null_foreigns:true env f$
         >>
       ) ef in
       <:expr< { $rbSem_of_list rb$ } >>
@@ -451,14 +455,14 @@ module Get = struct
             Sqlite3.Data.INT 0L -> None
           | Sqlite3.Data.INT 1L -> Some (
             let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
-            $sql_data_to_field ~null_foreigns:false _loc env f$)
+            $sql_data_to_field ~null_foreigns:false env f$)
           | _ -> assert False ]
       >>
     |Tuple ->
       let tp = mapi (fun pos f ->
           <:expr<
             let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos-1$ in
-            $sql_data_to_field ~null_foreigns:false _loc env f$ >>
+            $sql_data_to_field ~null_foreigns:false env f$ >>
           ) ef in
         <:expr< ( $tup:exCom_of_list (List.rev tp)$ ) >>
     |Variant vi ->
@@ -470,7 +474,7 @@ module Get = struct
             let f = List.nth t.t_fields idx in
             <:expr< $uid:vuid$ 
               (let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:idx$ in
-                    $sql_data_to_field ~null_foreigns:false _loc env f$)
+                    $sql_data_to_field ~null_foreigns:false env f$)
             >>
           end else
             <:expr< $uid:vuid$ >> in
@@ -484,7 +488,7 @@ module Get = struct
     |List_items -> assert false
 
   let of_stmt_final env t =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
     with_table (fun env t -> 
       match list_or_option_fields env t.t_name, t.t_type with
       |[],_ -> <:expr< __v >> (* no list/option fields so no rewriting necessary *)
@@ -493,7 +497,7 @@ module Get = struct
           let pos = listi (fun f' -> f'.f_name = f.f_name) t.t_fields  in
           <:rec_binding< 
             $lid:f.f_name$ = let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:pos$ in
-                $sql_data_to_field ~null_foreigns:false _loc env f$
+                $sql_data_to_field ~null_foreigns:false env f$
           >>
          ) lof) in
         let v' = if List.length lof = (List.length (exposed_fields_no_autoid env t.t_name)) then
@@ -512,7 +516,7 @@ module Get = struct
     ) env t
  
   let construct env =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
     let tables = tables_no_list_item env in
     let bs = biAnd_of_list (List.flatten (List.map (fun t ->
       let fields = exposed_fields env t.t_name in
@@ -528,7 +532,7 @@ module Get = struct
           let where_of_field f =
             <:binding< __accu = match $lid:f.f_name$ with [
                 None                -> __accu
-              | Some $lid:f.f_name$ -> [ $ocaml_variant_to_sql_request _loc f$ :: __accu ] ]
+              | Some $lid:f.f_name$ -> [ $ocaml_variant_to_sql_request f$ :: __accu ] ]
             >> in
           let where_of_custom =
             <:binding< __accu = match fn with [
@@ -539,7 +543,7 @@ module Get = struct
             where_0 ::
               (List.map (fun f -> where_of_field f) fields)
             @ [ where_of_custom ] in
-          biList_to_expr _loc bindings
+          biList_to_expr bindings
             <:expr<
               let where_clause = String.concat " AND " __accu in
               $str:"SELECT "^select_clause^" FROM "^t.t_name$ ^
@@ -552,7 +556,7 @@ module Get = struct
             <:expr< match $lid:f.f_name$ with [
                None -> ()
              | Some $lid:f.f_name$ -> 
-                $ocaml_variant_to_sql_binds _loc env f$ ]
+                $ocaml_variant_to_sql_binds env f$ ]
             >> in
           exSem_of_list (List.map bind_of_field fields)
         in
@@ -623,13 +627,13 @@ module Get = struct
           <:patt< ? $lid:f.f_name$ >>
         ) (exposed_fields env t.t_name) in
       let return_type = <:ctyp< list $ctyp_of_table t$ >> in
-      let int_get_binding = function_with_label_args _loc
+      let int_get_binding = function_with_label_args
         ~fun_name:get_fun_name
         ~idents:["db"]
         ~function_body:get_body
         ~return_type
         get_argument in
-      let ext_get_binding = function_with_label_args _loc
+      let ext_get_binding = function_with_label_args
        ~fun_name:ext_get_fun_name
        ~idents:["db"]
        ~function_body:ext_get_body
@@ -642,15 +646,16 @@ end
 
 (* --- Initialization functions to create tables and open the db handle *)
 module Init = struct
-  let gen_types_funs _loc env =
+  let gen_types_funs env =
+    let _loc = loc_of_ctyp env.e_ctyp in
     let bindings =
       List.map
-        (fun table -> Ml_types.create_fun _loc table.t_name table.t_ctyp)
+        (fun table -> Ml_types.create_fun table.t_name table.t_ctyp)
         (sql_tables env) in
     biAnd_of_list bindings
 
   let init_db_funs env =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
     let init_type_table =
       let type_name_fn t = Ml_types.make_name t.t_name in
       let type_name t = t.t_name ^ "_type" in
@@ -661,7 +666,7 @@ module Init = struct
         let $debug env `Sql "init" <:expr< $str:create$ >>$ in
         do {
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:create$);
-          $biList_to_expr _loc
+          $biList_to_expr
             (List.map (fun table -> <:binding< $lid:type_name table$ = do { $lid:type_name_fn table$ $str:table.t_name$ } >>) (sql_tables env))
             <:expr< do {
               $exSem_of_list (List.map (fun table ->
@@ -771,9 +776,9 @@ module Init = struct
 
   (* construct custom trigger function to delete ids/values from the weak hash
      after a delete has gone through *)
-  let delete_trigger_funs env = 
-    let _loc = Loc.ghost in
+  let delete_trigger_funs env =
     Ast.exSem_of_list (List.map (fun t ->
+      let _loc = loc_of_ctyp t.t_ctyp in
       <:expr<
         Sqlite3.create_fun1 db.OS.db "SYNC_ID_CACHE" 
         (fun [
@@ -794,9 +799,9 @@ module Init = struct
     ) (tables_no_list_item env))
  
   let construct env =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
     <:str_item<
-      value rec $gen_types_funs _loc env$;
+      value rec $gen_types_funs env$;
       value init db_name = 
         let db = OS.new_state (_cache_new ()) db_name in
         do {
@@ -808,9 +813,10 @@ end
 
 module Delete = struct
   let construct env =
-    let _loc = Loc.ghost in
+    let _loc = loc_of_ctyp env.e_ctyp in
     let tables = tables_no_list_item env in
     let fn table =
+      let _loc = loc_of_ctyp table.t_ctyp in
       let sql = sprintf "DELETE FROM %s WHERE id=" table.t_name in 
       let body =
         <:expr<
@@ -824,7 +830,7 @@ module Delete = struct
           ]
         >>
       in
-      function_with_label_args _loc
+      function_with_label_args
         ~fun_name:(table.t_name^"_delete")
         ~idents:["db"; "x"]
         ~function_body:body
@@ -873,7 +879,7 @@ module Syntax = struct
 
   END
 
-  let parse_keys =
+  let parse_keys ctyp =
     List.fold_left (fun env -> function
       |Unique fl -> { env with e_indices = fl @ env.e_indices }
       |Name n -> { env with e_name=n }
@@ -885,7 +891,7 @@ module Syntax = struct
         |_ -> failwith "unknown debug mode"
         ) env modes
       |Dot file -> { env with debug_dot=(Some file) }
-    ) (empty_env ()) 
+    ) (empty_env ctyp) 
 
   let debug_dot env =
     match env.debug_dot with
@@ -899,14 +905,13 @@ module Syntax = struct
     add_generator_with_arg "orm"
       orm_parms
       (fun tds args ->
-        let _loc = Loc.ghost in
+        let _loc = loc_of_ctyp tds in
         match tds, args with
         |_, None ->
-          Loc.raise (Ast.loc_of_ctyp tds) (Stream.Error "pa_orm: arg required")
+          Loc.raise _loc (Stream.Error "pa_orm: arg required")
         |_, Some pkeys ->
-          let env = process tds (parse_keys pkeys) in
+          let env = process tds (parse_keys tds pkeys) in
           debug_dot env;
-          let _loc = Loc.ghost in
           <:str_item<
             module $uid:String.capitalize env.e_name$ = struct
               module OS = Orm.Sql_access;

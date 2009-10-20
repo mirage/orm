@@ -55,6 +55,7 @@ and env = {
   debug_binds: bool;
   debug_cache: bool;
   debug_dot: string option;
+  e_ctyp: ctyp;
 }
 and table = {
   t_name: string;
@@ -131,8 +132,8 @@ let dot_of_env e =
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env () = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm";
-  debug_sql=false; debug_binds=false; debug_cache=false; debug_dot=None }
+let empty_env ctyp = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm";
+  debug_sql=false; debug_binds=false; debug_cache=false; debug_dot=None; e_ctyp=ctyp }
 
 let find_table env name =
   try
@@ -172,8 +173,8 @@ let with_table fn env t =
 exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~ctyp ~info env t field_name field_type =
+  let _loc = loc_of_ctyp ctyp in
   if field_name = "" then failwith ("empty field name for " ^ t);
-  let _loc = Loc.ghost in
   match find_table env t with
   |Some table -> begin
     let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info; f_table=t } in
@@ -343,7 +344,7 @@ let list_item_field =
   )
 
 let ctyp_of_table t =
-  let _loc = Loc.ghost in
+  let _loc = loc_of_ctyp t.t_ctyp in
   match t.t_type with
   |Exposed |Variant _ -> <:ctyp< $lid:t.t_name$ >>
   |_ -> t.t_ctyp
@@ -376,7 +377,7 @@ let is_recursive_table env t =
   with Is_recursive -> true
     
 let field_accessor f =
-  let _loc = Loc.ghost in
+  let _loc = loc_of_ctyp f.f_ctyp in
   <:expr< $lid:"_"^f.f_name$ >>
 
 (* --- Name functions *)
@@ -399,20 +400,21 @@ let tparentidfn t = match t.t_parent with
   |Some p -> "_"^p^"_id"
 
 let whashex fn t =
-  let _loc = Loc.ghost in
+  let _loc = loc_of_ctyp t.t_ctyp in
   <:expr< $uid:whashfn t$.$lid:fn$ db.OS.cache.$lid:tidfn t$ >>
 let rhashex fn t =
-  let _loc = Loc.ghost in
+  let _loc = loc_of_ctyp t.t_ctyp in
   <:expr< $uid:rhashfn t$.$lid:fn$ db.OS.cache.$lid:tridfn t$ >>
 
 (* --- Process functions to convert OCaml types into SQL *)
 
 let rec process tds env =
-  let _loc = Loc.ghost in
-  let env = process_type_declarations _loc tds env in
+  let _loc = loc_of_ctyp tds in
+  let env = process_type_declarations tds env in
   check_foreign_refs env
 
-and process_type_declarations _loc ctyp env =
+and process_type_declarations ctyp env =
+  let _loc = loc_of_ctyp ctyp in
   let rec fn ty env =
     match ty with
     |Ast.TyAnd (_loc, tyl, tyr) ->
@@ -420,11 +422,12 @@ and process_type_declarations _loc ctyp env =
        fn tyl (fn tyr env)
     |Ast.TyDcl (_loc, id, _, ty, []) ->
        (* we ignore type variables for the moment *)
-       process_toplevel_type _loc id ty env
+       process_toplevel_type id ty env
     |_ -> failwith "process_type_declarations: unexpected type"
    in fn ctyp env
 
-and process_toplevel_type _loc n ctyp env =
+and process_toplevel_type n ctyp env =
+  let _loc = loc_of_ctyp ctyp in
   match ctyp with
   | <:ctyp@loc< < $fs$ > >>
   | <:ctyp@loc< { $fs$ } >> ->
@@ -434,7 +437,7 @@ and process_toplevel_type _loc n ctyp env =
     let rec fn env = function
     | <:ctyp< $t1$; $t2$ >> -> fn (fn env t1) t2
     | <:ctyp< $lid:id$ : mutable $t$ >>
-    | <:ctyp< $lid:id$ : $t$ >> ->  process_type _loc n id t env
+    | <:ctyp< $lid:id$ : $t$ >> ->  process_type n id t env
     | _ -> failwith "process_toplevel_type: unexpected ast"
     in fn env fs
   | <:ctyp< [< $row_fields$ ] >> 
@@ -453,7 +456,7 @@ and process_toplevel_type _loc n ctyp env =
     | <:ctyp< $uid:id$ of $t$ >> ->
        register_id id true;
        let id = String.uncapitalize id in
-       process_type _loc n id t env
+       process_type n id t env
     | <:ctyp< $uid:id$ >> ->
        register_id id false;
        env
@@ -461,7 +464,8 @@ and process_toplevel_type _loc n ctyp env =
     in fn env row_fields
   | _ -> failwith "process_toplevel_type: unknown type"
 
-and process_type _loc t n ctyp env =
+and process_type t n ctyp env =
+  let _loc = loc_of_ctyp ctyp in
   let info = External_and_internal_field in
   match ctyp with
   | <:ctyp@loc< unit >> -> add_field ~ctyp ~info env t n Int
@@ -478,7 +482,7 @@ and process_type _loc t n ctyp env =
      let env = new_table ~name ~ty:Optional ~ctyp ~parent:(Some t) env in
      let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
      let env = add_field ~ctyp:<:ctyp< bool >> ~info:Internal_field env name "_isset" Int in
-     process_type _loc name n ty env
+     process_type name n ty env
   | <:ctyp@loc< ( $tup:tp$ ) >> -> 
      let name = sprintf "%s_%s__t" t n in
      let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
@@ -489,7 +493,7 @@ and process_type _loc t n ctyp env =
      List.fold_left (fun env ctyp -> 
        let tuple_name = sprintf "c%d" !pos in
        incr pos;
-       process_type _loc name tuple_name ctyp env
+       process_type name tuple_name ctyp env
      ) env tys
   | <:ctyp@loc< $lid:id$ >> -> begin
      add_field ~ctyp ~info:(External_foreign (id,None)) env t n Int
@@ -507,7 +511,7 @@ and process_type _loc t n ctyp env =
     let env = new_table ~name:name_items ~ty:List_items ~ctyp ~parent:(Some name) env in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "_idx" Int in
-    process_type _loc name_items "_item" ctyp env 
+    process_type name_items "_item" ctyp env 
   | x -> 
     debug_ctyp x;
     failwith "unknown type"
@@ -516,7 +520,6 @@ and process_type _loc t n ctyp env =
    foreign references do in fact exist, and if not convert them to 
    opaque sexp types *)
 and check_foreign_refs env =
-  let _loc = Loc.ghost in
   let tables = List.map (fun t ->
     let fields = List.map (fun f ->
       match f.f_info with
@@ -534,8 +537,8 @@ and check_foreign_refs env =
   ) env.e_tables in
   {env with e_tables=tables}
 
-let debug env ty n e = 
-  let _loc = Loc.ghost in 
+let debug env ty n e =
+  let _loc = Loc.ghost in
   let d () = <:binding< () = prerr_endline ($str:n^": "$ ^ $e$) >> in
   let b () = <:binding< () = () >> in
   if (match ty with
@@ -544,7 +547,8 @@ let debug env ty n e =
     |`Binds -> env.debug_binds
   ) then d() else b()
 
-let field_to_sql_data _loc f =
+let field_to_sql_data f =
+  let _loc = loc_of_ctyp f.f_ctyp in
   let id = <:expr< $lid:"_" ^ f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >>   -> <:expr< Sqlite3.Data.INT 1L >>
@@ -559,19 +563,18 @@ let field_to_sql_data _loc f =
     <:expr< Sqlite3.Data.INT $lid:"_"^f.f_name^"_id"$ >>
   in fn f.f_ctyp
 
-let empty_list_expr_of_ctyp =
-  let _loc = Loc.ghost in function
-  | <:ctyp< list $_$ >> -> <:expr< [] >>
-  | <:ctyp< array $_$ >> -> <:expr< [| |] >>
+let empty_list_expr_of_ctyp = function
+  | <:ctyp@loc< list $_$ >> -> <:expr@loc< [] >>
+  | <:ctyp@loc< array $_$ >> -> <:expr@loc< [| |] >>
   | _ -> assert false
 
-let empty_list_patt_of_ctyp =
-  let _loc = Loc.ghost in function
-  | <:ctyp< list $_$ >> -> <:patt< [] >>
-  | <:ctyp< array $_$ >> -> <:patt< [| |] >>
+let empty_list_patt_of_ctyp = function
+  | <:ctyp@loc< list $_$ >> -> <:patt@loc< [] >>
+  | <:ctyp@loc< array $_$ >> -> <:patt@loc< [| |] >>
   | _ -> assert false
 
-let sql_data_to_field ~null_foreigns _loc env f =
+let sql_data_to_field ~null_foreigns env f =
+  let _loc = loc_of_ctyp f.f_ctyp in
   let error = <:match_case< x -> failwith ("unexpected res: " ^ (Sqlite3.Data.to_string x)) >> in
   let id  = <:expr< $lid:"__" ^ f.f_name$ >> in
   let rec fn = function
@@ -619,7 +622,8 @@ let sql_data_to_field ~null_foreigns _loc env f =
     ) env ft
   |_ -> fn f.f_ctyp
 
-let to_string _loc f =
+let to_string f =
+  let _loc = loc_of_ctyp f.f_ctyp in
   let id = <:expr< $lid:f.f_name$ >> in
   let rec fn = function
   | <:ctyp@loc< unit >> -> <:expr< "1" >>
@@ -637,7 +641,8 @@ let to_string _loc f =
   else 
     fn f.f_ctyp
  
-let ocaml_variant_to_sql_request _loc f =
+let ocaml_variant_to_sql_request f =
+  let _loc = loc_of_ctyp f.f_ctyp in
   let id = <:expr< $lid:f.f_name$ >> in
   let int_like_type conv =
     <:expr< match $id$ with [ 
@@ -680,7 +685,8 @@ let ocaml_variant_to_sql_request _loc f =
       ] >>
   |_ -> fn f.f_ctyp
 
-let ocaml_variant_to_sql_binds _loc env f =
+let ocaml_variant_to_sql_binds env f =
+  let _loc = loc_of_ctyp f.f_ctyp in
   let id = <:expr< $lid:f.f_name$ >> in
   let bind e = <:expr<
      incr sql_bind_pos;
