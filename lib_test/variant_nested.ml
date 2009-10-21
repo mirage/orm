@@ -1,26 +1,62 @@
+(*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_orm.cma *)
+
 TYPE_CONV_PATH "Variant_nested"
 
-type n =
-  |Non of int
-  |Ntwo
-  |Nthree of char
-  |Nfour of x
-and x = 
-  |Xone
-  |Xtwo of n
-  |Xthree of int
-and
-s = {
-  foo: x;
-  bar: n;
-  xyz: int;
-}
-with orm()
+module A = struct
+  type n =
+  | Non of int64
+  | Ntwo
+  | Nthree of string
+  | Nfour of x
+  and x = 
+  | Xone
+  | Xtwo of n
+  | Xthree of int
+  and t = {
+    bar: n;
+    xyz: int64;
+  } with orm()
+end
 
-let _ = 
-  let db = Orm.init "variant_nested.db" in
-  let t1 = {foo=Xone ; bar=Ntwo ; xyz=99 } in
-  let t2 = {foo=(Xtwo (Nfour Xone)) ; bar=(Nthree 'x') ;xyz=66 } in
-  let t3 = {foo=(Xtwo (Nthree 'z')) ; bar=(Non 111) ; xyz=88 } in
-  List.iter (fun x -> Printf.printf "saved: %Lu\n%!" (Orm.s_to_db db x)) [t1;t2;t3]
+module B = struct
+  type n =
+  | Nfour of x
+  and x =
+  | Xone
+  | Xtwo of n
+  | Xthree of int
+  and t = {
+    foo: x;
+    bar: n;
+    xyz: int;
+  } with orm()
+end
 
+open B
+open Orm
+open OUnit
+open Test_utils
+
+let t1 = {foo = Xone; bar = Nfour (Xthree 34); xyz = 12 }
+let t2 = {foo = Xtwo (Nfour Xone) ; bar = Nfour (Xthree 12) ;xyz = 66 }
+let t3 = {foo = Xtwo (Nfour (Xthree 32)) ; bar = Nfour Xone ; xyz = 88 }
+
+let name = "variant_nested.db"
+
+let test_save () =
+  let db = open_db init name in
+  t_save db t1;
+  t_save db t2;
+  t_save db t3
+
+let test_subtype () =
+  let db = open_db ~rm:false A.Orm.init name in
+  let ts = A.Orm.t_get db in
+  "3 in db" @? (List.length ts = 3);
+  let t = List.hd (List.filter (fun t -> t.A.bar = A.Nfour A.Xone) ts) in
+  "value match" @? (t.A.xyz = 88L)
+
+let suite = [
+  "variant_nested_save" >:: test_save;
+  "variant_nested_subtype" >:: test_subtype
+]

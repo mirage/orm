@@ -5,6 +5,7 @@ let suites = [
   Simple.suite;
   Tuple.suite;
   Variant.suite;
+  Variant_nested.suite;
   Alltypes.suite;
   Foreign.suite;
   Recursive.suite;
