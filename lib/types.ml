@@ -69,7 +69,7 @@ let is_subtype_of t1 t2 =
   (*  | `Option t, _ -> t <: s NOT VALID YET *)
       | `Product ts, `Product ss -> List.for_all2 (<:) ts ss
       | `Named_product ts, `Named_product ss -> List.for_all (fun (x1,y1) -> List.exists (fun (x2,y2) -> x1=x2 && y1 <: y2) ss) ts 
-      | `Named_sum ts, `Named_sum ss -> List.for_all (fun (x1,y1) -> List.exists (fun (x2,y2) -> x1=x2 && List.for_all2 (<:) y1 y2) ss) ts
+      | `Named_sum ts, `Named_sum ss -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
       | `Unit, `Unit -> true
       | `Int, `Int -> true
       | `Int32, `Int32 | `Int32, `Int -> true
