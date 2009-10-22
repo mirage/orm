@@ -36,6 +36,10 @@ Interface changes:
 - Signature generator to hide all the messy internals and make the
   db handle an abstract type.
 
+- Sqlite CONSTRAINT errors for uniqueness violations (e.g. on a unique
+  indexed field) need to be exposed better than just throwing up the 
+  CONSTRAINT error which is really hard to track down.
+
 Optimization:
 ------------
 
