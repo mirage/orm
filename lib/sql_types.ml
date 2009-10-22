@@ -525,14 +525,15 @@ and process_type t n ctyp env =
    foreign references do in fact exist, and if not convert them to 
    opaque sexp types *)
 and check_foreign_refs env =
+  let new_tables = ref [] in
   let tables = List.map (fun t ->
     let fields = List.map (fun f ->
       match f.f_info with
       | External_foreign (id,None) -> begin
         match find_table env id with
         |None ->
-          eprintf "UNKNOWN: %s -- %s\n" t.t_name f.f_name;
-          f
+          new_tables := (f, t) :: !new_tables;
+          { f with f_info = External_foreign (id, (Some f.f_name)) }
         |Some t' ->
           {f with f_info = (External_foreign (id, (Some t'.t_name))) }
       end
@@ -540,7 +541,10 @@ and check_foreign_refs env =
     ) t.t_fields in
     {t with t_fields=fields}
   ) env.e_tables in
-  {env with e_tables=tables}
+  List.fold_left
+    (fun env (f, t) -> new_table ~name:f.f_name ~ty:Exposed ~ctyp:f.f_ctyp ~parent:(Some t.t_name) env)
+    { env with e_tables=tables}
+    !new_tables
 
 let debug env ty n e =
   let _loc = Loc.ghost in
