@@ -105,8 +105,10 @@ let string_of_table t =
   sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (string_of_table_type t.t_type)
     (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
-  List.iter (fun (n,t) -> eprintf "%s : " n; debug_ctyp t) e.e_types;
-  string_map "\n" string_of_table e.e_tables 
+  Printf.eprintf "TYPES: {";
+  List.iter (fun (n,t) -> Printf.eprintf "%s: " n; debug_ctyp t; Printf.eprintf ",") e.e_types;
+  Printf.eprintf "}\n";
+  Printf.sprintf "TABLES:\n%s" (string_map "\n" string_of_table e.e_tables)
 
 let dot_of_table env t =
   let record_fields t =
@@ -130,6 +132,9 @@ let dot_of_table env t =
 let dot_of_env e =
   sprintf "digraph ORM { graph [ rankdir=\"LR\" overlap=false ];\n%s }" (String.concat "\n" (List.map (dot_of_table e) e.e_tables))
 
+let error env (s:('a,unit,string,'b) format4) =
+    Printf.kprintf (fun s -> Printf.eprintf "%s\n%s\n" (string_of_env env) s; exit (-1)) s
+
 (* --- Helper functions to manipulate environment *)
 
 let empty_env ctyp = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm";
@@ -151,7 +156,7 @@ let new_table ~name ~ty ~ctyp ~parent env =
   (* stick in the new table *)
   let env = replace_table env (match find_table env name with 
     |None -> { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[]; t_parent=parent }
-    |Some table -> failwith (sprintf "new_table: clash %s" name) 
+    |Some table -> error env "new_table: clash %s" name
   ) in
   (* check if the table is a child and update parent child list if so *)
   match parent with
@@ -166,7 +171,7 @@ let new_table ~name ~ty ~ctyp ~parent env =
 let with_table fn env t =
   match find_table env t with
   |None -> 
-    failwith (sprintf "internal error: exposed fields table '%s' not found" t)
+    error env "internal error: exposed fields table '%s' not found" t
   |Some table ->
     fn env table
 
@@ -174,7 +179,7 @@ exception Field_name_not_unique
 (* add field to the specified table, and return a modified env *)
 let add_field ~ctyp ~info env t field_name field_type =
   let _loc = loc_of_ctyp ctyp in
-  if field_name = "" then failwith ("empty field name for " ^ t);
+  if field_name = "" then error env "empty field name for %s" t;
   match find_table env t with
   |Some table -> begin
     let field = { f_name=field_name; f_typ=field_type; f_ctyp=ctyp; f_info=info; f_table=t } in
@@ -193,12 +198,12 @@ let is_foreign_exposed env f = match f.f_info with
   |External_foreign (_, (Some t)) ->
      with_table (fun env t -> t.t_type = Exposed) env t
   |_ -> false
-let get_foreign f = match f.f_info with
+let get_foreign env f = match f.f_info with
   | External_foreign (f,_) -> f 
-  | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
+  | _ -> error  env "%s is not a foreign field" f.f_name
 let get_foreign_table env f = match f.f_info with
   | External_foreign (_,(Some t)) -> with_table (fun env t -> t) env t
-  | _ -> failwith (sprintf "%s is not a foreign field" f.f_name)
+  | _ -> error env "%s is not a foreign field" f.f_name
 let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
 (* return index in list or Not_found *)
@@ -329,8 +334,8 @@ let auto_id_field =
   with_table (fun env table ->
     match List.filter (fun f -> f.f_info = Internal_autoid) table.t_fields with
     |[f] -> f
-    |[] -> failwith (sprintf "auto_id_field: %s: no entry" table.t_name)
-    |_ -> failwith (sprintf "auto_id_field: %s: multiple entries" table.t_name)
+    |[] -> error env "auto_id_field: %s: no entry" table.t_name
+    |_ -> error env "auto_id_field: %s: multiple entries" table.t_name
   )
 
 (* retrieve the single value field from a list table *)
@@ -339,8 +344,8 @@ let list_item_field =
     assert(table.t_type = List_items);
     match List.filter (fun f -> f.f_name = "_item") table.t_fields with
     |[f] -> f
-    |[] -> failwith (sprintf "list_item_type: %s: no entry" table.t_name)
-    |_ -> failwith (sprintf "list_item_type: %s: multiple entries" table.t_name)
+    |[] -> error env "list_item_type: %s: no entry" table.t_name
+    |_ -> error env "list_item_type: %s: multiple entries" table.t_name
   )
 
 let ctyp_of_table t =
@@ -368,7 +373,7 @@ let is_recursive_table env t =
         |External_foreign (id,(Some t')) ->
           with_table (fun env t -> fn t) env t'
         |External_foreign (_,None) -> 
-          failwith (sprintf "incomplete type for EF: %s" (string_of_field f))
+          ()
         |_ -> ()
       ) fields
     end
@@ -423,7 +428,7 @@ and process_type_declarations ctyp env =
     |Ast.TyDcl (_loc, id, _, ty, []) ->
        (* we ignore type variables for the moment *)
        process_toplevel_type id ty env
-    |_ -> failwith "process_type_declarations: unexpected type"
+    |_ -> error env "process_type_declarations: unexpected type"
    in fn ctyp env
 
 and process_toplevel_type n ctyp env =
@@ -438,7 +443,7 @@ and process_toplevel_type n ctyp env =
     | <:ctyp< $t1$; $t2$ >> -> fn (fn env t1) t2
     | <:ctyp< $lid:id$ : mutable $t$ >>
     | <:ctyp< $lid:id$ : $t$ >> ->  process_type n id t env
-    | _ -> failwith "process_toplevel_type: unexpected ast"
+    | _ -> error env "process_toplevel_type: unexpected ast"
     in fn env fs
   | <:ctyp< [< $row_fields$ ] >> 
   | <:ctyp< [> $row_fields$ ] >>
@@ -460,9 +465,9 @@ and process_toplevel_type n ctyp env =
     | <:ctyp< $uid:id$ >> ->
        register_id id false;
        env
-    | _ -> failwith "unknown variant AST"
+    | _ -> error env "unknown variant AST"
     in fn env row_fields
-  | _ -> failwith "process_toplevel_type: unknown type"
+  | _ -> error env "process_toplevel_type: unknown type"
 
 and process_type t n ctyp env =
   let _loc = loc_of_ctyp ctyp in
@@ -514,7 +519,7 @@ and process_type t n ctyp env =
     process_type name_items "_item" ctyp env 
   | x -> 
     debug_ctyp x;
-    failwith "unknown type"
+    error env "unknown type"
 
 (* run through the fully-populated environment and check that all
    foreign references do in fact exist, and if not convert them to 

@@ -740,13 +740,13 @@ module Init = struct
           let sqls = List.map (fun f ->
             sprintf
               ("CREATE TRIGGER IF NOT EXISTS %s_cascade_delete AFTER DELETE ON %s FOR EACH ROW BEGIN DELETE FROM %s WHERE id = OLD.%s; END;")
-              table.t_name table.t_name (get_foreign f) f.f_name)
+              table.t_name table.t_name (get_foreign env f) f.f_name)
               fields in
           String.concat " " sqls in
 
         let sql_prevent_delete =
           let sqls = List.map (fun f ->
-            let foreign_table = get_foreign f in
+            let foreign_table = get_foreign env f in
             sprintf
               ("CREATE TRIGGER IF NOT EXISTS %s_%s_prevent_delete BEFORE DELETE ON %s FOR EACH ROW BEGIN SELECT RAISE(IGNORE) WHERE (SELECT id FROM %s WHERE %s = OLD.id) IS NOT NULL; END;")
               table.t_name f.f_name foreign_table table.t_name f.f_name)
