@@ -41,12 +41,14 @@ get_custom: 0.6346 (filtered: 23157 elements)
 
 let test_cache () =
   let db = open_db init name in
-  for i = 0 to 5000 do
+  for i = 0 to 1000 do
     let x = { a=Random.int 10; b=i } in
     t_save db x;
     if i mod 1000 = 0 then Printf.printf ".%!"
   done;
-  List.iter (fun x -> ignore(t_id db x)) (t_get db)
+  for i = 0 to 10 do
+    List.iter (fun x -> ignore(t_id db x)) (t_get db)
+  done
 
 let suite = [
   "stress_bench" >:: test_bench;
