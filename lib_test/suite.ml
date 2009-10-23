@@ -20,5 +20,14 @@ let suites = [
   Nested_option.suite;
 ]
 
+let slow_suites = [
+  Stress.suite
+]
+
 let _ =
-  run_test_tt_main ("ORM" >::: (List.flatten suites))
+  let s = try 
+   if Sys.getenv "SLOW" <> "" then
+      slow_suites
+     else suites
+   with Not_found -> suites in
+  run_test_tt_main ("ORM" >::: (List.flatten s))
