@@ -3,6 +3,11 @@ all:
 	@cd lib && $(MAKE)
 	@cd lib_test && $(MAKE)
 
+.PHONY: test
+test:
+	@cd lib && $(MAKE)
+	@cd lib_test && ($(MAKE) run || $(MAKE) slow)
+
 .PHONY: install
 install:
 	@cd lib && $(MAKE) libinstall
