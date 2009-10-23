@@ -25,5 +25,7 @@ p_%:
 pi_%:
 	$(MAKE) -f Makefile.debug $@
 
+i_%:
+	$(MAKE) -f Makefile.debug $@
 
 -include $(OCAMLMAKEFILE)
