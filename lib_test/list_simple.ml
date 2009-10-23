@@ -7,7 +7,7 @@ type x = {
   bar: (char * string) list;
   pla: bool;
 } with
-orm()
+orm(debug:none)
 
 open Printf
 open Orm

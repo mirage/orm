@@ -888,6 +888,7 @@ module Syntax = struct
         |"binds" -> { env with debug_binds=true }
         |"cache" -> { env with debug_cache=true }
         |"all" -> { env with debug_cache=true; debug_binds=true; debug_sql=true }
+        |"none" -> { env with debug_cache=false; debug_binds=false; debug_sql=false }
         |_ -> failwith "unknown debug mode"
         ) env modes
       |Dot file -> { env with debug_dot=(Some file) }
