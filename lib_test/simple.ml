@@ -36,6 +36,15 @@ let test_init () =
   ignore(open_db ~rm:false init name);
   ignore(open_db ~rm:false init name)
 
+let test_id () =
+  let db = open_db init name in
+   x_save db x;
+   let i = x_id db x in
+   "id is 1" @? (i = 1L);
+   let x2 = { foo=100; bar="x2222" } in
+   assert_raises ~msg:"test_id_not_found" Not_found 
+    (fun () -> x_id db x2)
+
 let test_save () =
   let db = open_db init name in
   x_save db x
@@ -87,6 +96,7 @@ let test_delete () =
   
 let suite = [
   "simple_init" >:: test_init;
+  "simple_id" >:: test_id;
   "simple_save" >:: test_save;
   "simple_update" >:: test_update;
   "simple_get" >:: test_get;

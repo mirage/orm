@@ -839,6 +839,26 @@ module Delete = struct
      <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
 end
 
+module Utils = struct
+  let construct env =
+    let _loc = loc_of_ctyp env.e_ctyp in
+    let tables = tables_no_list_item env in
+    let fn table =
+      let _loc = loc_of_ctyp table.t_ctyp in
+      let body = 
+        <:expr<
+          $whashex "find" table$ x
+        >>
+      in
+      function_with_label_args
+        ~fun_name:(table.t_name^"_id")
+        ~idents:["db"; "x"]
+        ~function_body:body
+        ~return_type:<:ctyp< int64 >>
+        [] in
+     <:str_item< value $biAnd_of_list (List.map fn tables)$ >>
+end
+
 module Syntax = struct
   (* Extend grammar with options for SQL tables *)
   type p_keys =
@@ -920,6 +940,7 @@ module Syntax = struct
               $Typedefs.construct env$;
               $Save.construct env$;
               $Get.construct env$;
+              $Utils.construct env$;
               $Delete.construct env$;
               $Init.construct env$;
             end
