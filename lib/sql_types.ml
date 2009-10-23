@@ -51,6 +51,7 @@ and env = {
   e_types: (string * ctyp) list;
   e_indices: (bool * string * string list) list;
   e_name: string;
+  debug_leak: bool;
   debug_sql: bool;
   debug_binds: bool;
   debug_cache: bool;
@@ -137,7 +138,7 @@ let error env (s:('a,unit,string,'b) format4) =
 
 (* --- Helper functions to manipulate environment *)
 
-let empty_env ctyp = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm";
+let empty_env ctyp = { e_tables = []; e_types=[]; e_indices=[]; e_name="orm"; debug_leak=false;
   debug_sql=false; debug_binds=false; debug_cache=false; debug_dot=None; e_ctyp=ctyp }
 
 let find_table env name =

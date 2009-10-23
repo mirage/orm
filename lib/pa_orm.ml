@@ -38,8 +38,12 @@ module Typedefs = struct
 
     let wh_decls = List.map (fun t ->
       let _loc = loc_of_ctyp t.t_ctyp in
+      let hash_mod = if env.debug_leak then
+          <:module_expr< Hashtbl.Make >> 
+        else 
+          <:module_expr< Orm.Weaktbl.Make >> in
       <:str_item< 
-        module $uid:whashfn t$ = Orm.Weaktbl.Make (
+        module $uid:whashfn t$ = $hash_mod$ (
             struct 
               type __t__ = $ctyp_of_table t$;
               type t = __t__;
@@ -47,7 +51,7 @@ module Typedefs = struct
               value compare = ( == );
               value hash = Hashtbl.hash;
             end );
-        module $uid:rhashfn t$ = Orm.Weaktbl.Make (
+        module $uid:rhashfn t$ = Hashtbl.Make (
             struct
               type t = int64;
               value equal = (=);
@@ -904,6 +908,7 @@ module Syntax = struct
       |Unique fl -> { env with e_indices = fl @ env.e_indices }
       |Name n -> { env with e_name=n }
       |Debug modes -> List.fold_left (fun env -> function
+        |"leak" -> { env with debug_leak=true }
         |"sql" -> { env with debug_sql=true } 
         |"binds" -> { env with debug_binds=true }
         |"cache" -> { env with debug_cache=true }
