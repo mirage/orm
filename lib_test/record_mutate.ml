@@ -2,12 +2,12 @@
 
 TYPE_CONV_PATH "Record_mutate"
 
-type t = {
-  foo: string;
+type x = {
+  mutable foo: string;
   mutable bar: string option
 } with orm(
-    debug: all;
-    unique: t<foo>
+    debug: leak,all;
+    unique: x<foo>
   )
 
 open Printf
@@ -15,15 +15,49 @@ open Orm
 open Test_utils
 open OUnit
 
+module H = Hashtbl.Make (
+  struct 
+    type t = x
+    let equal = (==)
+    let compare = (==)
+    let hash = Hashtbl.hash
+  end )
+
 let name = "record_mutate.db" 
 
+let test_mutate_nodb () =
+  let t1 = { foo="foo"; bar=None } in
+  let r = ref t1 in
+  "phys eq" @? (!r == t1);
+  t1.bar <- Some "bar";
+  "phys eq after mutate" @? (!r == t1)
+
+let test_mutate_nodb_hash () =
+  let t1 = { foo="foo"; bar=None } in
+  let h = H.create 1 in
+  H.add h t1 1L;
+  "in hash" @? (H.find h t1 = 1L);
+  t1.bar <- Some "bar";
+  "in hash" @? (H.find h t1 = 1L)
+
+let test_mutate_basic () =
+  let db = open_db init name in
+  let t1 = { foo="foo"; bar=None } in
+  x_save db t1;
+  t1.foo <- "foo2";
+  x_save db t1
+
+(* same as previous, but changes bar *)
 let test_mutate_option () =
   let db = open_db init name in
   let t1 = { foo="foo"; bar=None } in
-  t_save db t1;
+  x_save db t1;
   t1.bar <- Some "bar";
-  t_save db t1
+  x_save db t1
 
 let suite = [
+  "record_mutate_nodb" >:: test_mutate_nodb;
+  "record_mutate_nodb_hash" >:: test_mutate_nodb_hash;
+  "record_mutate_basic" >:: test_mutate_basic;
   "record_mutate_option" >:: test_mutate_option;
 ]
