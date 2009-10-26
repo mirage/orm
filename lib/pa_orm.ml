@@ -354,9 +354,11 @@ module Save = struct
     let int_binding =
        <:binding< $lid:savefn t$ ~_cache db $lid:t.t_name$ = 
           let $lid:tidfn t$ = try Some ( 
-              $uid:whashfn t$.find 
-                 db.OS.cache.$lid:tidfn t$ $lid:t.t_name$ )
-             with [ Not_found -> None ] in
+              let __id = $uid:whashfn t$.find 
+                 db.OS.cache.$lid:tidfn t$ $lid:t.t_name$ in
+              let $debug env `Cache (savefn t) <:expr< "hit id " ^ (Int64.to_string __id) >>$ in
+              __id)
+             with [ Not_found -> let $debug env `Cache (savefn t) <:expr< "miss" >>$ in None ] in
 
           let $field_var_binds env t$ in
           let save () =
