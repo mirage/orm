@@ -19,6 +19,7 @@ let suites = [
   Nested_tuple.suite;
   Nested_option.suite;
   Record_mutate.suite;
+  List_mutate.suite;
 ]
 
 let slow_suites = [
