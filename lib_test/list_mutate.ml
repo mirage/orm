@@ -25,7 +25,7 @@ let test_mutate_basic () =
   t1.bar <- l;
   x_save db t1;
   match x_get db with
-  |[t] -> "eq" @? (t.bar = ["foo3","bar2"; "foo1","bar1"; "foo2","bar2" ])
+  |[t] -> "eq" @? (t.bar = ["foo3","bar3"; "foo1","bar1"; "foo2","bar2" ])
   |[] -> failwith "no x"
   |x -> failwith (sprintf "too many x: %d" (List.length x))
 
