@@ -61,4 +61,3 @@ let create_fun name ctyp =
         debug_ctyp x;
         failwith "unknown type" in
  <:binding< $lid:make_name name$ type_name : Orm.Types.t = $aux ctyp$ >>
-
