@@ -6,7 +6,7 @@ type x = {
   mutable foo: string;
   mutable bar: string option
 } with orm(
-    debug: leak,all;
+    debug: all;
     unique: x<foo>
   )
 

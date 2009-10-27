@@ -6,7 +6,7 @@ type x = {
   foo: int;
   mutable bar: (string * string) list
 } with orm(
-    debug: leak,all
+    debug: all
   )
 
 open Printf
