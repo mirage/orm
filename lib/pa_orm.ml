@@ -49,14 +49,14 @@ module Typedefs = struct
               type t = __t__;
               value equal = ( == );
               value compare = ( == );
-              value hash = Hashtbl.hash;
+              value hash _ = 0;
             end );
         module $uid:rhashfn t$ = Hashtbl.Make (
             struct
               type t = int64;
               value equal = (=);
               value compare = Int64.compare;
-              value hash = Hashtbl.hash;
+              value hash _ = 0;
             end );
       >>
     ) nlit in
