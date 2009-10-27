@@ -20,7 +20,7 @@ module H = Hashtbl.Make (
     type t = x
     let equal = (==)
     let compare = (==)
-    let hash = Hashtbl.hash
+    let hash _ = 0
   end )
 
 let name = "record_mutate.db" 
@@ -35,10 +35,13 @@ let test_mutate_nodb () =
 let test_mutate_nodb_hash () =
   let t1 = { foo="foo"; bar=None } in
   let h = H.create 1 in
+  for i = 0 to 10000; do
+    H.add h { foo=(sprintf "foo%d" i); bar=None } (Random.int64 1000L)
+  done;
   H.add h t1 1L;
-  "in hash" @? (H.find h t1 = 1L);
+  "in hash1" @? (H.find h t1 = 1L);
   t1.bar <- Some "bar";
-  "in hash" @? (H.find h t1 = 1L)
+  "in hash2" @? (H.find h t1 = 1L)
 
 let test_mutate_basic () =
   let db = open_db init name in
