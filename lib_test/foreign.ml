@@ -5,11 +5,11 @@ TYPE_CONV_PATH "Foreign"
 type t = {
   foo: string;
   bar: int64;
-  xyz: char;
+  mutable xyz: char;
 }
 and x = {
   first: t;
-  second: t;
+  mutable second: t;
   third: int;
 }
 with orm (

@@ -1,5 +1,6 @@
 0.4:
 
+* Fixed mutable records not hashing correctly [27 Oct 2009]
 * Add a t_id function to return an int64 UUID for a value [23 Oct 2009]
 * Add debug "none" keyword to disable debug explicitly [23 Oct 2009]
 * Store type in database to ensure safe attachment at runtime [18 Oct 2009]

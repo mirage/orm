@@ -5,9 +5,7 @@ TYPE_CONV_PATH "List_mutate"
 type x = {
   foo: int;
   mutable bar: (string * string) list
-} with orm(
-    debug: all
-  )
+} with orm ()
 
 open Printf
 open Orm
