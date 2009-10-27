@@ -106,10 +106,10 @@ let string_of_table t =
   sprintf "%-30s / %-10s (child=%s): [ %s ] " t.t_name (string_of_table_type t.t_type)
     (String.concat ", " t.t_child) (string_map ", " string_of_field t.t_fields)
 let string_of_env e =
-  Printf.eprintf "TYPES: {";
-  List.iter (fun (n,t) -> Printf.eprintf "%s: " n; debug_ctyp t; Printf.eprintf ",") e.e_types;
-  Printf.eprintf "}\n";
-  Printf.sprintf "TABLES:\n%s" (string_map "\n" string_of_table e.e_tables)
+  eprintf "TYPES: {";
+  List.iter (fun (n,t) -> eprintf "%s: " n; debug_ctyp t; eprintf ",") e.e_types;
+  eprintf "}\n";
+  sprintf "TABLES:\n%s" (string_map "\n" string_of_table e.e_tables)
 
 let dot_of_table env t =
   let record_fields t =
@@ -134,7 +134,7 @@ let dot_of_env e =
   sprintf "digraph ORM { graph [ rankdir=\"LR\" overlap=false ];\n%s }" (String.concat "\n" (List.map (dot_of_table e) e.e_tables))
 
 let error env (s:('a,unit,string,'b) format4) =
-    Printf.kprintf (fun s -> Printf.eprintf "%s\n%s\n" (string_of_env env) s; exit (-1)) s
+    kprintf (fun s -> eprintf "%s\n%s\n" (string_of_env env) s; exit (-1)) s
 
 (* --- Helper functions to manipulate environment *)
 
