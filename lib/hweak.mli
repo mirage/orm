@@ -75,5 +75,7 @@ module type S =
     val stats : 'a t -> int * int * int * int * int * int
     (** some statistic function *)
   end
-module Make :
+module MakeWeakKeys :
+  functor (H : Hashtbl.HashedType) -> S with type key = H.t
+module MakeWeakValues :
   functor (H : Hashtbl.HashedType) -> S with type key = H.t

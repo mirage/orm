@@ -17,11 +17,9 @@
 (*  licence                                                            *)
 (*                                                                     *)
 (***********************************************************************)
-
+(* 10/2009: modified by Thomas Gazagnaire <thomas@gazganaire.com>      *)
 
 (** Weak array operations *)
-
-open Weak
 
 (** Weak hash tables *)
 
@@ -43,17 +41,25 @@ module type S = sig
   val stats : 'a t -> int * int * int * int * int * int
 end;;
 
-module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
+module type Arg = sig
+	type 'a t
+	val get : 'a t -> int -> 'a option
+	val set : 'a t -> int -> 'a option -> unit
+	val empty : unit -> 'a t
+	val length : 'a t -> int
+	val create : int -> 'a t
+	val blit : 'a t -> int -> 'a t -> int -> int -> unit
+end
 
-  type 'a weak_t = 'a t;;
-  let weak_create = create;;
-  let emptybucket = weak_create 0;;
+module Make (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   type key = H.t;;
 
+  let check_key b i = K.get b i <> None
+  let check_val b i = V.get b i <> None
+
   type 'a t = {
-    emptybucket : 'a weak_t;
-    mutable table : (key weak_t * 'a weak_t) array;
+    mutable table : (key K.t * 'a V.t) array;
     mutable totsize : int;             (* sum of the bucket sizes *)
     mutable limit : int;               (* max ratio totsize/table length *)
   };;
@@ -63,17 +69,15 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
   let create sz =
     let sz = if sz < 7 then 7 else sz in
     let sz = if sz > Sys.max_array_length then Sys.max_array_length else sz in
-    let em = weak_create 0 in
     {
-      emptybucket = em; 
-      table = Array.create sz (emptybucket, em);
+      table = Array.create sz (K.empty (), V.empty ());
       totsize = 0;
       limit = 3;
     };;
 
   let clear t =
     for i = 0 to Array.length t.table - 1 do
-      t.table.(i) <- (emptybucket, t.emptybucket);
+      t.table.(i) <- (K.empty (), V.empty ());
     done;
     t.totsize <- 0;
     t.limit <- 3;
@@ -81,8 +85,8 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   let fold f t init =
     let rec fold_bucket i ((b1, b2) as cpl) accu =
-      if i >= length b1 then accu else
-      match (get b1 i, get b2 i) with
+      if i >= K.length b1 then accu else
+      match (K.get b1 i, V.get b2 i) with
       | (Some v1, Some v2) -> fold_bucket (i+1) cpl (f v1 v2 accu)
       | _ -> fold_bucket (i+1) cpl accu
     in
@@ -93,8 +97,8 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   let count t =
     let rec count_bucket i ((b1, b2) as cpl) accu =
-      if i >= length b1 then accu else
-      count_bucket (i+1) cpl (accu + (if check b1 i && check b2 i 
+      if i >= K.length b1 then accu else
+      count_bucket (i+1) cpl (accu + (if check_key b1 i && check_val b2 i 
 				      then 1 else 0))
     in
     Array.fold_right (count_bucket 0) t.table 0
@@ -116,27 +120,27 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   and add_aux t k e index =
     let bucket1, bucket2 = t.table.(index) in
-    let sz = length bucket1 in
+    let sz = K.length bucket1 in
     let rec loop i =
       if i >= sz then begin
         let newsz = min (sz + 3) (Sys.max_array_length - 1) in
         if newsz <= sz then failwith "Weak.Make : hash bucket cannot grow more";
-        let newbucket1 = weak_create newsz 
-	and newbucket2 = weak_create newsz in
-        blit bucket1 0 newbucket1 0 sz;
-        blit bucket2 0 newbucket2 0 sz;
-        set newbucket1 i (Some k);
-	set newbucket2 i (Some e);
+        let newbucket1 = K.create newsz 
+        and newbucket2 = V.create newsz in
+        K.blit bucket1 0 newbucket1 0 sz;
+        V.blit bucket2 0 newbucket2 0 sz;
+        K.set newbucket1 i (Some k);
+        V.set newbucket2 i (Some e);
         t.table.(index) <- (newbucket1, newbucket2);
         t.totsize <- t.totsize + (newsz - sz);
         if t.totsize > t.limit * Array.length t.table then resize t;
       end else begin
-        if check bucket1 i && check bucket2 i
+        if check_key bucket1 i && check_val bucket2 i
         then loop (i+1)
         else 
 	  begin
-	    set bucket1 i (Some k);
-	    set bucket2 i (Some e);
+	    K.set bucket1 i (Some k);
+	    V.set bucket2 i (Some e);
 	  end
       end
     in
@@ -148,13 +152,13 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
   let find_or t d ifnotfound =
     let index = get_index t d in
     let (bucket1, bucket2) = t.table.(index) in
-    let sz = length bucket1 in
+    let sz = K.length bucket1 in
     let rec loop i =
       if i >= sz then ifnotfound index
       else begin
-        match get_copy bucket1 i with
+        match K.get bucket1 i with
         | Some v when H.equal v d
-           -> begin match get bucket2 i with
+           -> begin match V.get bucket2 i with
               | Some v -> v
               | None -> loop (i+1)
               end
@@ -171,40 +175,40 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
   let find_shadow t d iffound ifnotfound =
     let index = get_index t d in
     let (bucket1, bucket2) = t.table.(index) in
-    let sz = length bucket1 in
+    let sz = K.length bucket1 in
     let rec loop i =
       if i >= sz then ifnotfound else begin
-        match get_copy bucket1 i with
-        | Some v when H.equal v d && check bucket2 i 
-	    -> iffound bucket1 bucket2 i
-        | _ -> loop (i+1)
+        match K.get bucket1 i with
+        | Some v when H.equal v d && check_val bucket2 i 
+             -> iffound bucket1 bucket2 i
+         | _ -> loop (i+1)
       end
     in
     loop 0
   ;;
 
-  let replace t k d = 
+ let replace t k d = 
     if (find_shadow t k 
 	  (fun w1 w2 i -> 
-	     set w1 i (Some k); set w2 i (Some d); false ) true) 
+	     K.set w1 i (Some k); V.set w2 i (Some d); false ) true) 
     then
       add t k d
 
   let remove t d = find_shadow t d
-		     (fun w1 w2 i -> set w1 i None; set w2 i None) ()
+		     (fun w1 w2 i -> K.set w1 i None; V.set w2 i None) ()
 
   let mem t d = find_shadow t d (fun _ _ i -> true) false
 
   let find_all t d =
     let index = get_index t d in
     let (bucket1, bucket2) = t.table.(index) in
-    let sz = length bucket1 in
+    let sz = K.length bucket1 in
     let rec loop i accu =
       if i >= sz then accu
       else begin
-        match get_copy bucket1 i with
+        match K.get bucket1 i with
         | Some v when H.equal v d
-           -> begin match get bucket2 i with
+           -> begin match V.get bucket2 i with
               | Some v -> loop (i+1) (v::accu)
               | None -> loop (i+1) accu
               end
@@ -216,10 +220,25 @@ module Make (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   let stats t =
     let len = Array.length t.table in
-    let lens = Array.map (fun (b,_) -> length b) t.table in
+    let lens = Array.map (fun (b,_) -> K.length b) t.table in
     Array.sort compare lens;
     let totlen = Array.fold_left ( + ) 0 lens in
     (len, count t, totlen, lens.(0), lens.(len/2), lens.(len-1))
   ;;
 
 end;;
+
+module W = struct
+	include Weak
+	let empty () = create 0
+end
+
+module A = struct
+	include Array
+	type 'a t = 'a option array
+	let empty () = [| |]
+	let create n = create n None
+end
+
+module MakeWeakKeys = Make(W)(A)
+module MakeWeakValues = Make(A)(W)
