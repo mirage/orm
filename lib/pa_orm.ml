@@ -38,25 +38,27 @@ module Typedefs = struct
 
     let wh_decls = List.map (fun t ->
       let _loc = loc_of_ctyp t.t_ctyp in
-      let hash_mod = if env.debug_leak then
+      let hash_mod_keys = if env.debug_leak then
           <:module_expr< Hashtbl.Make >> 
         else 
-          <:module_expr< Orm.Weaktbl.Make >> in
+          <:module_expr< Orm.Hweak.MakeWeakKeys >> in
+      let hash_mod_values = if env.debug_leak then
+          <:module_expr< Hashtbl.Make >> 
+        else 
+          <:module_expr< Orm.Hweak.MakeWeakValues >> in
       <:str_item< 
-        module $uid:whashfn t$ = $hash_mod$ (
+        module $uid:whashfn t$ = $hash_mod_keys$ (
             struct 
               type __t__ = $ctyp_of_table t$;
               type t = __t__;
               value equal = ( == );
-              value compare = ( == );
               value hash _ = 0;
             end );
-        module $uid:rhashfn t$ = Hashtbl.Make (
+        module $uid:rhashfn t$ = $hash_mod_values$ (
             struct
               type t = int64;
               value equal = (=);
-              value compare = Int64.compare;
-              value hash _ = 0;
+              value hash = Hashtbl.hash;
             end );
       >>
     ) nlit in
