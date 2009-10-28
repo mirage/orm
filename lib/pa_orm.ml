@@ -742,8 +742,40 @@ module Init = struct
                           else raise ( OT.Subtype_error (OT.to_string $lid:type_name table$, OT.to_string table_type)) )
                         results
                   }
-                >>) (sql_tables env))$ }
+                >>) env.e_tables)$ }
             >>$
+        }
+      >> in
+
+    let init_link_table =
+      let create = "CREATE TABLE IF NOT EXISTS __links__ (parent TEXT, child TEXT)" in
+      let select = "SELECT child FROM __links__ WHERE parent=?" in
+      let insert = "INSERT INTO __links__ (parent, child) VALUES (?,?)" in
+      <:expr<
+        let $debug env `Sql "init" <:expr< $str:create$ >>$ in
+        do {
+          OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:create$);
+          $exSem_of_list (List.map (fun table ->
+            <:expr<
+              let $debug env `Sql "init" <:expr< $str:select$ >>$ in
+              let stmt = Sqlite3.prepare db.OS.db $str:select$ in
+              do {
+                OS.db_must_bind db stmt 1 (Sqlite3.Data.TEXT $str:table.t_name$);
+                let results = OS.step_fold db stmt
+                  (fun stmt -> match Sqlite3.column stmt 0 with [ Sqlite3.Data.TEXT x -> x | _ -> failwith "bad type" ]) in
+                let childs = $List.fold_left (fun accu x -> <:expr< [ $str:x$ :: $accu$ ] >>) <:expr< [] >> table.t_child$ in
+                let to_insert = List.filter (fun x -> not (List.mem x results)) childs in
+                List.iter (fun child ->
+                  let $debug env `Sql "init" <:expr< $str:insert$ >>$ in
+                  let stmt = Sqlite3.prepare db.OS.db $str:insert$ in
+                  do {
+                    OS.db_must_bind db stmt 1 (Sqlite3.Data.TEXT $str:table.t_name$);
+                    OS.db_must_bind db stmt 2 (Sqlite3.Data.TEXT child);
+                    OS.db_must_step db stmt
+                  })
+                  to_insert;
+              }
+            >>) env.e_tables)$ 
         }
       >> in
 
@@ -821,7 +853,7 @@ module Init = struct
       >>
     ) env.e_indices) in
 
-    <:expr< do { $init_type_table$; $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>
+    <:expr< do { $init_type_table$; $init_link_table$; $create_exs$; $trigger_exs$; $cache_trigger_exs$; $create_indices$ } >>
 
   (* construct custom trigger function to delete ids/values from the weak hash
      after a delete has gone through *)
