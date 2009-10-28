@@ -64,7 +64,7 @@ and table = {
   t_type: table_type;
   t_ctyp: ctyp;
   t_child: string list; (* sub-tables created from this one *)
-  t_parent: string option;
+  t_parent: string list;
 }
 and field = {
   f_name: string;
@@ -153,20 +153,35 @@ let replace_table env table =
     (List.filter (fun t -> t.t_name <> table.t_name) env.e_tables)
   }
 
-let new_table ~name ~ty ~ctyp ~parent env =
-  (* stick in the new table *)
-  let env = replace_table env (match find_table env name with 
-    |None -> { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[]; t_parent=parent }
-    |Some table -> error env "new_table: clash %s" name
-  ) in
-  (* check if the table is a child and update parent child list if so *)
+(* make the table named n1 become the parent of the table named n2 in env *)
+let link_tables n1 n2 env =
+  match find_table env n1, find_table env n2 with
+  | Some t1, Some t2 ->
+    let env =
+      if not (List.mem t2.t_name t1.t_child) then
+        replace_table env { t1 with t_child = t2.t_name :: t1.t_child }
+      else env in
+    let env =
+      if not (List.mem t1.t_name t2.t_parent) then
+        replace_table env { t2 with t_parent = t1.t_name :: t2.t_parent }
+      else env in
+    env
+  | None, _ -> error env "parent table doesn't exist: %s" n1
+  | _, None -> error env "child table doesn't exist: %s" n2
+
+let new_table ~name ~ty ~ctyp ?parent env =
+  (* check if the table does not already exists *)
+  (match find_table env name with 
+    |None -> ()
+    |Some table -> error env "new_table: clash %s" name);
+  (* create the new table in env *)
+  let table = { t_name=name; t_fields=[]; t_type=ty; t_ctyp=ctyp; t_child=[]; t_parent=[] } in
+  let env = replace_table env table in
+
+  (* check if the table is a child and update the links between the tables if so *)
   match parent with
     |None -> env
-    |Some t -> begin
-      match find_table env t with
-      |None -> env
-      |Some ptable -> replace_table env { ptable with t_child=name::ptable.t_child }
-    end
+    |Some pname -> link_tables pname name env
 
 (* helper fn to lookup a table in the env and apply a function to it *)
 let with_table fn env t =
@@ -401,9 +416,6 @@ let fcachefn t  = sprintf "C_%s"      t.t_name
 let fautofn env t = fidfn (auto_id_field env t.t_name)
 let whashfn t   = sprintf "W_%s"      t.t_name
 let rhashfn t   = sprintf "R_%s"      t.t_name
-let tparentidfn t = match t.t_parent with 
-  |None ->  failwith "no parent table"
-  |Some p -> "_"^p^"_id"
 
 let whashex fn t =
   let _loc = loc_of_ctyp t.t_ctyp in
@@ -414,10 +426,31 @@ let rhashex fn t =
 
 (* --- Process functions to convert OCaml types into SQL *)
 
+(* run through the fully-populated environment and update all the foreign references *)
+let update_foreign_refs env =
+  List.fold_left (fun env t ->
+    let env, fields = List.fold_left (fun (env, fields) f ->
+        match f.f_info with
+        | External_foreign (id,None) ->
+          begin match find_table env id with
+          | None ->
+            new_table ~name:f.f_name ~ty:Exposed ~ctyp:f.f_ctyp ~parent:t.t_name env,
+            { f with f_info = External_foreign (id, (Some f.f_name)) } :: fields 
+          | Some t' ->
+            link_tables t.t_name t'.t_name env,
+            { f with f_info = (External_foreign (id, (Some t'.t_name))) } :: fields
+          end
+        | _ -> env, f :: fields
+      ) (env, []) t.t_fields in
+    match find_table env t.t_name with
+    | None -> error env "Unexpected failure while update_foreign_refs of %s" t.t_name
+    | Some new_t -> replace_table env { new_t with t_fields = List.rev fields }
+    ) env env.e_tables
+
 let rec process tds env =
   let _loc = loc_of_ctyp tds in
   let env = process_type_declarations tds env in
-  check_foreign_refs env
+  update_foreign_refs env
 
 and process_type_declarations ctyp env =
   let _loc = loc_of_ctyp ctyp in
@@ -438,7 +471,7 @@ and process_toplevel_type n ctyp env =
   | <:ctyp@loc< < $fs$ > >>
   | <:ctyp@loc< { $fs$ } >> ->
     (* add a new table to the environment *)
-    let env = new_table ~name:n ~ty:Exposed ~ctyp ~parent:None env in
+    let env = new_table ~name:n ~ty:Exposed ~ctyp env in
     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
     let rec fn env = function
     | <:ctyp< $t1$; $t2$ >> -> fn (fn env t1) t2
@@ -451,7 +484,7 @@ and process_toplevel_type n ctyp env =
   | <:ctyp< [= $row_fields$ ] >> 
   | <:ctyp< [ $row_fields$ ] >> ->
     let vi = { v_indices=Hashtbl.create 1 } in
-    let env = new_table ~name:n ~ty:(Variant vi) ~ctyp ~parent:None env in
+    let env = new_table ~name:n ~ty:(Variant vi) ~ctyp env in
     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:(Internal_autoid) env n "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env n "_idx" Int in
     let pos = ref 0 in
@@ -485,13 +518,13 @@ and process_type t n ctyp env =
   | <:ctyp@loc< option $ty$ >> -> 
      let name = sprintf "%s_%s__o" t n in
      let env = add_field ~ctyp ~info:(External_foreign(name,None)) env t n Int in
-     let env = new_table ~name ~ty:Optional ~ctyp ~parent:(Some t) env in
+     let env = new_table ~name ~ty:Optional ~ctyp ~parent:t env in
      let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
      let env = add_field ~ctyp:<:ctyp< bool >> ~info:Internal_field env name "_isset" Int in
      process_type name n ty env
   | <:ctyp@loc< ( $tup:tp$ ) >> -> 
      let name = sprintf "%s_%s__t" t n in
-     let env = new_table ~name ~ty:Tuple ~ctyp ~parent:(Some t) env in
+     let env = new_table ~name ~ty:Tuple ~ctyp ~parent:t env in
      let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
      let env = add_field ~ctyp ~info:(External_foreign(name,None)) env t n Int in
      let tys = list_of_ctyp tp [] in
@@ -510,42 +543,17 @@ and process_type t n ctyp env =
     let name = sprintf "%s_%s" t n in
     let env = add_field ~ctyp:orig_ctyp ~info:(External_foreign (name,None)) env t n Int in
     (* construct a table which holds the list ids to mark list identity *)
-    let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:(Some t) env in 
+    let env = new_table ~name ~ty:List ~ctyp:orig_ctyp ~parent:t env in 
     let env = add_field ~ctyp:<:ctyp< option int64 >> ~info:Internal_autoid env name "id" Int in
     (* construct a table which holds the actual list items *)
     let name_items = sprintf "%s_items" name in
-    let env = new_table ~name:name_items ~ty:List_items ~ctyp ~parent:(Some name) env in
+    let env = new_table ~name:name_items ~ty:List_items ~ctyp ~parent:name env in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "id" Int in
     let env = add_field ~ctyp:<:ctyp< int64 >> ~info:Internal_field env name_items "_idx" Int in
     process_type name_items "_item" ctyp env 
   | x -> 
     debug_ctyp x;
     error env "unknown type"
-
-(* run through the fully-populated environment and check that all
-   foreign references do in fact exist, and if not convert them to 
-   opaque sexp types *)
-and check_foreign_refs env =
-  let new_tables = ref [] in
-  let tables = List.map (fun t ->
-    let fields = List.map (fun f ->
-      match f.f_info with
-      | External_foreign (id,None) -> begin
-        match find_table env id with
-        |None ->
-          new_tables := (f, t) :: !new_tables;
-          { f with f_info = External_foreign (id, (Some f.f_name)) }
-        |Some t' ->
-          {f with f_info = (External_foreign (id, (Some t'.t_name))) }
-      end
-      | _ -> f
-    ) t.t_fields in
-    {t with t_fields=fields}
-  ) env.e_tables in
-  List.fold_left
-    (fun env (f, t) -> new_table ~name:f.f_name ~ty:Exposed ~ctyp:f.f_ctyp ~parent:(Some t.t_name) env)
-    { env with e_tables=tables}
-    !new_tables
 
 let debug env ty n e =
   let _loc = Loc.ghost in
