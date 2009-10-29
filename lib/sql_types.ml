@@ -224,6 +224,7 @@ let is_autoid f = match f.f_info with Internal_autoid -> true | _ -> false
 
 (* return index in list or Not_found *)
 exception Found_item of int
+exception Not_found
 let listi fn l = try 
     ignore(List.fold_left (fun a b -> 
       if fn b then raise (Found_item a) else a+1
