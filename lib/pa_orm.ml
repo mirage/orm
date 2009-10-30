@@ -716,7 +716,7 @@ module Init = struct
         do {
           OS.db_must_ok db (fun () -> Sqlite3.exec db.OS.db $str:create$);
           $biList_to_expr
-            (List.map (fun table -> <:binding< $lid:type_name table$ = do { $lid:type_name_fn table$ $str:table.t_name$ } >>) (sql_tables env))
+            (List.map (fun table -> <:binding< $lid:type_name table$ = do { $lid:type_name_fn table$ [ $str:table.t_name$ ] } >>) (sql_tables env))
             <:expr< do {
               $exSem_of_list (List.map (fun table ->
                 <:expr<

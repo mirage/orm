@@ -21,18 +21,20 @@ type t =
     | `Named_product of (string * t) list
     | `Named_sum of (string * t list) list
     | `Option of t
-    | `Rec ]
+    | `Rec of string * t | `Var of string ]
 
-(* If there are still some `Var v, then the type is recursive *)
-let is_recursive (t:t) =
-  let rec aux = function
-    | `Rec -> true
-    | `Collection t | `Option t -> aux t
-    | `Product t -> List.exists aux t
-    | `Named_product t -> List.exists (fun (_,t) -> aux t) t
-    | `Named_sum t -> List.exists (fun (_,t) -> List.exists aux t) t
-    | `Unit | `Int | `Int32 | `Int64 | `Bool | `Float | `Char | `String -> false in
-  aux t
+(* If there are still some `Var v, then the type is recursive for the type v *)
+let free_vars (t:t) =
+  let rec aux accu = function
+    | `Rec (n,t) -> aux (List.filter (fun m -> n <> m) accu) t
+	| `Var n when List.mem n accu -> accu
+	| `Var n -> n :: accu
+    | `Collection t | `Option t -> aux accu t
+    | `Product t -> List.flatten (List.map (aux accu) t)
+    | `Named_product t -> List.flatten (List.map (fun (_,t) -> aux accu t) t)
+    | `Named_sum t -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) t)
+    | `Unit | `Int | `Int32 | `Int64 | `Bool | `Float | `Char | `String -> accu in
+  aux [] t
 
 let rec to_string (t:t) = match t with                                                                    
   | `Unit -> "unit"
@@ -48,27 +50,40 @@ let rec to_string (t:t) = match t with
   | `Named_product ts -> Printf.sprintf "{%s}" (String.concat "*" (List.map (fun (s,t) -> Printf.sprintf "%s:%s" s (to_string t)) ts))
   | `Named_sum ts -> Printf.sprintf "<%s>" (String.concat "*" (List.map (fun (s,t) -> Printf.sprintf "%s:(%s)" s (String.concat "*" (List.map to_string t))) ts))
   | `Option t -> Printf.sprintf "option.%s" (to_string t)
-  | `Rec -> "rec"
+  | `Rec (n,t) -> Printf.sprintf "rec@%s@%s" n (to_string t)
+  | `Var n -> Printf.sprintf "@%s" n
 
 (* Is [t1] a subtype of [t2] ?                                                *)
 (* Our subtype relation is the following:                                     *)
 (*  if value of type t2 are stored in the database, then a value of a type t1 *)
 (*  can be naturally build from that stored value.                            *)
-let is_subtype_of t1 t2 =
+let is_subtype_of (t1:t) (t2:t) =
   let table = Hashtbl.create 128 in
+  let types1 = Hashtbl.create 128 in
+  let types2 = Hashtbl.create 128 in
+  let add_t1 n t = Hashtbl.replace types1 n t in
+  let add_t2 n t = Hashtbl.replace types2 n t in
+  let rm_t1 n = Hashtbl.remove types1 n in
+  let rm_t2 n = Hashtbl.remove types2 n in
+  let find_t1 n = Hashtbl.find types1 n in
+  let find_t2 n = Hashtbl.find types2 n in
+  let found_error = ref false in
   let rec (<:) t s =
     if Hashtbl.mem table (t,s) then
       Hashtbl.find table (t,s)
     else begin
       let result = match (t,s) with
-      | `Rec, `Rec -> true
-      | `Rec, s -> t1 <: s
-      | t, `Rec -> t <: t2
+      | `Rec (n,tt), `Rec (m,ss) -> add_t1 n tt; add_t2 m ss; let r = tt <: ss in rm_t1 n; rm_t2 m; r
+      | `Rec (n,tt), _ -> add_t1 n tt; let r = tt <: t2 in rm_t1 n; r
+      | _, `Rec (m,ss) -> add_t2 m ss; let r = t1 <: ss in rm_t2 m; r
+	  | `Var v, `Var w -> v = w || (find_t1 v) <: (find_t2 w)
+	  | `Var v, _ -> (find_t1 v) <: t2
+	  | _, `Var v -> t1 <: (find_t2 v)
       | `Collection t, `Collection s -> t <: s
       | `Option t, `Option s -> t <: s
   (*  | `Option t, _ -> t <: s NOT VALID YET *)
       | `Product ts, `Product ss -> List.for_all2 (<:) ts ss
-      | `Named_product ts, `Named_product ss -> List.for_all (fun (x1,y1) -> List.exists (fun (x2,y2) -> x1=x2 && y1 <: y2) ss) ts 
+      | `Named_product ts, `Named_product ss -> List.for_all (fun (x1,y1) -> List.exists (fun (x2,y2) -> x1=x2 && y1 <: y2) ss) ts
       | `Named_sum ts, `Named_sum ss -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
       | `Unit, `Unit -> true
       | `Int, `Int -> true
@@ -80,7 +95,10 @@ let is_subtype_of t1 t2 =
       | `String, `Char | `String, `String -> true
       | _ -> false in
       Hashtbl.replace table (t,s) result;
-      if not result then Printf.printf "%s <: %s --> FALSE\n" (to_string t) (to_string s);
+      if not result && not !found_error then begin
+        Printf.eprintf "==type conflict==\ntype: %s\nis not a subtype of\ntype: %s\n=================\n" (to_string t) (to_string s);
+        found_error := true;
+      end;
       result
     end in
   t1 <: t2
@@ -130,7 +148,6 @@ let rec of_string s : t  = match s with
   | "float" -> `Float
   | "char" -> `Char
   | "string" -> `String
-  | "rec" -> `Rec
   | s -> match s.[0] with
       | '(' ->
           let s = String.sub s 1 (String.length s - 2) in
@@ -158,6 +175,13 @@ let rec of_string s : t  = match s with
       | 'o' when s.[1] = 'p' && s.[2] = 't' && s.[3] = 'i' && s.[4] = 'o' && s.[5] = 'n' && s.[6] = '.' ->
           let s = String.sub s 7 (String.length s - 7) in
           `Option (of_string s)
+	  | 'r' when s.[1] = 'e' && s.[2] = 'c' && s.[3] = '@' ->
+           begin match split_par ~limit:3 '@' s with
+           | [ _; var; t ] -> `Rec(var, of_string t)
+           | _ -> assert false
+           end
+      | '@' ->
+          `Var (String.sub s 1 (String.length s - 1))
       | _ ->
           failwith (Printf.sprintf "Unable to parse type '%s'" s)
 
