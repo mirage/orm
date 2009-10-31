@@ -1,14 +1,16 @@
 (*pp camlp4o -I ../lib -I `ocamlfind query type-conv` pa_type_conv.cmo pa_orm.cma *)
 
-TYPE_CONV_PATH "Recursive"
+TYPE_CONV_PATH "Recursive_mutate"
 
 type s = { 
   t1: string;
-  mutable t2: x option
+  t2: x option;
+  mutable t3: char;
 }
 and x = {
   x1: s option;
-  mutable x2: char
+  mutable x2: char; 
+  x3: int64
 }
 with orm ( debug: all; dot: "recursive.dot" )
 
@@ -18,10 +20,10 @@ open OUnit
 open Printf
 
 let ps s = eprintf "{ t1=%s t2=%c }\n" s.t1 (match s.t2 with |None -> '?' |Some x -> x.x2)
-let name = "recursive.db"
+let name = "recursive_mutate.db"
 
-let rec vt = { t1= "hello"; t2=(Some vx) }
-and vx = { x1=(Some vt); x2='z' }
+let rec vt = { t1= "hello"; t2=(Some vx); t3='z' }
+and vx = { x1=(Some vt); x2='z'; x3=1L }
 
 let test_init () =
   ignore(open_db init name);

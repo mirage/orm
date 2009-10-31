@@ -17,7 +17,7 @@ RESULT= run_test
 TESTS=  simple tuple variant alltypes foreign recursive array_simple \
 	foreign_and_variant foreign_tuple list_foreign list_simple \
 	list_tuple list_list nested_tuple nested_option variant_nested \
-	stress record_mutate list_mutate
+	stress record_mutate list_mutate recursive_mutate
  
 SOURCES= test_utils.ml $(TESTS:%=%.ml) suite.ml
 
