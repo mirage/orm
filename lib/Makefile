@@ -1,6 +1,8 @@
 .DEFAULT: all
 
 all:
+	ln -nsf ../hash/p4_hash.ml
+	ln -nsf ../hash/p4_hash.mli
 	$(MAKE) -f Makefile.syntax $@
 	$(MAKE) -f Makefile.orm $@
 
