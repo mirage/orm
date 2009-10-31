@@ -19,3 +19,5 @@ pi_*.ml
 *_debug.mli
 *.dot
 lib_test/run_test
+lib/p4_hash.ml
+lib/p4_hash.mli
