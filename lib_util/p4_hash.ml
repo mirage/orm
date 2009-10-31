@@ -30,13 +30,13 @@ let hash_variant s =
   (* make it signed for 64 bits architectures *)
   if !accu > 0x3FFFFFFF then !accu - (1 lsl 31) else !accu
 
-let rec hash_expr env depth ctyp =
+let rec t ~envfn depth ctyp =
   let _loc = loc_of_ctyp ctyp in
   let default = <:expr< Hashtbl.hash x >> in
   let again y = if depth > 10 then 
       <:expr< 0 >> 
     else 
-      hash_expr env (depth+1) y in
+      t ~envfn (depth+1) y in
 
   match ctyp with
     <:ctyp< unit >> | <:ctyp< int >> 
@@ -98,7 +98,7 @@ let rec hash_expr env depth ctyp =
              incr pos;
              <:expr< _combine $a$ $ext !pos t$ >> ) (ext 1 hd) tl
        | _ -> assert false in
-     <:expr< match x with [ ($mcp$) -> $tubis$ ] >>
+     <:expr< match x with [ $tup:mcp$ -> $tubis$ ] >>
 
   | <:ctyp@loc< list $t$ >> ->
      <:expr< List.fold_left (fun a x -> _combine a $again t$) 0 x >>
@@ -107,27 +107,31 @@ let rec hash_expr env depth ctyp =
      <:expr< Array.fold_left (fun a x -> _combine a $again t$) 0 x >>
 
   | <:ctyp< $lid:id$ >> ->
-      let ft = List.assoc id env in
-      <:expr< $again ft$ >>
+      <:expr< $again (envfn id)$ >>
 
   | _ -> failwith "unknown type"
 
-let gen ctyp =
+let gen1 ~envfn ctyp =
+  let _loc = loc_of_ctyp ctyp in
+  <:expr< 
+    let _combine acc h = ((acc lsl 5) + acc) + h in
+    $t ~envfn 0 ctyp$
+  >>
+
+let gen ?(fun_name=(fun x -> x)) ctyp =
   let _loc = loc_of_ctyp ctyp in
   (* make a list of all the terms *)
   let rec fn ty acc =
     match ty with
       Ast.TyAnd (_loc, tyl, tyr) ->
-       fn tyl (fn tyr acc)
+        fn tyl (fn tyr acc)
     | Ast.TyDcl (_loc, id, _, ty, []) ->
-       (id,ty) :: acc
-    |_ -> assert false in
+      (id,ty) :: acc
+    | _ -> assert false in
   let env = fn ctyp [] in
-  let bis = List.map (fun (id,ty) ->
+  let envfn = fun id -> List.assoc id env in
+  let bis = List.map (fun (id,ctyp) ->
      <:binding<
-        $lid:id$ (x : $lid:id$) =
-          let _combine acc h = ((acc lsl 5) + acc) + h in
-          $hash_expr env 0 ty$
-     >>
+        $lid:(fun_name id)$ (x : $lid:id$) = $gen1 ~envfn ctyp$ >>
   ) env in
   <:str_item< value $biAnd_of_list bis$ >>
