@@ -37,7 +37,6 @@ let create_fun name ctyp =
     | <:ctyp< string >> -> <:expr< `String >>
     | <:ctyp< option $ty$ >> -> <:expr< `Option $aux ty$ >>
     | <:ctyp< ( $tup:tp$ ) >> -> <:expr< `Product $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> (list_of_ctyp tp [])$ >>
-    | <:ctyp< $lid:id$ >> -> <:expr< if type_name = $str:name$ then `Rec else $lid:make_name id$ type_name >>  
     | <:ctyp< list $ctyp$ >>
     | <:ctyp< array $ctyp$ >> -> <:expr< `Collection $aux ctyp$ >>
     | <:ctyp< [< $row_fields$ ] >> 
@@ -57,7 +56,14 @@ let create_fun name ctyp =
           | <:ctyp< $lid:id$ : $t$ >> -> <:expr< [ ($str:id$, $aux t$) :: $accu$ ] >>
           | _ -> failwith "unexpected AST" in
         <:expr< `Named_product $fn <:expr< [] >> fs$ >>
+    | <:ctyp< $lid:id$ >> -> <:expr< if List.mem $str:id$ bind_vars then `Var $str:id$ else $lid:make_name id$ [ $str:id$ :: bind_vars ] >>
     | x -> 
         debug_ctyp x;
         failwith "unknown type" in
- <:binding< $lid:make_name name$ type_name : Orm.Types.t = $aux ctyp$ >>
+ <:binding< $lid:make_name name$ bind_vars : Orm.Types.t =
+    let my_type = $aux ctyp$ in
+    if List.mem $str:name$ (OT.free_vars my_type) then
+      `Rec ($str:name$, my_type)
+    else
+      my_type
+  >>
