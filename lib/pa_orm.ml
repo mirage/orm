@@ -36,46 +36,6 @@ module Typedefs = struct
       <:binding< _cache_new () = { $rbSem_of_list ids$ } >>
     in
 
-    let hashfn t = sprintf "__%s_hash" t.t_name in
-    let hash_fun_expr env t =
-      let _loc = loc_of_ctyp t.t_ctyp in
-      let hash_name id =
-         let default = <:expr< Hashtbl.hash >> in
-         let f = List.find (fun f' -> f'.f_name = id) t.t_fields in
-         if is_foreign f then
-             <:expr< $lid:hashfn (get_foreign_table env f)$ >> 
-           else default in
-      match t.t_ctyp with
-      | <:ctyp< { $fs$ } >> ->
-        let no_mutable = ref true in
-        let _loc = loc_of_ctyp t.t_ctyp in
-        let rec fn accu = function
-          | <:ctyp< $t1$; $t2$ >> -> fn (fn accu t1) t2
-          | <:ctyp< $lid:id$ : mutable $t$ >> -> no_mutable := false; accu
-          | <:ctyp< $lid:id$ : $t$ >> -> id :: accu
-          | _ -> failwith "unexpected AST" in
-        (match fn [] fs with
-          |[] -> (* no non-mutable field: degenerate case of constant hash value. *)
-            <:expr< 0 >>
-          |[nmf] -> (* single non-mutable field: use Hashtbl.hash directly on that field *)
-            <:expr< Hashtbl.hash x.$lid:nmf$ >>
-          |nmf when !no_mutable -> (* no mutable fields: use Hashtbl.hash as normal *)
-            <:expr< Hashtbl.hash x >>
-          |nmf -> (* multiple non-mutable fields: combine using DJB's hash function *)
-            biList_to_expr 
-              (
-               ( <:binding< _h = 5381 >>)  ::  
-               ( <:binding< _combine acc h = ((acc lsl 5) + acc) + h >> ) ::
-               (List.map (fun id -> <:binding< _h = _combine _h ($hash_name id$ x.$lid:id$) >> ) nmf)
-              )
-              <:expr< _h >>)
-      | _ -> <:expr< Hashtbl.hash x >> in
-
-    let hashfn_binds = biAnd_of_list (List.map (fun t ->
-        let _loc = loc_of_ctyp t.t_ctyp in
-        <:binding< $lid:hashfn t$ x = $hash_fun_expr env t$ >>
-      ) nlit) in
-
     let wh_decls = List.map (fun t ->
       let _loc = loc_of_ctyp t.t_ctyp in
       let hash_mod_keys = if env.debug_leak then
@@ -86,13 +46,14 @@ module Typedefs = struct
           <:module_expr< Hashtbl.Make >> 
         else 
           <:module_expr< Orm.Hweak.MakeWeakValues >> in
+      let envfn = with_table (fun _ t -> t.t_ctyp) env in
       <:str_item< 
         module $uid:whashfn t$ = $hash_mod_keys$ (
             struct 
               type __t__ = $ctyp_of_table t$;
               type t = __t__;
               value equal = ( == );
-              value hash = $lid:hashfn t$;
+              value hash x = $P4_hash.gen1 ~envfn t.t_ctyp$;
             end );
         module $uid:rhashfn t$ = $hash_mod_values$ (
             struct
@@ -113,7 +74,6 @@ module Typedefs = struct
       declare_type "cache_elt" sum_type in
 
     stSem_of_list [ 
-      <:str_item< value rec $hashfn_binds$ >>;
       <:str_item< $list:wh_decls$ >>;
       <:str_item< type $id_decl$ >>;
       <:str_item< value $id_new$ >>;
@@ -440,6 +400,11 @@ end
 (* --- Get functions *)
 module Get = struct
   
+  let whashex _loc fn t =
+    <:expr< $uid:whashfn t$.$lid:fn$ db.OS.cache.$lid:tidfn t$ >>
+  let rhashex _loc fn t =
+    <:expr< $uid:rhashfn t$.$lid:fn$ db.OS.cache.$lid:tridfn t$ >>
+
   (* construct the concrete value to return *)
   let of_stmt env t =
     let _loc = loc_of_ctyp t.t_ctyp in
@@ -480,8 +445,8 @@ module Get = struct
           | _  -> let _id = match _id.val with [
             Sqlite3.Data.INT x -> x |x -> failwith (Sqlite3.Data.to_string x) ] in
             do {
-              $whashex "add" t$ l _id;
-              $rhashex "add" t$ _id l;
+              $whashex _loc "add" t$ l _id;
+              $rhashex _loc "add" t$ _id l;
               l
             }
           ]

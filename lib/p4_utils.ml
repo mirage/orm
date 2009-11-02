@@ -22,9 +22,9 @@ open PreCast
 open Ast
 open Syntax
 
-module PP = Camlp4.Printers.OCaml.Make(Syntax)
+(* module PP = Camlp4.Printers.OCaml.Make(Syntax)
 let pp = new PP.printer ()
-let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
+let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty *)
 
 (* convenience function to wrap the TyDcl constructor since I cant
    find an appropriate quotation to use for this *)
@@ -65,6 +65,11 @@ let apply _loc f label_args =
 let access_array _loc a i =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
   Ast.ExAre (_loc, make a, Ast.ExInt (_loc, string_of_int i))
+
+let ctyp_is_list = function
+  | <:ctyp< list $c$ >> 
+  | <:ctyp< array $c$ >> -> true
+  | _ -> false
 
 (* List.map with the integer position passed to the function *)
 let mapi fn =

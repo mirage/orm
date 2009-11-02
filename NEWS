@@ -1,5 +1,7 @@
 0.4:
 
+* Add a hash function generation library for most ML types [31 Oct 2009]
+* Sub-typing checking improvements [30 Oct 2009]
 * Fixed mutable records not hashing correctly [27 Oct 2009]
 * Add a t_id function to return an int64 UUID for a value [23 Oct 2009]
 * Add debug "none" keyword to disable debug explicitly [23 Oct 2009]
