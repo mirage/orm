@@ -400,6 +400,11 @@ end
 (* --- Get functions *)
 module Get = struct
   
+  let whashex _loc fn t =
+    <:expr< $uid:whashfn t$.$lid:fn$ db.OS.cache.$lid:tidfn t$ >>
+  let rhashex _loc fn t =
+    <:expr< $uid:rhashfn t$.$lid:fn$ db.OS.cache.$lid:tridfn t$ >>
+
   (* construct the concrete value to return *)
   let of_stmt env t =
     let _loc = loc_of_ctyp t.t_ctyp in
@@ -440,8 +445,8 @@ module Get = struct
           | _  -> let _id = match _id.val with [
             Sqlite3.Data.INT x -> x |x -> failwith (Sqlite3.Data.to_string x) ] in
             do {
-              $whashex "add" t$ l _id;
-              $rhashex "add" t$ _id l;
+              $whashex _loc "add" t$ l _id;
+              $rhashex _loc "add" t$ _id l;
               l
             }
           ]

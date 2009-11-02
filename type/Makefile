@@ -1,9 +1,9 @@
 OCAMLMAKEFILE = ../OCamlMakefile
 ANNOTATE = yes
 
-SOURCES = p4_hash.ml p4_utils.ml ../type/type.ml ../type/p4_type.ml idl.ml p4_sql.ml pa_orm.ml
+SOURCES = type.ml p4_type.ml pa_type.ml
 PACKS = type-conv
-RESULT = pa_orm
+RESULT = pa_type
 USE_CAMLP4 = yes
 
 .PHONY: all
