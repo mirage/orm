@@ -29,29 +29,16 @@ open Idl
 
 module Name = struct
 
-  let savefn t       = sprintf "__%s_save" t.t_name
-  let extsavefn t    = sprintf "%s_save" t.t_name
+  let get t f = sprintf "%s_get_%s" t.t_name f.f_name
 
-  let getfn env t    = sprintf "__%s_get" t.t_name
-  let extgetfn env t = sprintf "%s_get"   t.t_name
-
-  let whashfn env t  = sprintf "W_%s" t.t_name
-  let rhashfn env t  = sprintf "R_%s" t.t_name
-
-  let tidfn env t    = sprintf "%s__id"  t.t_name
-  let tridfn env t   = sprintf "%s__val" t.t_name
-(*  let tnewfn t    = sprintf "%s__new"   t.t_name
-  let fidfn  f    = sprintf "%s__id_%s" f.f_table f.f_name
-  let fcachefn t  = sprintf "C_%s"      t.t_name
-  let fautofn env t = fidfn (auto_id_field env t.t_name)
-*)
   let count = ref 0
   let create () =
       let _loc = Loc.ghost in
-      incr count; <:expr< $lid:sprintf "__var%i__" !count$ >>
+      incr count; 
+      <:expr< $lid:sprintf "__var%i__" !count$ >>,
+      <:patt< $lid:sprintf "__var%i__" !count$ >>
 
 end
-
 
 let debug env ty n e =
   let _loc = Loc.ghost in
@@ -65,37 +52,39 @@ let debug env ty n e =
 
 let map_strings sep fn sl = String.concat sep (List.map fn sl)
 
-module Save = struct
+module Schema_of = struct
 
-  let field ~env ~foreign ~recursive f =
+  let rec field ~env ~getfn f =
     let _loc = f.f_loc in
-    let id =  <:expr< $lid:f.f_table$ . $lid:f.f_name$ >> in
     match f.f_info with
-    | Autoid                 -> <:expr< Sqlite3.Data.INT $id$ >>
-    | Foreign (Internal , t) -> foreign env t
-    | Foreign (External , t) -> foreign env t
-    | Row_name _             -> <:expr< Sqlite3.Data.TEXT $id$ >>
-    | List_counter           -> <:expr< Sqlite3.Data.INT $id$ >>
+    | Autoid                 -> <:expr< `INT $getfn$ >>
+    | Foreign (Internal , t) ->
+      let id, pid = Name.create () in <:expr< let $pid$ = $getfn$ in `ROW $table ~env id (Table.find env t)$ >>
+    | Foreign (External , t) -> <:expr< `FOREIGN $getfn$ >>
+    | Row_name _             -> <:expr< `TEXT $getfn$ >>
+    | List_counter           -> <:expr< `INT $getfn$ >>
     | Data d                 ->
       match d with
-      | F_unit   -> <:expr< Sqlite3.Data.INT 1L >>
-      | F_int    -> <:expr< Sqlite3.Data.INT (Int64.of_int $id$) >>
-      | F_int32  -> <:expr< Sqlite3.Data.INT (Int64.of_int32 $id$) >>
-      | F_int64  -> <:expr< Sqlite3.Data.INT $id$ >>
-      | F_float  -> <:expr< Sqlite3.Data.FLOAT $id$ >>
-      | F_char   -> <:expr< Sqlite3.Data.INT (Int64.of_int (Char.code $id$)) >>
-      | F_string -> <:expr< Sqlite3.Data.TEXT $id$ >>
-      | F_bool   -> <:expr< Sqlite3.Data.INT (if $id$ then 1L else 0L) >>
+      | F_unit   -> <:expr< `INT 1L >>
+      | F_int    -> <:expr< `INT (Int64.of_int $getfn$) >>
+      | F_int32  -> <:expr< `INT (Int64.of_int32 $getfn$) >>
+      | F_int64  -> <:expr< `INT $getfn$ >>
+      | F_float  -> <:expr< `FLOAT $getfn$ >>
+      | F_char   -> <:expr< `INT (Int64.of_int (Char.code $getfn$)) >>
+      | F_string -> <:expr< `TEXT $getfn$ >>
+      | F_bool   -> <:expr< `INT (if $getfn$ then 1L else 0L) >>
 
-  let bind ~env ~foreign ~recursive fields =
-    let bind_one i f = 
-      let _loc = f.f_loc in
-      <:expr<
-        let __e__ = $field ~env ~foreign ~recursive f$ in
-        let $debug env `Binds "bind" <:expr< $str:string_of_int i$ ^ " <- " ^ Sqlite3.Data.to_string __e__ >>$ in
-        OS.db_must_bind db __stmt__ $int:string_of_int i$ __e__
-      >> in
-    let exprs = mapi (fun i f -> bind_one i f) fields in
+  and table ~env id t =
+    let _loc = t.t_loc in
+    let getfn f = <:expr< $str:Name.get t f$ $id$ >> in
+    <:expr< ( 
+      $str:t.t_name$, 
+      [ $List.fold_right (fun f accu -> <:expr< [ $field ~env ~getfn:(getfn f) f$ :: $accu$ ] >>) t.t_fields <:expr< [] >>$ ]
+    ) >> 
+
+end
+
+(*
     exSem_of_list exprs
 
   (* the INSERT statement for a table. This let the recursive foreign fields blanked. *)
@@ -119,7 +108,7 @@ module Save = struct
       Sqlite3.Data.INT __id__
     } >>
 
-(*  (* the UPDATE statement for a table *)
+  (* the UPDATE statement for a table *)
   let rec update env t =
     let foreign env t = update in
     let recursive =
@@ -156,7 +145,7 @@ module Save = struct
 
           $lid:Name.savefn t$ ~__cache__ db >>
         
-*)        
+        
 
 end
 
@@ -261,4 +250,6 @@ module Table = struct
     let where = "TODO" in
     let where = if where = "" then "" else " WHERE " ^ where in ()
  end 
+*)
+
 *)
