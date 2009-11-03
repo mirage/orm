@@ -51,7 +51,7 @@ let gen_body envfn name ctyp =
     let wvalues = Wvalues.create 128 in
     ( Wkeys.find wkeys,
       Wvalues.find wvalues,
-      (fun t id -> Wkeys.replace wkeys t id; Wvalues.replace wvalules id t) )
+      (fun t id -> do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t } ) )
   >>
 
 let gen_fn envfn (name, ctyp) =
