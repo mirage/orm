@@ -124,7 +124,7 @@ let create_lazy tds =
 let get tds =
   let _loc = loc_of_ctyp tds in
   let get n f = <:patt< $lid:n ^ "_get_" ^ f$ >> in
-  let geti n  = <:patt< $lid:n ^ "_get"$ >> in
+  let geti n pos = <:patt< $lid:n ^ "_get_" ^ string_of_int pos$ >> in
   let aux accu (_loc, n, ctyp) =
     match ctyp with
     | <:ctyp< option $_$>>
@@ -143,10 +143,11 @@ let get tds =
     | <:ctyp< [ $_$ ] >>
     | <:ctyp< string >>       -> accu
     | <:ctyp< ( $tup:tp$ ) >> ->
-      let args = mapi (fun i _ -> "x" ^ string_of_int i) (list_of_ctyp tp []) in
+      let fields = list_of_ctyp tp [] in
+      let args = mapi (fun i _ -> "x" ^ string_of_int i) fields in
       let patt = List.map (fun p -> <:patt< $lid:p$ >>) args in
       let expr = List.map (fun p -> <:expr< $lid:p$ >>) args in
-      <:binding< $geti n$ = fun ( $paCom_of_list patt$ ) -> fun i -> [| $exSem_of_list expr$ |].(i) >> :: accu
+      mapi (fun i f -> <:binding< $geti n i$ = fun ( $paCom_of_list patt$ ) -> [| $exSem_of_list expr$ |].(i) >> ) fields @ accu
     | <:ctyp< < $t$ > >>     ->
       let fields = list_of_fields t in
       List.map (fun f -> <:binding< $get n f$ = fun x -> x . $lid:f$ >> ) fields @ accu
