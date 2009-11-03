@@ -41,7 +41,7 @@ let mapi fn =
     fn !pos x
   ) 
 
-let gen_normal tds =
+let create_normal tds =
   let aux (_loc, n, ctyp) =
     let create n = <:patt< $lid:n ^ "_create"$ >> in
     let create_expr n = <:expr< $lid:n ^ "_create"$ >> in
@@ -60,7 +60,7 @@ let gen_normal tds =
     | <:ctyp< [> $_$ ] >>
     | <:ctyp< [= $_$ ] >> 
     | <:ctyp< [ $_$ ] >>
-    | <:ctyp< string >>      -> <:binding< $create n$ = fun x -> x >>
+    | <:ctyp< string >>       -> <:binding< $create n$ = fun x -> x >>
     | <:ctyp< ( $tup:tp$ ) >> ->
       let args = mapi (fun i _ -> "x" ^ string_of_int i) (list_of_ctyp tp []) in
       let body = <:expr< ( $exCom_of_list (List.map (fun a -> <:expr< $lid:a$ >>) args)$ ) >> in
@@ -81,7 +81,7 @@ let gen_normal tds =
   let bindings = List.map aux (list_of_ctyp_decl tds) in
   <:str_item< value rec $biAnd_of_list bindings$ >>
 
-let gen_lazy tds =
+let create_lazy tds =
   let aux (_loc, n, ctyp) =
     let create n = <:patt< $lid:n ^ "_create_lazy"$ >> in
     let create_expr n = <:expr< $lid:n ^ "_create_lazy"$ >> in
@@ -100,7 +100,7 @@ let gen_lazy tds =
     | <:ctyp< [> $_$ ] >>
     | <:ctyp< [= $_$ ] >> 
     | <:ctyp< [ $_$ ] >>
-    | <:ctyp< string >>      -> <:binding< $create n$ = fun x -> x >>
+    | <:ctyp< string >>       -> <:binding< $create n$ = fun x -> x >>
     | <:ctyp< ( $tup:tp$ ) >> ->
       let args = mapi (fun i _ -> "x" ^ string_of_int i) (list_of_ctyp tp []) in
       let body = <:expr< ( $exCom_of_list (List.map (fun a -> <:expr< $lid:a$ >>) args)$ ) >> in
@@ -121,6 +121,45 @@ let gen_lazy tds =
   let bindings = List.map aux (list_of_ctyp_decl tds) in
   <:str_item< value rec $biAnd_of_list bindings$ >>
 
+let get tds =
+  let _loc = loc_of_ctyp tds in
+  let get n f = <:patt< $lid:n ^ "_get_" ^ f$ >> in
+  let geti n  = <:patt< $lid:n ^ "_get"$ >> in
+  let aux accu (_loc, n, ctyp) =
+    match ctyp with
+    | <:ctyp< option $_$>>
+    | <:ctyp< unit >>
+    | <:ctyp< int >>
+    | <:ctyp< int32 >>
+    | <:ctyp< int64 >>
+    | <:ctyp< float >>
+    | <:ctyp< bool >>
+    | <:ctyp< list $_$ >>
+    | <:ctyp< array $_$ >>
+    | <:ctyp< char >>
+    | <:ctyp< [< $_$ ] >> 
+    | <:ctyp< [> $_$ ] >>
+    | <:ctyp< [= $_$ ] >> 
+    | <:ctyp< [ $_$ ] >>
+    | <:ctyp< string >>       -> accu
+    | <:ctyp< ( $tup:tp$ ) >> ->
+      let args = mapi (fun i _ -> "x" ^ string_of_int i) (list_of_ctyp tp []) in
+      let patt = List.map (fun p -> <:patt< $lid:p$ >>) args in
+      let expr = List.map (fun p -> <:expr< $lid:p$ >>) args in
+      <:binding< $geti n$ = fun ( $paCom_of_list patt$ ) -> fun i -> [| $exSem_of_list expr$ |].(i) >> :: accu
+    | <:ctyp< < $t$ > >>     ->
+      let fields = list_of_fields t in
+      List.map (fun f -> <:binding< $get n f$ = fun x -> x . $lid:f$ >> ) fields @ accu
+    | <:ctyp< { $t$ } >>     ->
+      let fields = list_of_fields t in
+      List.map (fun f -> <:binding< $get n f$ = fun x -> x # $lid:f$ >> ) fields @ accu
+    | <:ctyp< $lid:id$ >>    -> accu
+    | x                      -> failwith "unknown type" in
+  let _loc = loc_of_ctyp tds in
+  let bindings = List.fold_left aux [] (list_of_ctyp_decl tds) in
+  <:str_item< value rec $biAnd_of_list bindings$ >>
+
 let gen tds =
   let _loc = loc_of_ctyp tds in
-  <:str_item< $gen_normal tds$; $gen_lazy tds$ >>
+  <:str_item< $create_normal tds$; $create_lazy tds$; $get tds$ >>
+
