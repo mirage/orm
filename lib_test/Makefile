@@ -8,10 +8,11 @@ run: dnc
 slow: dnc
 	env SLOW=1 ./$(RESULT) -verbose
 
-export INCDIRS = ../lib
-export LIBDIRS = ../lib
+export INCDIRS =
+export LIBDIRS =
 export LIBS = orm
-export PACKS = unix sqlite3 ounit
+export PACKS = unix sqlite3 oUnit orm.syntax
+export PREDS = camlp4o
 
 RESULT= run_test
 TESTS=  simple tuple variant alltypes foreign recursive array_simple \

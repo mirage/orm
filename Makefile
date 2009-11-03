@@ -1,6 +1,7 @@
 .PHONY: all
 all:
 	@cd lib && $(MAKE)
+	$(MAKE) reinstall
 	@cd lib_test && $(MAKE)
 
 .PHONY: test
