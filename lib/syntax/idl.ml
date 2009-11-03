@@ -27,14 +27,14 @@ type table_info =
   | Variant  (** table contains variant values                               *)
 
 (** The type of fields *)
-type foreign = Internal | Recursive | External
+type foreign = Internal | External
 type data = F_unit | F_int | F_int32 | F_int64 | F_float | F_bool | F_char | F_string
 type field_info =
   | Autoid                      (** field contains the unique auto-ID          *)
   | Data of data                (** field contains simple data                 *)
   | Foreign of foreign * string (** field contains a link to an internal table *)
   | List_counter                (** used by list tables only                   *)
-  | Row_name of (string * t list) list (** used by variant tables only         *)
+  | Row_name of (string * int) list (** used by variant tables only            *)
 
 (** The environment type *)
 and env = {
@@ -48,7 +48,7 @@ and env = {
   debug_dot: string option;
   e_loc: Camlp4.PreCast.Ast.loc;
   e_type: (Camlp4.PreCast.Ast.loc * string * t) list;
-  e_foreigns: (string * string) list (* foreign field name -> corresponding foreign table name *)
+  e_aliases: (string * string) list  (* Alias table for foreign tables *)
 }
 and table = {
   t_name: string;
@@ -86,11 +86,10 @@ module String_of = struct
 
   let foreign = function
     | External  -> "E"
-    | Recursive -> "R"
     | Internal  -> "I"
 
   let field_info = function
-    | Autoid        -> "A"
+    | Autoid        -> "a"
     | Data s        -> sprintf "D(%s)" (data s)
     | Foreign (f,s) -> sprintf "F%s(%s)" (foreign f) s
     | List_counter  -> "c"
@@ -106,24 +105,29 @@ module String_of = struct
     sprintf "%s: %s" f.f_name (field_info f.f_info)
 
   let table t =
-    sprintf "%-30s / %-10s (child=%s) (exposed=%b) [ %s ] "
+    sprintf "%-30s %-10s %s (child=%s) [ %s ]"
       t.t_name
       (table_info t.t_info)
+      (if t.t_exposed then "E" else "I")
       (String.concat ", " t.t_child)
-      t.t_exposed
       (string_map ", " field t.t_fields)
 
+  let alias (t1, t2) =
+    sprintf "(%s, %s)" t1 t2
+
   let env e =
-    sprintf "TABLES:\n%s" (string_map "\n" table e.e_tables)
+    sprintf "TABLES:\n%s\nALIASES: { %s }"
+      (string_map "\n" table e.e_tables)
+      (string_map ", " alias e.e_aliases)
 
 end
 
 let error env (s:('a,unit,string,'b) format4) =
   kprintf (fun s ->
-    eprintf "%s\n%s\n" (String_of.env env) s;
-    Printexc.print_backtrace stderr;
+    eprintf "ERROR:%s\n%s\n" s (String_of.env env);
+    (* Printexc.print_backtrace stderr; *)
     exit (-1)
-    )s
+    ) s
 
 (* return index in list or Not_found *)
 (*exception Found_item of int
@@ -139,18 +143,20 @@ let listi fn l = try
 (* --- Accessor functions to filter the environment *)
 module Env = struct
 
-  let toplevel_table = {
-    t_name    = "__toplevel__";
+  let toplevel_table_name = "__toplevel__"  
+
+  let toplevel_table ctyp = {
+    t_name    = toplevel_table_name;
     t_exposed = false;
     t_fields  = [];
     t_info    = Toplevel;
     t_child   = [];
     t_parent  = [];
-    t_loc     = Camlp4.PreCast.Loc.ghost;
+    t_loc     = Camlp4.PreCast.Ast.loc_of_ctyp ctyp;
   }
 
   let empty ctyp = {
-    e_tables    = [ toplevel_table ];
+    e_tables    = [ toplevel_table ctyp ];
     e_indices   = [];
     e_name      = "orm";
     debug_leak  = false;
@@ -160,14 +166,14 @@ module Env = struct
     debug_dot   = None;
     e_type      = P4_type.create ctyp;
     e_loc       = Camlp4.PreCast.Ast.loc_of_ctyp ctyp;
-    e_foreigns  = [];
+    e_aliases   = [];
     }
 
   let mem_table env name =
-    List.exists (fun t -> t.t_name = name || List.mem_assoc t.t_name env.e_foreigns) env.e_tables
+    List.exists (fun t -> t.t_name = name || List.mem_assoc t.t_name env.e_aliases) env.e_tables
 
   let find_table env name =
-    try List.find (fun t -> t.t_name = name || List.mem_assoc t.t_name env.e_foreigns) env.e_tables
+    try List.find (fun t -> t.t_name = name || List.mem_assoc t.t_name env.e_aliases) env.e_tables
     with _ -> error env "Table %s not found" name
 
   (* replace the table in the env and return new env *)
@@ -184,6 +190,50 @@ module Env = struct
   (* helper fn to lookup a table in the env and apply a function to it *)
   let with_table fn env t =
     fn env (find_table env t)
+
+  let assert_alias_does_not_exist env t_name =
+    if List.mem_assoc t_name env.e_aliases then
+      error env "Alias %s already exists for table %s" (List.assoc t_name env.e_aliases) t_name
+
+  (* make the table t1 become the parent of the table t2 in env *)
+  let link_table ~env ~parent ~child =
+    let t1 = find_table env parent in
+    let t2 = find_table env child in
+    let env =
+      if not (List.mem t2.t_name t1.t_child) then
+        replace_table env { t1 with t_child = t2.t_name :: t1.t_child }
+      else env in
+    let env =
+      if not (List.mem t1.t_name t2.t_parent) then
+        replace_table env { t2 with t_parent = t1.t_name :: t2.t_parent }
+      else env in
+    env
+
+  let add_table_alias ~env ~t_name ~alias =
+    if alias = toplevel_table_name || t_name = alias then
+      env
+    else begin
+      assert_alias_does_not_exist env t_name;
+      { env with e_aliases = (t_name, alias) :: env.e_aliases }
+    end
+
+  let remove_table_alias ~env ~t_name ~alias =
+    { env with e_aliases = List.remove_assoc t_name env.e_aliases }
+
+  let with_table_alias ~env ~t_name ~alias fn =
+    let env = add_table_alias ~env ~t_name ~alias in
+    let env = fn env in
+    remove_table_alias ~env ~t_name ~alias
+
+  let mem_alias env t =
+    List.mem_assoc t env.e_aliases
+
+  let find_alias env t =
+    if mem_alias env t then
+      List.assoc t env.e_aliases
+    else
+      error env "Table %s does not have an alias" t
+
 end
 
 module Field = struct
@@ -196,17 +246,14 @@ module Field = struct
     | Float  -> F_float
     | String -> F_string
     | Char   -> F_char
+    | Bool   -> F_bool
     | t      -> error env "Failed to convert type %s to data" (to_string t)
-
-  (* filter the fields of a specific table *)
-  let filter_fields_with_table fn env t : field list =
-    Env.with_table (fun env table -> List.filter fn table.t_fields) env t
 
   let mem_field ~env ~t_name ~f_name =
     let table = Env.find_table env t_name in
     List.exists (fun f -> f.f_name = f_name) table.t_fields
 
-  let assert_field_not_exist ~env ~t_name ~f_name =
+  let assert_field_does_not_exist ~env ~t_name ~f_name =
     if mem_field ~env ~t_name ~f_name then
       error env "field %s is not unique in %s" f_name t_name
 
@@ -223,15 +270,23 @@ module Field = struct
       f_loc      = table.t_loc;
     } in
     (* sanity check that the name is unique in the field list *)
-    assert_field_not_exist ~env ~t_name ~f_name;
+    assert_field_does_not_exist ~env ~t_name ~f_name;
     Env.replace_table env { table with t_fields = field :: table.t_fields }
 
-  let add_foreign_external ~env ~t_name ~f_name =
-    assert_field_not_exist ~env ~t_name ~f_name;
-    { env with e_foreigns = (f_name, t_name) :: env.e_foreigns }
+  let add_list_counter ~env ~t_name =
+    add ~env ~t_name ~f_name:"__idx__" ~f_info:List_counter
 
-  let add_foreign_internal ~env ~t_name ~f_name =
-    add ~env ~t_name ~f_name ~f_info:(Foreign (Internal, f_name))
+  let add_row_name ~env ~t_name s =
+    let info = List.map (fun (n,sl) -> n, List.length sl) s in
+    add ~env ~t_name ~f_name:"__row_name__" ~f_info:(Row_name info)
+
+  let add_foreign_internal ~env ~t_name ~f_name ~foreign =
+    let env = Env.link_table ~env ~parent:t_name ~child:foreign in
+    add ~env ~t_name ~f_name ~f_info:(Foreign (Internal, foreign))
+
+  let add_foreign_external ~env ~t_name ~f_name ~foreign =
+    let env = Env.link_table ~env ~parent:t_name ~child:foreign in
+    add ~env ~t_name ~f_name ~f_info:(Foreign (External, foreign))
 
   let add_autoid ~env ~t_name =
     add ~env ~t_name ~f_name:"__id__" ~f_info:Autoid
@@ -246,8 +301,6 @@ module Field = struct
     | Autoid -> true
     | _      -> false
 
-  let no_autoid env t = filter_fields_with_table (fun f -> not (is_autoid env f)) env t
-
   let is_foreign env f =
     match f.f_info with
     | Foreign _ -> true
@@ -257,8 +310,6 @@ module Field = struct
     match f.f_info with
     | Foreign (_,t) -> Env.find_table env t
     | _             -> error env "%s.%s is not a foreign field" f.f_table f.f_name
-
-  let foreigns env t = filter_fields_with_table (is_foreign env) env t
 
 (*  let is_internal f = not (is_exposed f)
 
@@ -311,28 +362,23 @@ module Table = struct
   let replace = Env.replace_table
   let find = Env.find_table
   let mem = Env.mem_table
+  let link = Env.link_table
 
-  let assert_table_not_exist env t_name =
+  (* filter the fields of a specific table *)
+  let filter fn env t : field list =
+    Env.with_table (fun env table -> List.filter fn table.t_fields) env t
+
+  let no_autoid_fields env t = filter (fun f -> not (Field.is_autoid env f)) env t
+
+  let foreign_fields env t = filter (Field.is_foreign env) env t
+
+  let assert_table_does_not_exist env t_name =
     if mem env t_name then
-      error env "Table %s already exists !" t_name
-
-  (* make the table t1 become the parent of the table t2 in env *)
-  let link ~env ~parent ~child =
-    let t1 = find env parent in
-    let t2 = find env child in
-    let env =
-      if not (List.mem t2.t_name t1.t_child) then
-        replace env { t1 with t_child = t2.t_name :: t1.t_child }
-      else env in
-    let env =
-      if not (List.mem t1.t_name t2.t_parent) then
-        replace env { t2 with t_parent = t1.t_name :: t2.t_parent }
-      else env in
-    env
+      error env "Table %s already exists" t_name
 
   let add ~env ~t_name ~t_info ~t_exposed ~parent =
     (* check if the table does not already exists *)
-    assert_table_not_exist env t_name;
+    assert_table_does_not_exist env t_name;
     let table = {
       t_name    = t_name;
       t_fields  = [];
@@ -344,8 +390,12 @@ module Table = struct
     } in
     let env = { env with e_tables = table :: env.e_tables } in
     let env = Field.add_autoid ~env ~t_name in
-    let env = Field.add_foreign_internal ~env ~t_name:parent ~f_name:t_name in
-    link ~env ~parent ~child:table.t_name
+    let p_table = fst parent in
+    let p_field = snd parent in
+    if p_table = Env.toplevel_table_name then
+      env
+    else
+      Field.add_foreign_internal ~env ~t_name:p_table ~f_name:p_field ~foreign:t_name
 
 (*  let is_exposed t = t.t_type = Exposed
   let internal t = t.t_type <> Exposed
@@ -403,7 +453,7 @@ module Dot_of = struct
     sprintf "\"%s\":%s -> \"%s\":id [penwidth=1];" t.t_name f.f_name (Field.get_foreign env f).t_name
 
   let edges_of_table env t =
-    string_map "\n" (edge_foreign env t) (Field.foreigns env t.t_name)
+    string_map "\n" (edge_foreign env t) (Table.foreign_fields env t.t_name)
 
   let table env t =
     sprintf "%s\n%s%s" (record_of_table t) (edges_of_table env t) (childs env t)
@@ -414,21 +464,11 @@ end
 
 (* --- Process functions to convert OCaml types into SQL *)
 
-(* run through the fully-populated environment and update all the foreign references *)
-let update_foreign_refs env =
-  List.fold_left (fun env t ->
-    let env, fields = List.fold_left (fun (env, fields) f ->
-        match f.f_info with
-        | Foreign (External, e) when Table.mem env e ->
-          Table.link ~env ~parent:t.t_name ~child:e, { f with f_info = Foreign (Recursive, e) } :: fields
-        | _ -> env, f :: fields
-      ) (env, []) t.t_fields in
-    let table = Table.find env t.t_name in
-    Table.replace env { table with t_fields = List.rev fields }
-    ) env env.e_tables
-
 let foldi fn accu l =
   let accu, _ = List.fold_left (fun (accu, i) x -> fn accu i x, i + 1) (accu, 0) l in accu
+
+let (>>) s t  = if s = Env.toplevel_table_name then t else sprintf "%s__%s" s t
+let (>>>) s t = sprintf "%s__%i" s t
 
 let rec process_sig ~env ~t_name ~t_exposed ~name s =
 (*  Printf.eprintf "env = %s\nt_name = %s; t_exposed = %b; name = %s\ns = %s\n"
@@ -441,35 +481,31 @@ let rec process_sig ~env ~t_name ~t_exposed ~name s =
 
   | Product sl ->
     (* Create new tables containing the tuple values, and link them to the current table *)
-    let env = Table.add ~env ~t_name:name ~t_info:Normal ~t_exposed ~parent:t_name in
+    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Normal ~t_exposed ~parent:(t_name, name) in
     foldi (fun env pos t ->
-      let elt_name = sprintf "%s__%d" name pos in
-      process_sig ~env ~t_name:name ~t_exposed:false ~name:elt_name t
+      process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:(name >>> pos) t
       ) env sl
 
   | Collection s ->
     (* Create a new table containing an ordered collection of values, and link it to the current table *)
-    let env = Table.add ~env ~t_name:name ~t_info:List ~t_exposed ~parent:t_name in 
-    let env = Field.add ~env ~t_name:name ~f_name:"__idx__" ~f_info:List_counter in
-    let item_name = sprintf "%s__item" name in
-    process_sig ~env ~t_name:name ~t_exposed:false ~name:item_name s
+    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:List ~t_exposed ~parent:(t_name, name) in 
+    let env = Field.add_list_counter ~env ~t_name:(t_name >> name) in
+    process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name s
 
   | Named_product sl ->
     (* Create a new table containing the fields' values, and link them to the current table *)
-    let env = Table.add ~env ~t_name:name ~t_info:Normal ~t_exposed ~parent:t_name in
-    List.fold_left (fun env (f_name, is_mutable, s) ->
-      let field_name = sprintf "%s__%s" name f_name in
-      process_sig ~env ~t_name:name ~t_exposed:false ~name:field_name s
+    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Normal ~t_exposed ~parent:(t_name, name) in
+    List.fold_left (fun env (field_name, is_mutable, s) ->
+      process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:field_name s
       ) env sl
 
   | Named_sum sl ->
     (* Create a new table for each element of the sum type, and link them to the current table *)
-    let env = Table.add ~env ~t_name:name ~t_info:Variant ~t_exposed ~parent:t_name in
-    let env = Field.add ~env ~t_name:name ~f_name:"__row_name__" ~f_info:(Row_name sl) in
-    List.fold_left (fun env (r_name, sl) ->
+    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Variant ~t_exposed ~parent:(t_name, name) in
+    let env = Field.add_row_name ~env ~t_name:(t_name >> name) sl in
+    List.fold_left (fun env (row_name, sl) ->
       foldi (fun env pos s ->
-        let row_name = sprintf "%s__%s__%i" name r_name pos in
-        process_sig ~env ~t_name:name ~t_exposed:false ~name:row_name s
+        process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:(row_name >>> pos) s
         ) env sl
       ) env sl
 
@@ -477,15 +513,17 @@ let rec process_sig ~env ~t_name ~t_exposed ~name s =
     let env = process_sig ~env ~t_name ~t_exposed ~name s in
     Field.set_optional ~env ~t_name ~f_name:name
 
-  | Rec (v, s) -> process_sig ~env ~t_name ~t_exposed ~name s
+  | Rec (v, s) ->
+    Env.with_table_alias ~env ~t_name:v ~alias:(t_name >> name)
+      (fun env -> process_sig ~env ~t_name ~t_exposed ~name s)
 
   | Var v      ->
-    (* Mark the field as external, as we cannot check for recursive field yet *)
-    let env = Field.add ~env ~t_name ~f_name:name ~f_info:(Foreign (External, v)) in
-    Field.add_foreign_external ~env ~f_name:name ~t_name:v
+    if Env.mem_alias env v then
+	  Field.add_foreign_internal ~env ~t_name ~f_name:name ~foreign:(Env.find_alias env v)
+    else
+      Field.add_foreign_external ~env ~t_name ~f_name:name ~foreign:v
 
 let process env =
-  let env = List.fold_left
-    (fun env (_, name, s) -> process_sig ~env ~t_name:Env.toplevel_table.t_name ~t_exposed:true ~name s)
-    env env.e_type in
-  update_foreign_refs env
+  List.fold_left
+    (fun env (_, name, s) -> process_sig ~env ~t_name:Env.toplevel_table_name ~t_exposed:true ~name s)
+    env env.e_type

@@ -74,7 +74,6 @@ module Save = struct
     | Autoid                 -> <:expr< Sqlite3.Data.INT $id$ >>
     | Foreign (Internal , t) -> foreign env t
     | Foreign (External , t) -> foreign env t
-    | Foreign (Recursive, t) -> recursive env t
     | Row_name _             -> <:expr< Sqlite3.Data.TEXT $id$ >>
     | List_counter           -> <:expr< Sqlite3.Data.INT $id$ >>
     | Data d                 ->
@@ -104,7 +103,7 @@ module Save = struct
     let _loc = t.t_loc in
     let foreign env t = insert env (Table.find env t) in
     let recursive env t = <:expr< Sqlit3.Data.NULL >> in
-    let fields = Field.no_autoid env t.t_name in
+    let fields = Table.no_autoid_fields env t.t_name in
     <:expr< do {
       let __sql__ = sprintf "INSERT INTO %s (%s) VALUES(%s);"
         t.t_name
@@ -169,7 +168,6 @@ module Foo = struct
     | Autoid                 -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Some x | $qerror$ ] >>
     | Foreign (Internal , t) -> internal_table env id t
     | Foreign (External , t) -> external_table env id t
-    | Foreign (Recursive, t) -> recursive_table env id t
     | Row_name _             -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | $qerror$ ] >>
     | List_counter           -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | $qerror$ ] >>
     | Data d                 ->
@@ -189,7 +187,6 @@ module Foo = struct
     | Autoid                 -> <:expr< Int64.to_string $id$ >>
     | Foreign (Internal , t) -> internal_table env id t
     | Foreign (External , t) -> external_table env id t
-    | Foreign (Recursive, t) -> recursive_table env id t
     | Row_name _             -> <:expr< $id$ >>
     | List_counter           -> <:expr< Int64.to_string $id$ >>
     | Data d                 -> 
@@ -214,7 +211,6 @@ module Foo = struct
     | Autoid                 -> <:expr< match $id$ with [ Some (`Id _) -> $str:f.f_name ^ "=?"$ | $none$ ] >>
     | Foreign (Internal , t) -> error env "select internal table %s" t
     | Foreign (External , t) -> error env "select external table %s" t
-    | Foreign (Recursive, t) -> error env "select recursive table %s" t
     | Row_name s             -> failwith "TODO"
     | List_counter           -> error env "select list counter" 
     | Data d                 -> 
