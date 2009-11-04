@@ -78,3 +78,17 @@ let mapi fn =
     incr pos;
     fn !pos x
   ) 
+
+
+let make_function _loc ?opt_args ?label_args ?return_type ~name ~args ~body () =
+	let opt_args = match opt_args with
+	| None      -> []
+	| Some opts -> List.map (fun o -> <:patt< ? $lid:o$ >>) opts in
+	let label_args = match label_args with
+	| None      -> []
+	| Some labs -> List.map (fun l -> <:patt< ~ $lid:l$ >>) labs in
+    let args = List.map (fun a -> <:patt< $lid:a$ >>) args in
+	let body = match return_type with
+	| None      -> body
+	| Some rtyp -> <:expr< ( $body$ : $rtyp$ ) >> in
+	<:binding< $lid:name$ = $List.fold_right (fun b a -> <:expr< fun $b$ -> $a$ >>) (opt_args @ label_args @ args) body$ >>
