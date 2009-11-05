@@ -26,8 +26,10 @@ type t =
   | Bool of bool
   | Float of float
   | String of string
-  | List of t list
+  | Enum of t list
+  | Product of t list
   | Dict of (string * t) list
+  | Sum of string * t list
   | Null
   | Var of string
   | Rec of string * t
