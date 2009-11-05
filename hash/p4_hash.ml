@@ -34,7 +34,7 @@ exception Type_not_supported of ctyp
 
 let patt_tuple_of_list _loc = function
 	| []   -> <:patt< >>
-	| [x]  -> <:patt< x >>
+	| [x]  -> x
 	| h::t -> PaTup(_loc, List.fold_right (fun a b -> <:patt< $b$, $a$ >>) t h)
 
 let rec t ~envfn depth ctyp =
