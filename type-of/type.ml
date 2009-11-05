@@ -31,15 +31,18 @@ type t =
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
   let rec aux accu = function
-    | Rec (n,t) -> List.filter (fun m -> n <> m) (aux accu t)
-	| Var n when List.mem n accu -> accu
-	| Var n -> n :: accu
-    | Enum t | Option t -> aux accu t
-    | Product t -> List.flatten (List.map (aux accu) t)
-    | Dict t -> List.flatten (List.map (fun (_,_,t) -> aux accu t) t)
-    | Sum t -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) t)
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> accu
-	| Arrow (t,s) -> aux (aux accu t) s in
+    | Rec (n,t)  -> List.filter (fun m -> n <> m) (aux accu t)
+    | Var n when List.mem n accu
+                 -> accu
+    | Var n      -> n :: accu
+    | Enum t
+    | Option t   -> aux accu t
+    | Product ts -> List.flatten (List.map (aux accu) ts)
+    | Dict ts    -> List.flatten (List.map (fun (_,_,t) -> aux accu t) ts)
+    | Sum ts     -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) ts)
+    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
+                 -> accu
+    | Arrow(t,s) -> aux (aux accu t) s in
   aux [] t
 
 let map_strings sep fn l = String.concat sep (List.map fn l)
@@ -197,13 +200,13 @@ let rec of_string s : t  = match s.[0] with
       | [s;t] ->
         let t = String.sub t 1 (String.length t - 2) in
         (s, List.map of_string (split_par '*' t))
-      | _ -> assert false) ss in
+      | _ -> parse_error s) ss in
     Sum ss
   | '?' -> Option (of_string (String.sub s 1 (String.length s - 1)))
   | 'R' ->
      begin match split_par ~limit:3 '@' s with
      | [ _; var; t ] -> Rec (var, of_string t)
-     | _ -> assert false
+     | _ -> parse_error s
      end
   | '@' -> Var (String.sub s 1 (String.length s - 1))
   | '#' ->
@@ -214,4 +217,4 @@ let rec of_string s : t  = match s.[0] with
       Arrow (of_string ss, of_string tt)
     | _ -> parse_error s
     end
-  | _   -> failwith (Printf.sprintf "Unable to parse type '%s'" s)
+  | _   -> parse_error s

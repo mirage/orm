@@ -27,22 +27,10 @@ and t = {
 with type_of
 
 type o =
-  < x: x; y: string; z: (int -> string) > 
+  < x: f; y: string; z: (int -> string) > 
   with type_of
 
 open OUnit
-
-let rs () =
-	Random.self_init ();
-	let len = Random.int 30 in
-	let s = String.create len in
-	for i = 0 to len - 1 do
-		String.set s i (Char.chr (Random.int 25 + 97))
-	done;
-	s
-
-let fg () =
-	{ f1=(Random.int 100000); f2=[rs(); rs(); rs()]; f3=rs(); f4=(Random.int64 1000000L); f5=[|'a';'b'|] }
 
 let test_marshall () =
 	"EQ p" @? (type_of_p = Type.of_string (Type.to_string type_of_p));
