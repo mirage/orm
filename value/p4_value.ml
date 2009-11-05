@@ -22,10 +22,18 @@ open Camlp4
 open PreCast
 open Ast
 
-open Type
+let patt_value_of _loc n = <:patt< $lid:"value_of_" ^ n$ >>
+let patt_of_value _loc n = <:patt< $lid:n ^ "_of_value"$ >>
 
-let value_of _loc n = <:patt< $lid:"value_of_" ^ n$ >>
-let of_value _loc n = <:patt< $lid:n ^ "_value_of"$ >>
+let expr_value_of _loc n = <:expr< $lid:"value_of_" ^ n$ >>
+let expr_of_value _loc n = <:expr< $lid:n ^ "_of_value"$ >>
+
+let mem_weakid _loc n = <:expr< Deps . $lid:n ^ "_mem_weakid"$ >>
+let create_weakid _loc n = <:expr< Deps . $lid:n ^ "_create_weakid"$ >>
+let set_weakid _loc n = <:expr< Deps . $lid:n ^ "_set_weakid"$ >>
+let weakid_of _loc n = <:expr< Deps . $lid:"weakid_of_" ^ n$ >>
+let of_weakid _loc n = <:expr< Deps . $lid:n ^ "_of_weakid"$ >>
+
 
 (* Utils *)
 
@@ -59,11 +67,15 @@ let patt_list_of_list _loc patts =
 	| []   -> <:patt< [] >>
 	| h::t -> List.fold_left (fun accu x -> <:patt< [ $x$ :: $accu$ ] >>) <:patt< [ $h$ ] >> t
 
-let expr_tuple_of_list _loc exprs =
-  <:expr< ( $exCom_of_list exprs$ ) >>
+let expr_tuple_of_list _loc = function
+	| []   -> <:expr< >>
+	| [x]  -> x
+	| h::t -> ExTup (_loc, List.fold_right (fun a b -> <:expr< $b$, $a$ >>) t h)
 
-let patt_tuple_of_list _loc exprs =
-  <:patt< ( $paCom_of_list exprs$ ) >>
+let patt_tuple_of_list _loc = function
+	| []  -> <:patt< >>
+	| [x] -> x
+	| h::t -> PaTup (_loc, List.fold_right (fun a b -> <:patt< $b$, $a$ >>) t h)
 
 let decompose_variants _loc variant =
 	let rec fn accu = function
@@ -113,7 +125,7 @@ module Value_of = struct
 			let ids, ctyps = decompose_variants _loc t in
 			let pattern (n, t) ctyps =
 				let ids, pids = new_id_list _loc ctyps in
-				let body = <:expr< V.List [ V.String $str:n$ :: $expr_list_of_list _loc (List.map2 create ids ctyps)$ ] >> in
+				let body = <:expr< V.Sum ( $str:n$, $expr_list_of_list _loc (List.map2 create ids ctyps)$ ) >> in
 				<:match_case< $recompose_variant _loc (n,t) pids$ -> $body$ >> in
 			let patterns = mcOr_of_list (List.map2 pattern ids ctyps) in
 			<:expr< match $id$ with [ $patterns$ ] >>
@@ -128,16 +140,16 @@ module Value_of = struct
 			let exprs = List.map2 create ids ctyps in
 			<:expr<
 				let $patt_tuple_of_list _loc pids$ = $id$ in
-				V.List $expr_list_of_list _loc exprs$
+				V.Tuple $expr_list_of_list _loc exprs$
 			>>
 
 		| <:ctyp< list $t$ >> ->
 			let new_id, new_pid = new_id _loc in
-			<:expr< V.List (List.map (fun $new_pid$ -> $create new_id t$) $id$) >>
+			<:expr< V.Enum (List.map (fun $new_pid$ -> $create new_id t$) $id$) >>
 
 		| <:ctyp< array $t$ >> ->
 			let new_id, new_pid = new_id _loc in
-			<:expr< V.List (Array.to_list (Array.map (fun $new_pid$ -> $create new_id t$) $id$)) >>
+			<:expr< V.Enum (Array.to_list (Array.map (fun $new_pid$ -> $create new_id t$) $id$)) >>
 
 		| <:ctyp< { $t$ } >> ->
 			let fields = decompose_fields _loc t in
@@ -155,27 +167,26 @@ module Value_of = struct
 			let expr = <:expr< V.Dict $expr_list_of_list _loc (List.map2 one_expr ids fields)$ >> in
 			<:expr< let $biAnd_of_list bindings$ in $expr$ >>
 
-		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Marshal (let module M = Marshal in M.to_string [ M.No_sharing; M.Closures ] $id$) >>
+		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Arrow (let module M = Marshal in M.to_string [ M.No_sharing; M.Closures ] $id$) >>
 
-		| <:ctyp< $lid:t$ >> -> <:expr< V.Var $str:t$ >>
+		| <:ctyp< $lid:t$ >> ->
+			<:expr<
+				if $mem_weakid _loc t$ $id$
+				then V.Var ($weakid_of _loc t$ $id$)
+				else let id = $create_weakid _loc t$ $id$ in V.Rec (id, $expr_value_of _loc t$ $id$) >>
 
 		| _ -> raise (Type_not_supported ctyp)
 
 	let gen_one name ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		let id, pid = new_id _loc in
-		<:binding< $value_of _loc name$ = fun $pid$ -> let module V = Value in $create id ctyp$ >>
+		<:binding< $patt_value_of _loc name$ = fun $pid$ -> let module V = Value in $create id ctyp$ >>
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in
 		let ids, ctyps = List.split (list_of_ctyp_decl tds) in
 		let bindings = List.map2 gen_one ids ctyps in
-		let str =
-			try <:str_item< value $biAnd_of_list bindings$ >>
-			with Type_not_supported ctyp ->
-				debug_ctyp ctyp;
-				exit (-1) in
-		str
+		biAnd_of_list bindings
 end
 
 
@@ -212,7 +223,7 @@ module Of_value = struct
 			let ids, ctyps = decompose_variants _loc t in
 			let pattern (n, t) ctyps =
 				let ids, pids = new_id_list _loc ctyps in
-				let patt = <:patt< V.List [ V.String $str:n$ :: $patt_list_of_list _loc pids$ ] >> in
+				let patt = <:patt< V.Sum ( $str:n$, $patt_list_of_list _loc pids$ ) >> in
 				let exprs = List.map2 create ids ctyps in
 				let body = List.fold_right
 					(fun a b -> <:expr< $a$ $b$ >>)
@@ -231,17 +242,17 @@ module Of_value = struct
 			let ctyps = list_of_ctyp tp [] in
 			let ids, pids = new_id_list _loc ctyps in
 			let exprs = List.map2 create ids ctyps in
-			<:expr< match $id$ with [ V.List $patt_list_of_list _loc pids$ -> $expr_tuple_of_list _loc exprs$ | $parse_error "List"$ ] >>
+			<:expr< match $id$ with [ V.Tuple $patt_list_of_list _loc pids$ -> $expr_tuple_of_list _loc exprs$ | $parse_error "List"$ ] >>
 
 		| <:ctyp< list $t$ >> ->
 			let nid, npid = new_id _loc in
 			let nid2, npid2 = new_id _loc in
-			<:expr< match $id$ with [ V.List $npid$ -> List.map (fun $npid2$ -> $create nid2 t$) $nid$ | $parse_error "List"$ ] >>
+			<:expr< match $id$ with [ V.Enum $npid$ -> List.map (fun $npid2$ -> $create nid2 t$) $nid$ | $parse_error "List"$ ] >>
 
 		| <:ctyp< array $t$ >> ->
 			let nid, npid = new_id _loc in
 			let nid2, npid2 = new_id _loc in
-			<:expr< match $id$ with [ V.List $npid$ -> Array.of_list (List.map (fun $npid2$ -> $create nid2 t$) $nid$) | $parse_error "List"$ ] >>
+			<:expr< match $id$ with [ V.Enum $npid$ -> Array.of_list (List.map (fun $npid2$ -> $create nid2 t$) $nid$) | $parse_error "List"$ ] >>
 
 		| <:ctyp< { $t$ } >> ->
 			let nid, npid = new_id _loc in
@@ -266,30 +277,61 @@ module Of_value = struct
 			<:expr< match $id$ with [ V.Dict $npid$ -> let $biAnd_of_list bindings$ in object $crSem_of_list exprs$ end | $parse_error "Dict(_)"$ ] >>
 
 		| <:ctyp< $t$ -> $u$ >> ->
-			<:expr< match $id$ with [ V.Marshal f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $parse_error "Marshal"$ ] >>
+			<:expr< match $id$ with [ V.Arrow f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $parse_error "Marshal"$ ] >>
 
-		| <:ctyp< $lid:t$ >> -> <:expr< match $id$ with [ V.Var t -> $id$ | $parse_error "Var"$ ] >>
+		| <:ctyp< $lid:t$ >> ->
+			let nid, pid = new_id _loc in
+			<:expr< match $id$ with [
+			  V.Var v          -> $of_weakid _loc t$ v
+			| V.Rec (v, $pid$) -> do { $set_weakid _loc t$ $id$ v; $expr_of_value _loc t$ $id$ }
+			| $parse_error "Var"$
+			] >>
 
-		| _ -> failwith "ML_of_rpc.scalar_of_ctyp: unsuported type"
+		| _ -> raise (Type_not_supported ctyp)
 
 	let gen_one name ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		let id, pid = new_id _loc in
-		<:binding< $of_value _loc name$ = fun $pid$ -> let module V = Value in $create id ctyp$ >>
+		<:binding< $patt_of_value _loc name$ = fun $pid$ -> let module V = Value in $create id ctyp$ >>
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in
 		let ids, ctyps = List.split (list_of_ctyp_decl tds) in
 		let bindings = List.map2 gen_one ids ctyps in
-		let str =
-			try <:str_item< 
-				exception Parse_error of (string * Value.t);
-				exception Parse_exn_error of (string * exn);
-				value $biAnd_of_list bindings$
-			>>
-			with Type_not_supported ctyp ->
-				debug_ctyp ctyp;
-				exit (-1) in
-		str
-
+		biAnd_of_list bindings
 end
+
+let value_of_inputs _loc ids =
+	patt_tuple_of_list _loc (List.map (fun x -> patt_value_of _loc x) ids)
+
+let value_of_outputs _loc ids =
+	expr_tuple_of_list _loc (List.map (fun x -> expr_value_of _loc x) ids)
+
+let of_value_inputs _loc ids =
+	patt_tuple_of_list _loc (List.map (fun x -> patt_of_value _loc x) ids)
+
+let of_value_outputs _loc ids =
+	expr_tuple_of_list _loc (List.map (fun x -> expr_of_value _loc x) ids)
+		
+let deps tds =
+	let _loc = loc_of_ctyp tds in
+	<:str_item<
+		$P4_weakid.gen tds$;
+	>>
+
+let gen tds =
+	let _loc = loc_of_ctyp tds in
+	let ids, _ = List.split (list_of_ctyp_decl tds) in
+	<:str_item<
+		exception Parse_error of (string * Value.t);
+		exception Parse_exn_error of (string * exn);
+		value $value_of_inputs _loc ids$ =
+			let module Deps = struct $deps tds$ end in
+			let rec $Value_of.gen tds$ in
+			$value_of_outputs _loc ids$;
+		value $of_value_inputs _loc ids$ =
+			let module Deps = struct $deps tds$ end in
+			let rec $Of_value.gen tds$ in
+			$of_value_outputs _loc ids$;
+	>>
+

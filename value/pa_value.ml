@@ -20,15 +20,11 @@
 open Camlp4
 open PreCast
 open Ast
-open Type
 
 open Pa_type_conv
 
+
 let _ =
-	add_generator "value"
-		(fun tds ->
-			 let _loc = loc_of_ctyp tds in
-			 <:str_item<
-				 $P4_value.Value_of.gen tds$;
-				 $P4_value.Of_value.gen tds$;
-			>>)
+	add_generator "value" (fun tds ->
+		let _loc = loc_of_ctyp tds in
+		<:str_item< $P4_value.gen tds$ >>)
