@@ -29,6 +29,8 @@ let list_of_ctyp_decl tds =
 
 let weakid_of _loc n = <:patt< $lid:"weakid_of_" ^ n$ >>
 let of_weakid _loc n = <:patt< $lid:n ^ "_of_weakid"$ >>
+let mem_weakid _loc n = <:patt< $lid:n ^ "_mem_weakid"$ >>
+let create_weakid _loc n = <:patt< $lid:n ^ "_create_weakid"$ >>
 let set_weakid _loc n = <:patt< $lid:n ^ "_set_weakid"$ >>
 
 let gen_body envfn name ctyp =
@@ -49,17 +51,24 @@ let gen_body envfn name ctyp =
       end ) in
     let wkeys = Wkeys.create 128 in
     let wvalues = Wvalues.create 128 in
+    let count = ref 0L in
     ( Wkeys.find wkeys,
       Wvalues.find wvalues,
+      Wkeys.mem wkeys,
+      (fun t -> let id = count.val in
+         do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t; count.val := Int64.add count.val 1L; id } ), 
       (fun t id -> do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t } ) )
   >>
 
 let gen_fn envfn (name, ctyp) =
   let _loc = loc_of_ctyp ctyp in
   <:binding< 
-    ( $weakid_of _loc name$, $of_weakid _loc name$, $set_weakid _loc name$ ) =
-      let module H = Hweak in
-      $gen_body envfn name ctyp$ >>
+    ( $weakid_of _loc name$,
+      $of_weakid _loc name$,
+      $mem_weakid _loc name$,
+      $create_weakid _loc name$,
+      $set_weakid _loc name$ ) =
+        let module H = Hweak in $gen_body envfn name ctyp$ >>
 
 let gen tds =
   let env = list_of_ctyp_decl tds in
