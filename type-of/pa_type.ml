@@ -20,7 +20,6 @@
 open Camlp4
 open PreCast
 open Ast
-open Type
 
 open Pa_type_conv
 
