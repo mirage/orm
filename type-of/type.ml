@@ -17,17 +17,16 @@
 open Printf
 
 (* mutable or immutable *)
-type field = M | I
-
 type t =
   | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
+  | Enum of t
   | Product of t list
-  | Collection of t
-  | Named_product of (string * field * t) list
-  | Named_sum of (string * t list) list
+  | Dict of (string * [`M|`I] * t) list
+  | Sum of (string * t list) list
   | Option of t
   | Rec of string * t
   | Var of string
+  | Arrow of t * t
 
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
@@ -35,31 +34,33 @@ let free_vars t =
     | Rec (n,t) -> aux (List.filter (fun m -> n <> m) accu) t
 	| Var n when List.mem n accu -> accu
 	| Var n -> n :: accu
-    | Collection t | Option t -> aux accu t
+    | Enum t | Option t -> aux accu t
     | Product t -> List.flatten (List.map (aux accu) t)
-    | Named_product t -> List.flatten (List.map (fun (_,_,t) -> aux accu t) t)
-    | Named_sum t -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) t)
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> accu in
+    | Dict t -> List.flatten (List.map (fun (_,_,t) -> aux accu t) t)
+    | Sum t -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) t)
+    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> accu
+	| Arrow (t,s) -> aux (aux accu t) s in
   aux [] t
 
 let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let rec to_string t = match t with                                                                    
-  | Unit             -> "unit"
-  | Int              -> "int"
-  | Int32            -> "int32"
-  | Int64            -> "int64"
-  | Bool             -> "bool"
-  | Float            -> "float"
-  | Char             -> "char"
-  | String           -> "string"
-  | Product ts       -> sprintf "(%s)" (map_strings "*" to_string ts)
-  | Collection t     -> sprintf "[%s]" (to_string t)
-  | Named_product ts -> sprintf "{%s}" (map_strings "*" (fun (s,_,t) -> sprintf "%s:%s" s (to_string t)) ts)
-  | Named_sum ts     -> sprintf "<%s>" (map_strings "*" (fun (s,t) -> sprintf "%s:(%s)" s (map_strings "*" to_string t)) ts)
-  | Option t         -> sprintf "option.%s" (to_string t)
-  | Rec (n,t)        -> sprintf "rec@%s@%s" n (to_string t)
-  | Var n            -> sprintf "@%s" n
+  | Unit       -> "U"
+  | Int        -> "I"
+  | Int32      -> "I32"
+  | Int64      -> "I64"
+  | Bool       -> "B"
+  | Float      -> "F"
+  | Char       -> "C"
+  | String     -> "S"
+  | Enum t     -> sprintf "[%s]" (to_string t)
+  | Product ts -> sprintf "(%s)" (map_strings "*" to_string ts)
+  | Dict ts    -> sprintf "{%s}" (map_strings "*" (fun (s,m,t) -> sprintf "%s:%s:%s" s (if m = `I then "I" else "M") (to_string t)) ts)
+  | Sum ts     -> sprintf "<%s>" (map_strings "*" (fun (s,t) -> sprintf "%s:(%s)" s (map_strings "*" to_string t)) ts)
+  | Option t   -> sprintf "?%s" (to_string t)
+  | Rec (n,t)  -> sprintf "R@%s@%s" n (to_string t)
+  | Var n      -> sprintf "@%s" n
+  | Arrow(a,b) -> sprintf "#(%s)#(%s)" (to_string a) (to_string b)
 
 (* Is [t1] a subtype of [t2] ?                                                *)
 (* Our subtype relation is the following:                                     *)
@@ -89,20 +90,20 @@ let is_subtype_of (t1:t) (t2:t) =
       Hashtbl.find table (t,s)
     else begin
       let result = match (t,s) with
-      | Rec (n,tt)      , Rec (m,ss)       -> add_t1 n tt; add_t2 m ss; let r = tt <: ss in rm_t1 n; rm_t2 m; r
-      | Rec (n,tt)      , _                -> add_t1 n tt; let r = tt <: t2 in rm_t1 n; r
-      | _               , Rec (m,ss)       -> add_t2 m ss; let r = t1 <: ss in rm_t2 m; r
+      | Rec (n,tt) , Rec (m,ss) -> add_t1 n tt; add_t2 m ss; let r = tt <: ss in rm_t1 n; rm_t2 m; r
+      | Rec (n,tt) , _          -> add_t1 n tt; let r = tt <: t2 in rm_t1 n; r
+      | _          , Rec (m,ss) -> add_t2 m ss; let r = t1 <: ss in rm_t2 m; r
 
-      | Var v           , Var w            -> v = w || ( Hashtbl.replace table (t,s) true; (find_t1 v) <: (find_t2 w) )
-      | Var v           , _                -> (find_t1 v) <: t2
-      | _               , Var v            -> t1 <: (find_t2 v)
+      | Var v      , Var w      -> v = w || ( Hashtbl.replace table (t,s) true; (find_t1 v) <: (find_t2 w) )
+      | Var v      , _                -> (find_t1 v) <: t2
+      | _          , Var v      -> t1 <: (find_t2 v)
 
-      | Collection t    , Collection s     -> t <: s
-      | Option t        , Option s         -> t <: s
-      | Option t        , _                -> t <: s
-      | Product ts      , Product ss       -> List.for_all2 (<:) ts ss
-      | Named_product ts, Named_product ss -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,_,y2) -> x1=x2 && y1 <: y2) ss) ts
-      | Named_sum ts    , Named_sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
+      | Enum t     , Enum s     -> t <: s
+      | Option t   , Option s   -> t <: s
+      | Option t   , _          -> t <: s
+      | Product ts , Product ss -> List.for_all2 (<:) ts ss
+      | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,_,y2) -> x1=x2 && y1 <: y2) ss) ts
+      | Sum ts     , Sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
 
       | Unit, Unit
       | Int, Int
@@ -111,8 +112,9 @@ let is_subtype_of (t1:t) (t2:t) =
       | Bool, Bool
       | Float, Float
       | Char, Char
-      | String, Char | String, String      -> true
-      | _                                  -> false in
+      | String, Char | String, String  
+                                -> true
+      | _                       -> false in
       Hashtbl.replace table (t,s) result;
       if not result && not !found_error then begin
         last_type_error := Some (t,s);
@@ -158,48 +160,58 @@ let split_par ?limit c s =
         [s] in
   aux 1 s
 
-let rec of_string s : t  = match s with
-  | "unit"   -> Unit
-  | "int"    -> Int
-  | "int32"  -> Int32
-  | "int64"  -> Int64
-  | "bool"   -> Bool
-  | "float"  -> Float
-  | "char"   -> Char
-  | "string" -> String
-  | s -> match s.[0] with
-    | '(' ->
-      let s = String.sub s 1 (String.length s - 2) in
-      let ss = split_par '*' s in
-      Product (List.map of_string ss)
-    | '[' ->
-      let s = String.sub s 1 (String.length s - 2) in
-      Collection (of_string s)
-    | '{' ->
-      let s = String.sub s 1 (String.length s - 2) in
-      let ss = split_par '*' s in
-      let ss = List.map (split_par ~limit:2 ':') ss in
-      Named_product (List.map (fun x -> match x with [s;t] -> (s, I, of_string t) | _ -> assert false) ss)
-    | '<' ->
-      let s = String.sub s 1 (String.length s - 2) in
-      let ss = split_par '*' s in
-      let ss = List.map (split_par ~limit:2 ':') ss in
-      let ss = List.map (fun x -> match x with
-        | [s;"()"] -> (s, [])
-        | [s;t] ->
-          let t = String.sub t 1 (String.length t - 2) in
-          (s, List.map of_string (split_par '*' t))
-        | _ -> assert false) ss in
-      Named_sum ss
-    | 'o' when s.[1] = 'p' && s.[2] = 't' && s.[3] = 'i' && s.[4] = 'o' && s.[5] = 'n' && s.[6] = '.' ->
-      let s = String.sub s 7 (String.length s - 7) in
-      Option (of_string s)
-    | 'r' when s.[1] = 'e' && s.[2] = 'c' && s.[3] = '@' ->
-       begin match split_par ~limit:3 '@' s with
-       | [ _; var; t ] -> Rec(var, of_string t)
-       | _ -> assert false
-       end
-    | '@' ->
-      Var (String.sub s 1 (String.length s - 1))
-    | _ ->
-      failwith (Printf.sprintf "Unable to parse type '%s'" s)
+exception Parse_error of string
+let parse_error s = raise (Parse_error s)
+
+let rec of_string s : t  = match s.[0] with
+  | 'U' -> Unit
+  | 'I' when s = "I32" -> Int32
+  | 'I' when s = "I64" -> Int64
+  | 'I' -> Int
+  | 'B' -> Bool
+  | 'F' -> Float
+  | 'C' -> Char
+  | 'S' -> String
+  | '[' ->
+    let s = String.sub s 1 (String.length s - 2) in
+    Enum (of_string s)
+  | '(' ->
+    let s = String.sub s 1 (String.length s - 2) in
+    let ss = split_par '*' s in
+    Product (List.map of_string ss)
+  | '{' ->
+    let s = String.sub s 1 (String.length s - 2) in
+    let ss = split_par '*' s in
+    let ss = List.map (split_par ~limit:3 ':') ss in
+    let ss = List.map (fun x -> match x with 
+      | [s;"I";t] -> (s, `I, of_string t) 
+      | [s;"M";t] -> (s, `M, of_string t) 
+      | _ -> parse_error s) ss in
+    Dict ss
+  | '<' ->
+    let s = String.sub s 1 (String.length s - 2) in
+    let ss = split_par '*' s in
+    let ss = List.map (split_par ~limit:2 ':') ss in
+    let ss = List.map (fun x -> match x with
+      | [s;"()"] -> (s, [])
+      | [s;t] ->
+        let t = String.sub t 1 (String.length t - 2) in
+        (s, List.map of_string (split_par '*' t))
+      | _ -> assert false) ss in
+    Sum ss
+  | '?' -> Option (of_string (String.sub s 1 (String.length s - 1)))
+  | 'R' ->
+     begin match split_par ~limit:3 '@' s with
+     | [ _; var; t ] -> Rec (var, of_string t)
+     | _ -> assert false
+     end
+  | '@' -> Var (String.sub s 1 (String.length s - 1))
+  | '#' ->
+    begin match split_par '#' s with
+    | ["";s;t] ->
+      let ss = String.sub s 1 (String.length s - 2) in
+      let tt = String.sub t 1 (String.length t - 2) in
+      Arrow (of_string ss, of_string tt)
+    | _ -> parse_error s
+    end
+  | _   -> failwith (Printf.sprintf "Unable to parse type '%s'" s)

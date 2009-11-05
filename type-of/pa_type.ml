@@ -25,12 +25,10 @@ open Type
 open Pa_type_conv
 
 let _ =
-  add_generator "type-of"
+  add_generator "type_of"
     (fun tds ->
       let _loc = loc_of_ctyp tds in
        <:str_item<
-         module Hash = struct
-           $P4_type.gen tds$
-         end
+           $P4_type.gen "Type" tds$;
        >>
     )
