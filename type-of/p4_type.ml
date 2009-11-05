@@ -92,7 +92,7 @@ let gen module_name tds =
   let subst_external_var (_loc, name, t) =
     let freev = free_vars t in
     let rec aux = function
-    | Var v when not (List.mem v freev)
+    | Var v when List.mem v freev
                  -> <:expr< $lid:make_name v$ >>
     | Var v      -> <:expr< T.Var $str:v$ >>
     | Rec (v, t) -> <:expr< T.Rec ($str:v$, $aux t$) >>

@@ -31,7 +31,7 @@ type t =
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
   let rec aux accu = function
-    | Rec (n,t) -> aux (List.filter (fun m -> n <> m) accu) t
+    | Rec (n,t) -> List.filter (fun m -> n <> m) (aux accu t)
 	| Var n when List.mem n accu -> accu
 	| Var n -> n :: accu
     | Enum t | Option t -> aux accu t

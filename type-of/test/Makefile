@@ -29,7 +29,4 @@ pi_%:
 i_%:
 	$(MAKE) -f Makefile.debug $@
 
-clean:
-	rm -f pc_* *.d
-
 -include $(OCAMLMAKEFILE)
