@@ -20,7 +20,7 @@ open Printf
 type t =
   | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
   | Enum of t
-  | Product of t list
+  | Tuple of t list
   | Dict of (string * [`M|`I] * t) list
   | Sum of (string * t list) list
   | Option of t
@@ -31,15 +31,15 @@ type t =
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
   let rec aux accu = function
-    | Rec (n,t)  -> List.filter (fun m -> n <> m) (aux accu t)
+    | Rec (n,t) -> List.filter (fun m -> n <> m) (aux accu t)
     | Var n when List.mem n accu
-                 -> accu
-    | Var n      -> n :: accu
+                -> accu
+    | Var n     -> n :: accu
     | Enum t
-    | Option t   -> aux accu t
-    | Product ts -> List.flatten (List.map (aux accu) ts)
-    | Dict ts    -> List.flatten (List.map (fun (_,_,t) -> aux accu t) ts)
-    | Sum ts     -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) ts)
+    | Option t  -> aux accu t
+    | Tuple ts  -> List.flatten (List.map (aux accu) ts)
+    | Dict ts   -> List.flatten (List.map (fun (_,_,t) -> aux accu t) ts)
+    | Sum ts    -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) ts)
     | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
                  -> accu
     | Arrow(t,s) -> aux (aux accu t) s in
@@ -57,7 +57,7 @@ let rec to_string t = match t with
   | Char       -> "C"
   | String     -> "S"
   | Enum t     -> sprintf "[%s]" (to_string t)
-  | Product ts -> sprintf "(%s)" (map_strings "*" to_string ts)
+  | Tuple ts   -> sprintf "(%s)" (map_strings "*" to_string ts)
   | Dict ts    -> sprintf "{%s}" (map_strings "*" (fun (s,m,t) -> sprintf "%s:%s:%s" s (if m = `I then "I" else "M") (to_string t)) ts)
   | Sum ts     -> sprintf "<%s>" (map_strings "*" (fun (s,t) -> sprintf "%s:(%s)" s (map_strings "*" to_string t)) ts)
   | Option t   -> sprintf "?%s" (to_string t)
@@ -104,7 +104,7 @@ let is_subtype_of (t1:t) (t2:t) =
       | Enum t     , Enum s     -> t <: s
       | Option t   , Option s   -> t <: s
       | Option t   , _          -> t <: s
-      | Product ts , Product ss -> List.for_all2 (<:) ts ss
+      | Tuple ts   , Tuple ss   -> List.for_all2 (<:) ts ss
       | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,_,y2) -> x1=x2 && y1 <: y2) ss) ts
       | Sum ts     , Sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
 
@@ -181,7 +181,7 @@ let rec of_string s : t  = match s.[0] with
   | '(' ->
     let s = String.sub s 1 (String.length s - 2) in
     let ss = split_par '*' s in
-    Product (List.map of_string ss)
+    Tuple (List.map of_string ss)
   | '{' ->
     let s = String.sub s 1 (String.length s - 2) in
     let ss = split_par '*' s in

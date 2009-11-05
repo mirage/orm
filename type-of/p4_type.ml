@@ -52,7 +52,7 @@ let create tds : (loc * string * t) list =
     | <:ctyp< char >>         -> Char
     | <:ctyp< string >>       -> String
     | <:ctyp< option $ty$ >>  -> Option (aux bind_vars ty)
-    | <:ctyp< ( $tup:tp$ ) >> -> Product (List.map (aux bind_vars) (list_of_ctyp tp []))
+    | <:ctyp< ( $tup:tp$ ) >> -> Tuple (List.map (aux bind_vars) (list_of_ctyp tp []))
     | <:ctyp< list $ctyp$ >>
     | <:ctyp< array $ctyp$ >> -> Enum (aux bind_vars ctyp)
     | <:ctyp< [< $variants$ ] >> 
@@ -105,7 +105,7 @@ let gen module_name tds =
     | Char       -> <:expr< T.Char >>
     | String     -> <:expr< T.String >>
     | Option t   -> <:expr< T.Option $aux t$ >>
-    | Product tl -> <:expr< T.Product $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> tl$ >>
+    | Tuple tl   -> <:expr< T.Tuple $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> tl$ >>
     | Enum t     -> <:expr< T.Enum $aux t$ >>
     | Sum ts     -> 
       let rec fn accu = function
