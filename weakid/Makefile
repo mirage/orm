@@ -1,9 +1,9 @@
 OCAMLMAKEFILE = ../OCamlMakefile
 ANNOTATE = yes
 
-SOURCES = ../hash/p4_hash.ml p4_weakid.ml pa_weakid.ml
+SOURCES = ../hash/p4_hash.ml p4_weakid.ml pa_weakid.ml hweak.ml
 PACKS = type-conv
-RESULT = pa_hash
+RESULT = pa_weakid
 USE_CAMLP4 = yes
 
 .PHONY: all

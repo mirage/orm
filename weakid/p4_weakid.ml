@@ -27,21 +27,21 @@ let list_of_ctyp_decl tds =
   | _                               ->  failwith "list_of_ctyp_decl: unexpected type"
   in aux [] tds
 
-let weakid_of _loc n = <:patt< $lid:"weakid_of" ^ n$ >>
-let of_weakid _loc n = <:patt< $lid:n ^ "of_weakid"$ >>
+let weakid_of _loc n = <:patt< $lid:"weakid_of_" ^ n$ >>
+let of_weakid _loc n = <:patt< $lid:n ^ "_of_weakid"$ >>
 let set_weakid _loc n = <:patt< $lid:n ^ "_set_weakid"$ >>
 
 let gen_body envfn name ctyp =
   let _loc = loc_of_ctyp ctyp in
   <:expr<
-    let module Wkeys = Orm.Hweak.MakeWeakKeys (
+    let module Wkeys = H.MakeWeakKeys (
       struct
         type __t__ = $lid:name$;
         type t = __t__;
         value equal = ( == );
         value hash x = $P4_hash.gen1 ~envfn ctyp$;
       end ) in
-    let module Wvalues = Orm.Hweak.MakeWeakValues (
+    let module Wvalues = H.MakeWeakValues (
       struct
         type t = int64;
         value equal = ( = );
@@ -56,7 +56,10 @@ let gen_body envfn name ctyp =
 
 let gen_fn envfn (name, ctyp) =
   let _loc = loc_of_ctyp ctyp in
-  <:binding< ( $weakid_of _loc name$, $of_weakid _loc name$, $set_weakid _loc name$ ) = $gen_body envfn name ctyp$ >>
+  <:binding< 
+    ( $weakid_of _loc name$, $of_weakid _loc name$, $set_weakid _loc name$ ) =
+      let module H = Hweak in
+      $gen_body envfn name ctyp$ >>
 
 let gen tds =
   let env = list_of_ctyp_decl tds in
