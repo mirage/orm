@@ -3,7 +3,7 @@
 TYPE_CONV_PATH "All"
 
 type p =
- |One of int array * string
+ |One of int array * string * float * bool * (char list)
  |Two
  |Three of x option list
 
