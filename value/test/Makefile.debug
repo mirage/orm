@@ -2,8 +2,8 @@
 
 P4INC := -I$(shell ocamlfind query type-conv) -I .. -I ../../hash -I ../../weakid
 PA    := pa_hash.cma pa_weakid.cma pa_value.cma
-BINC := -I .. -I ../../hash -I ../../weakid value.cma
-NINC := -I .. -I ../../hash -I ../../weakid value.cmx
+BINC := -I .. -I ../../hash -I ../../weakid pa_hash.cma pa_weakid.cma pa_value.cma
+NINC := -I .. -I ../../hash -I ../../weakid pa_hash.cmxa pa_weakid.cmxa pa_value.cmx
 
 PACKS= -package unix,oUnit
 

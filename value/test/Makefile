@@ -1,4 +1,5 @@
 OCAMLMAKEFILE=../../OCamlMakefile
+ANNOTATE = yes
 
 .PHONY: run
 run: dnc
@@ -8,8 +9,9 @@ run: dnc
 slow: dnc
 	env SLOW=1 ./$(RESULT) -verbose
 
-export INCDIRS = ..
-export LIBDIRS = ..
+export INCDIRS = .. ../../hash ../../weakid
+export LIBDIRS = .. ../../hash ../../weakid
+export LIBS = pa_hash pa_weakid pa_value
 export PACKS = unix oUnit
 
 RESULT= run_test
