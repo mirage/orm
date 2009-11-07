@@ -32,11 +32,11 @@ let expr_value_of_aux _loc n = <:expr< $lid:"value_of_" ^ n ^ "_aux"$ >>
 let expr_of_value _loc n = <:expr< $lid:n ^ "_of_value"$ >>
 let expr_of_value_aux _loc n = <:expr< $lid:n ^ "_of_value_aux"$ >>
 
-let has_weakid _loc n = <:expr< Deps . $lid:n ^ "_has_weakid"$ >>
+(*let has_weakid _loc n = <:expr< Deps . $lid:n ^ "_has_weakid"$ >>
 let create_weakid _loc n = <:expr< Deps . $lid:n ^ "_create_weakid"$ >>
 let set_weakid _loc n = <:expr< Deps . $lid:n ^ "_set_weakid"$ >>
 let weakid_of _loc n = <:expr< Deps . $lid:"weakid_of_" ^ n$ >>
-let of_weakid _loc n = <:expr< Deps . $lid:n ^ "_of_weakid"$ >>
+let of_weakid _loc n = <:expr< Deps . $lid:n ^ "_of_weakid"$ >>*)
 
 
 (* Utils *)
@@ -114,10 +114,11 @@ exception Type_not_supported of ctyp
 module Value_of = struct
 	
 	let env_type _loc names =
-		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list ( $lid:n$ * int64 ); $accu$ >>) <:ctyp< >> names$ } >>
+		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list ( $lid:n$ * int64 ); $accu$ >>) <:ctyp< __new_id__ : unit -> int64 >> names$  } >>
 
 	let empty_env _loc names =
-		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ } >>
+		<:expr< let __new_id__ = let count = ref 0L in let x () = do { count.val := Int64.add count.val 1L; count.val } in x in
+			{ $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ ; __new_id__ = __new_id__ } >>
 
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
@@ -181,15 +182,13 @@ module Value_of = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
-				<:expr< $expr_value_of _loc t$ $id$ >>
+				<:expr< V.Ext ($str:t$, $expr_value_of _loc t$ $id$) >>
 			else
 				<:expr<
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
-						let __id__ = if $has_weakid _loc t$ $id$
-						then $weakid_of _loc t$ $id$
-						else $create_weakid _loc t$ $id$ in
+						let __id__ = __env__.Deps.__new_id__ () in
 						let __value__ = $expr_value_of_aux _loc t$
 							{ (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] }
 							$id$ in
@@ -219,7 +218,7 @@ module Value_of = struct
 		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($patt_value_of _loc x$ : $lid:x$ -> Value.t) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $expr_value_of_aux _loc x$ $empty_env _loc ids$>>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $expr_value_of_aux _loc x$ $empty_env _loc ids$ $lid:x$ >>) ids)
 
 end
 
@@ -233,38 +232,38 @@ module Of_value = struct
 	let empty_env _loc names =
 		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ } >>
 
-	let runtime_error expected =
+	let string_of_env _loc names =
+		<:expr< Printf.sprintf "{%s}" (String.concat "," $expr_list_of_list _loc (List.map
+			(fun n -> <:expr< Printf.sprintf "%s:%i" $str:n$ (List.length __env__.Deps.$lid:n$) >>)
+			names)$) >>
+
+	let str_of_id id = match id with <:expr@loc< $lid:s$ >> -> <:expr@loc< $str:s$ >> | _ -> assert false
+
+	let runtime_error id expected =
 		let _loc = Loc.ghost in
 		<:match_case<  __x__ -> do {
-			Printf.printf "Runtime error: got '%s' while '%s' was expected\\n" (Value.to_string __x__) $str:expected$;
+			Printf.printf "Runtime error while parsing '%s': got '%s' while '%s' was expected\\n" $str_of_id id$ (Value.to_string __x__) $str:expected$;
 			raise (Deps.Runtime_error($str:expected$, __x__)) }
 		>>
 
-	let error expected =
-		let _loc = Loc.ghost in
-		<:expr< do {
-			Printf.printf "Runtime error: '%s'\\n" $str:expected$;
-			raise (Deps.Runtime_error($str:expected$, V.Null)) }
-		>>
-
-	let runtime_exn_error doing =
+	let runtime_exn_error id doing =
 		let _loc = Loc.ghost in
 		<:match_case< __x__ -> do {
-			Printf.printf "Runtime error: got exception '%s' doing '%s'\\n" (Printexc.to_string __x__) $str:doing$;
+			Printf.printf "Runtime error while parsing '%s': got exception '%s' doing '%s'\\n" $str_of_id id$ (Printexc.to_string __x__) $str:doing$;
 			raise (Deps.Runtime_exn_error($str:doing$, __x__)) }
 		>>
 
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		match ctyp with
-		| <:ctyp< unit >>   -> <:expr< match $id$ with [ V.Null -> () | $runtime_error "None"$ ] >>
-		| <:ctyp< int >>    -> <:expr< match $id$ with [ V.Int x -> Int64.to_int x | $runtime_error "Int(int)"$ ] >>
-		| <:ctyp< int32 >>  -> <:expr< match $id$ with [ V.Int x -> Int64.to_int32 x | $runtime_error "Int(int32)"$ ] >>
-		| <:ctyp< int64 >>  -> <:expr< match $id$ with [ V.Int x ->  x | $runtime_error "Int(int64)"$ ] >>
-		| <:ctyp< float >>  -> <:expr< match $id$ with [ V.Float x -> x | $runtime_error "Float"$ ] >>
-		| <:ctyp< char >>   -> <:expr< match $id$ with [ V.Int x -> Char.chr (Int64.to_int x) | $runtime_error "Int(char)"$ ] >>
-		| <:ctyp< string >> -> <:expr< match $id$ with [ V.String x -> x | $runtime_error "String(string)"$ ] >>
-		| <:ctyp< bool >>   -> <:expr< match $id$ with [ V.Bool x -> x | $runtime_error "Bool"$ ] >>
+		| <:ctyp< unit >>   -> <:expr< match $id$ with [ V.Null -> () | $runtime_error id "Null"$ ] >>
+		| <:ctyp< int >>    -> <:expr< match $id$ with [ V.Int x -> Int64.to_int x | $runtime_error id "Int(int)"$ ] >>
+		| <:ctyp< int32 >>  -> <:expr< match $id$ with [ V.Int x -> Int64.to_int32 x | $runtime_error id "Int(int32)"$ ] >>
+		| <:ctyp< int64 >>  -> <:expr< match $id$ with [ V.Int x ->  x | $runtime_error id "Int(int64)"$ ] >>
+		| <:ctyp< float >>  -> <:expr< match $id$ with [ V.Float x -> x | $runtime_error id "Float"$ ] >>
+		| <:ctyp< char >>   -> <:expr< match $id$ with [ V.Int x -> Char.chr (Int64.to_int x) | $runtime_error id "Int(char)"$ ] >>
+		| <:ctyp< string >> -> <:expr< match $id$ with [ V.String x -> x | $runtime_error id "String(string)"$ ] >>
+		| <:ctyp< bool >>   -> <:expr< match $id$ with [ V.Bool x -> x | $runtime_error id "Bool"$ ] >>
 
 		| <:ctyp< [< $t$ ] >> | <:ctyp< [> $t$ ] >> | <:ctyp< [= $t$ ] >> | <:ctyp< [ $t$ ] >> ->
 			let ids, ctyps = decompose_variants _loc t in
@@ -277,7 +276,7 @@ module Of_value = struct
 					(List.rev exprs)
 					(if t = `V then <:expr< $uid:n$ >> else <:expr< `$uid:n$ >>) in
 				<:match_case< $patt$ -> $body$ >> in
-			let fail_match = <:match_case< $runtime_error "List[String;_]"$ >> in
+			let fail_match = <:match_case< $runtime_error id "Sum"$ >> in
 			let patterns = mcOr_of_list (List.map2 pattern ids ctyps @ [ fail_match ]) in
 			<:expr< match $id$ with [ $patterns$ ] >>
 
@@ -290,21 +289,21 @@ module Of_value = struct
 			let ids, pids = new_id_list _loc ctyps in
 			let exprs = List.map2 (create names) ids ctyps in
 			<:expr< match $id$ with
-				[ V.Tuple $patt_list_of_list _loc pids$ -> $expr_tuple_of_list _loc exprs$ | $runtime_error "List"$ ]
+				[ V.Tuple $patt_list_of_list _loc pids$ -> $expr_tuple_of_list _loc exprs$ | $runtime_error id "List"$ ]
 			>>
 
 		| <:ctyp< list $t$ >> ->
 			let nid, npid = new_id _loc in
 			let nid2, npid2 = new_id _loc in
 			<:expr< match $id$ with
-				[ V.Enum $npid$ -> List.map (fun $npid2$ -> $create names nid2 t$) $nid$ | $runtime_error "List"$ ]
+				[ V.Enum $npid$ -> List.map (fun $npid2$ -> $create names nid2 t$) $nid$ | $runtime_error id "List"$ ]
 			>>
 
 		| <:ctyp< array $t$ >> ->
 			let nid, npid = new_id _loc in
 			let nid2, npid2 = new_id _loc in
 			<:expr< match $id$ with
-				[ V.Enum $npid$ -> Array.of_list (List.map (fun $npid2$ -> $create names nid2 t$) $nid$) | $runtime_error "List"$ ]
+				[ V.Enum $npid$ -> Array.of_list (List.map (fun $npid2$ -> $create names nid2 t$) $nid$) | $runtime_error id "List"$ ]
 			>>
 
 		| <:ctyp< { $t$ } >> ->
@@ -314,10 +313,10 @@ module Of_value = struct
 			let exprs = List.map2 (fun id (n, ctyp) -> <:rec_binding< $lid:n$ = $create names id ctyp$ >>) ids fields in
 			let bindings =
 				List.map2 (fun pid (n, ctyp) ->
-					<:binding< $pid$ = try List.assoc $str:n$ $nid$ with [ $runtime_exn_error ("Looking for key "^n)$ ] >>
+					<:binding< $pid$ = try List.assoc $str:n$ $nid$ with [ $runtime_exn_error nid ("Looking for key "^n)$ ] >>
 					) pids fields in
 			<:expr< match $id$ with
-				[ V.Dict $npid$ -> let $biAnd_of_list bindings$ in { $rbSem_of_list exprs$ } | $runtime_error "Dict(_)"$ ]
+				[ V.Dict $npid$ -> let $biAnd_of_list bindings$ in { $rbSem_of_list exprs$ } | $runtime_error id "Dict"$ ]
 			>>
 
 		| <:ctyp< < $t$ > >> ->
@@ -327,37 +326,44 @@ module Of_value = struct
 			let exprs = List.map2 (fun id (n, ctyp) -> <:class_str_item< method $lid:n$ = $create names id ctyp$ >>) ids fields in
 			let bindings =
 				List.map2 (fun pid (n, ctyp) ->
-					<:binding< $pid$ = try List.assoc $str:n$ $nid$ with [ $runtime_exn_error ("Looking for key "^n)$ ] >>
+					<:binding< $pid$ = try List.assoc $str:n$ $nid$ with [ $runtime_exn_error nid ("Looking for key "^n)$ ] >>
 					) pids fields in
 			<:expr< match $id$ with 
-				[ V.Dict $npid$ -> let $biAnd_of_list bindings$ in object $crSem_of_list exprs$ end | $runtime_error "Dict(_)"$ ]
+				[ V.Dict $npid$ -> let $biAnd_of_list bindings$ in object $crSem_of_list exprs$ end | $runtime_error id "Dict"$ ]
 			>>
 
 		| <:ctyp< $t$ -> $u$ >> ->
 			<:expr< match $id$ with
-				[ V.Arrow f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $runtime_error "Marshal"$ ]
+				[ V.Arrow f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $runtime_error id "Marshal"$ ]
 			>>
 
 		| <:ctyp< $lid:t$ >> ->
+			let nid, npid = new_id _loc in
 			if not (List.mem t names) then
-				<:expr< $expr_of_value _loc t$ $id$ >>
+				<:expr< match $id$ with [ V.Ext (_, $npid$) -> $expr_of_value _loc t$ $nid$ | $runtime_error id "Ext"$ ] >>
 			else
-				let nid, npid = new_id _loc in
 				<:expr< match $id$ with [
 				  V.Var (n, __id__) -> Lazy.force (List.assoc __id__ __env__.Deps.$lid:t$)
 				| V.Rec ((n, __id__), $npid$ ) ->
-					let __env__  = { (__env__) with Deps.$lid:t$ = [ (__id__, lazy ($expr_of_value_aux _loc t$ __env__ $id$)) :: __env__.Deps.$lid:t$ ] } in
-					Lazy.force (List.assoc __id__ __env__.Deps.$lid:t$)
-				| _ -> $error "Var/Rec"$ ] >>
+					let _ = Printf.printf "a\n%!" in
+					let rec __new_env__  = { (__env__) with Deps.$lid:t$ = [ (__id__, lazy ($expr_of_value_aux _loc t$ __new_env__ $nid$)) :: __env__.Deps.$lid:t$ ] } in
+					let _ = Printf.printf "b\n%!" in
+					let r  = Lazy.force (List.assoc __id__ __new_env__.Deps.$lid:t$) in
+					let _ = Printf.printf "c\n%!" in
+					r
+				| $runtime_error id (Printf.sprintf "Var/Rec(%s)" t)$ ] >>
 
 		| _ -> raise (Type_not_supported ctyp)
 
 	let gen_one names name ctyp =
 		let _loc = loc_of_ctyp ctyp in
-		let id, pid = new_id _loc in
+		let nid, pid = new_id _loc in
 		<:binding< $patt_of_value_aux _loc name$ = fun __env__ -> fun $pid$ ->
 			let module V = Value in
-			$create names id ctyp$
+			let _ = Printf.printf "%s_of_value <-- %s %s \n%!" $str:name$ $string_of_env _loc names$ (V.to_string $nid$) in 
+			let res = $create names nid ctyp$ in
+			let _ = Printf.printf "%s_of_value <-- OK \n%!" $str:name$ in
+			res
 		>>
 
 	let gen tds =
@@ -381,14 +387,12 @@ let gen tds =
 	<:str_item<
 		value $Value_of.inputs _loc ids$ =
 			let module Deps = struct
-				$P4_weakid.gen tds$;
 				type env = $Value_of.env_type _loc ids$;
 			end in
 			let rec $Value_of.gen tds$ in
 			$Value_of.outputs _loc ids$;
 		value $Of_value.inputs _loc ids$ =
 			let module Deps = struct
-				$P4_weakid.gen tds$;
 				type env = $Of_value.env_type _loc ids$;
 				exception Runtime_error of (string * Value.t);
 				exception Runtime_exn_error of (string * exn);

@@ -34,6 +34,7 @@ type t =
 	| Var of (string * int64)
 	| Rec of (string * int64) * t
 	| Arrow of string
+	| Ext of string * t
 
 (* If there are still some Var v, then the type is recursive for the type v *)
 let free_vars t =
@@ -46,7 +47,8 @@ let free_vars t =
 	| Tuple tl   -> List.fold_left aux accu tl
 	| Dict tl    -> List.fold_left (fun accu (_,t) -> aux accu t) accu tl
 	| Int _ | Bool _ | Float _ | String _ | Null | Arrow _
-                 -> accu in
+                     -> accu
+	| Ext (_,t)  -> aux accu t in
 	aux [] t
 
 let map_strings sep fn l = String.concat sep (List.map fn l)
@@ -64,6 +66,7 @@ let rec to_string t = match t with
 	| Rec ((n,i),t) -> sprintf "R@%s@%Ld@%s" n i (to_string t)
 	| Var (n,i)  -> sprintf "@%s@%Ld" n i
 	| Arrow f    -> sprintf "#%s" f
+	| Ext (n,t)  -> sprintf "E/%s/%s" n (to_string t)
 
 let index_par c s =
 	let res = ref None in
@@ -126,13 +129,17 @@ let rec of_string s =
 		Sum (List.hd ss,  (List.map of_string (List.tl ss)))
 	| 'R' ->
 		begin match split_par ~limit:4 '@' s with
-		| [ _; var; i; t ] -> Rec ((var, Int64.of_string i), of_string t)
+		| [ "R"; var; i; t ] -> Rec ((var, Int64.of_string i), of_string t)
 		| _ -> parse_error s
 		end
 	| '@' -> begin match split_par ~limit:3 '@' s with
-		| [ _; var; i ] -> Var (var, Int64.of_string (String.sub s 1 (String.length s - 1)))
+		| [ _; var; i ] -> Var (var, Int64.of_string i)
 		| _ -> parse_error s
-		end
+	  end
+	| 'E' -> begin match split_par ~limit:3 '/' s with
+		| [ "E"; var; t ] -> Ext (var, of_string t)
+		| _ -> parse_error s
+	  end
 	| '#' -> Arrow (String.sub s 1 (String.length s - 1))
-	| _ -> parse_error s
+	| _   -> parse_error s
 
