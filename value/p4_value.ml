@@ -44,7 +44,7 @@ let of_weakid _loc n = <:expr< Deps . $lid:n ^ "_of_weakid"$ >>
 let debug_ctyp ctyp =
 	let module PP = Camlp4.Printers.OCaml.Make(Syntax) in
 	let pp = new PP.printer () in
-	Format.eprintf "unknown type %a@.\n" pp#ctyp ctyp
+	Format.printf "unknown type %a@.\n" pp#ctyp ctyp
 
 let list_of_ctyp_decl tds =
 	let rec aux accu = function
@@ -185,7 +185,7 @@ module Value_of = struct
 			else
 				<:expr<
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
-					then V.Var (List.assq $id$ __env__.Deps.$lid:t$)
+					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
 						let __id__ = if $has_weakid _loc t$ $id$
 						then $weakid_of _loc t$ $id$
@@ -193,8 +193,8 @@ module Value_of = struct
 						let __value__ = $expr_value_of_aux _loc t$
 							{ (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] }
 							$id$ in
-						if List.mem __id__ (V.free_vars __value__) then
-							V.Rec ( __id__, __value__ )
+						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
+							V.Rec (($str:t$, __id__), __value__ )
 						else
 							__value__
 					end >>
@@ -228,29 +228,29 @@ end
 module Of_value = struct
 
 	let env_type _loc names =
-		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : option $lid:n$ ; $accu$ >>) <:ctyp< >> names$ } >>
+		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list (int64 * Lazy.t $lid:n$) ; $accu$ >>) <:ctyp< >> names$ } >>
 
 	let empty_env _loc names =
-		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = None >>) names)$ } >>
+		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ } >>
 
 	let runtime_error expected =
 		let _loc = Loc.ghost in
-		<:match_case< __x__ -> do {
-			Printf.eprintf "Runtime error: got '%s' while '%s' was expected\\n" (Value.to_string __x__) $str:expected$;
+		<:match_case<  __x__ -> do {
+			Printf.printf "Runtime error: got '%s' while '%s' was expected\\n" (Value.to_string __x__) $str:expected$;
 			raise (Deps.Runtime_error($str:expected$, __x__)) }
 		>>
 
 	let error expected =
 		let _loc = Loc.ghost in
 		<:expr< do {
-			Printf.eprintf "Runtime error: '%s'\\n" $str:expected$;
+			Printf.printf "Runtime error: '%s'\\n" $str:expected$;
 			raise (Deps.Runtime_error($str:expected$, V.Null)) }
 		>>
 
 	let runtime_exn_error doing =
 		let _loc = Loc.ghost in
 		<:match_case< __x__ -> do {
-			Printf.eprintf "Runtime error: got exception '%s' doing '%s'\\n" (Printexc.to_string __x__) $str:doing$;
+			Printf.printf "Runtime error: got exception '%s' doing '%s'\\n" (Printexc.to_string __x__) $str:doing$;
 			raise (Deps.Runtime_exn_error($str:doing$, __x__)) }
 		>>
 
@@ -343,12 +343,11 @@ module Of_value = struct
 				<:expr< $expr_of_value _loc t$ $id$ >>
 			else
 				let nid, npid = new_id _loc in
-				<:expr< match ( $id$, __env__.Deps.$lid:t$ ) with [
-				  (V.Var __id__, Some __value__) -> __value__
-				| (V.Rec ( __id__, $npid$ ),  _) ->
-					let rec __value__ () = $expr_of_value_aux _loc t$ { (__env__) with Deps.$lid:t$ = Some (__value__ ()) } $nid$ in
-					let __value__ = __value__ () in
-					do { $set_weakid _loc t$ __value__ __id__; __value__ }
+				<:expr< match $id$ with [
+				  V.Var (n, __id__) -> Lazy.force (List.assoc __id__ __env__.Deps.$lid:t$)
+				| V.Rec ((n, __id__), $npid$ ) ->
+					let __env__  = { (__env__) with Deps.$lid:t$ = [ (__id__, lazy ($expr_of_value_aux _loc t$ __env__ $id$)) :: __env__.Deps.$lid:t$ ] } in
+					Lazy.force (List.assoc __id__ __env__.Deps.$lid:t$)
 				| _ -> $error "Var/Rec"$ ] >>
 
 		| _ -> raise (Type_not_supported ctyp)

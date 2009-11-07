@@ -54,4 +54,4 @@ pi_%: %.ml
 	
 .PHONY: clean
 clean:
-	rm -f pc_* c_* pi_* *.cmo *.cma *.db *.cmi top_*
+	rm -f pc_* c_* pi_* *.cmo *.cma *.db *.cmi top_* pc_*

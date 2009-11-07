@@ -91,12 +91,12 @@ let test_marshall () =
 		let o = o () in
 
 		Printf.printf "x1=%s\n%!" (Value.to_string (value_of_x x1));
-		Printf.printf "t2=%s\n%!" (Value.to_string (value_of_t t1));
+		Printf.printf "t1=%s\n%!" (Value.to_string (value_of_t t1));
 		Printf.printf "t2=%s\n%!" (Value.to_string (value_of_t t2));
-		let _ = t_of_value (value_of_t t1) in
 		"EQ f" @? (f = f_of_value (value_of_f f));
-(*		"EQ t" @? (value_of_t t1 = value_of_t (t_of_value (value_of_t t1)));
-		"EQ t" @? (value_of_t t2 = value_of_t (t_of_value (value_of_t t2)));
+		"EQ t1 (1)" @? (value_of_t t1 = value_of_t t1);
+		"EQ t1" @? (value_of_t t1 = value_of_t (t_of_value (value_of_t t1)));
+(*		"EQ t" @? (value_of_t t2 = value_of_t (t_of_value (value_of_t t2)));
 		"EQ t" @? (value_of_x x1 = value_of_x (x_of_value (value_of_x x1)));*)
 (*
 		"EQ p" @? (p = p_of_value (value_of_p p));

@@ -31,21 +31,21 @@ type t =
 	| Dict of (string * t) list
 	| Sum of string * t list
 	| Null
-	| Var of int64
-	| Rec of int64 * t
+	| Var of (string * int64)
+	| Rec of (string * int64) * t
 	| Arrow of string
 
-(* If there are still some `Var v, then the type is recursive for the type v *)
+(* If there are still some Var v, then the type is recursive for the type v *)
 let free_vars t =
 	let rec aux accu = function
-    | Rec (n,t)  -> aux (List.filter (fun m -> n <> m) accu) t
+	| Rec (n,t)  -> aux (List.filter (fun m -> n <> m) accu) t
 	| Var n when List.mem n accu -> accu
 	| Var n      -> n :: accu
-    | Enum tl
+	| Enum tl
 	| Sum (_,tl)
 	| Tuple tl   -> List.fold_left aux accu tl
-    | Dict tl    -> List.fold_left (fun accu (_,t) -> aux accu t) accu tl
-    | Int _ | Bool _ | Float _ | String _ | Null | Arrow _
+	| Dict tl    -> List.fold_left (fun accu (_,t) -> aux accu t) accu tl
+	| Int _ | Bool _ | Float _ | String _ | Null | Arrow _
                  -> accu in
 	aux [] t
 
@@ -61,8 +61,8 @@ let rec to_string t = match t with
 	| Tuple ts   -> sprintf "(%s)" (map_strings ";" to_string ts)
 	| Dict ts    -> sprintf "{%s}" (map_strings ";" (fun (s,t) -> sprintf "%s:%s" s (to_string t)) ts)
 	| Sum (n,ts) -> sprintf "<%s>" (let r = map_strings ";" to_string ts in if r = "" then n else n^";"^r)
-	| Rec (n,t)  -> sprintf "R@%Ld@%s" n (to_string t)
-	| Var n      -> sprintf "@%Ld" n
+	| Rec ((n,i),t) -> sprintf "R@%s@%Ld@%s" n i (to_string t)
+	| Var (n,i)  -> sprintf "@%s@%Ld" n i
 	| Arrow f    -> sprintf "#%s" f
 
 let index_par c s =
@@ -125,11 +125,14 @@ let rec of_string s =
 		let ss = split_par ';' s in
 		Sum (List.hd ss,  (List.map of_string (List.tl ss)))
 	| 'R' ->
-		begin match split_par ~limit:3 '@' s with
-		| [ _; var; t ] -> Rec(Int64.of_string var, of_string t)
+		begin match split_par ~limit:4 '@' s with
+		| [ _; var; i; t ] -> Rec ((var, Int64.of_string i), of_string t)
 		| _ -> parse_error s
 		end
-	| '@' -> Var (Int64.of_string (String.sub s 1 (String.length s - 1)))
+	| '@' -> begin match split_par ~limit:3 '@' s with
+		| [ _; var; i ] -> Var (var, Int64.of_string (String.sub s 1 (String.length s - 1)))
+		| _ -> parse_error s
+		end
 	| '#' -> Arrow (String.sub s 1 (String.length s - 1))
 	| _ -> parse_error s
 
