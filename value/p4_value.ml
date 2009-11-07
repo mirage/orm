@@ -32,13 +32,6 @@ let expr_value_of_aux _loc n = <:expr< $lid:"value_of_" ^ n ^ "_aux"$ >>
 let expr_of_value _loc n = <:expr< $lid:n ^ "_of_value"$ >>
 let expr_of_value_aux _loc n = <:expr< $lid:n ^ "_of_value_aux"$ >>
 
-(*let has_weakid _loc n = <:expr< Deps . $lid:n ^ "_has_weakid"$ >>
-let create_weakid _loc n = <:expr< Deps . $lid:n ^ "_create_weakid"$ >>
-let set_weakid _loc n = <:expr< Deps . $lid:n ^ "_set_weakid"$ >>
-let weakid_of _loc n = <:expr< Deps . $lid:"weakid_of_" ^ n$ >>
-let of_weakid _loc n = <:expr< Deps . $lid:n ^ "_of_weakid"$ >>*)
-
-
 (* Utils *)
 
 let debug_ctyp ctyp =
@@ -337,34 +330,32 @@ module Of_value = struct
 				[ V.Arrow f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $runtime_error id "Marshal"$ ]
 			>>
 
-		| <:ctyp< $lid:t$ >> ->
-			let nid, npid = new_id _loc in
-			if not (List.mem t names) then
-				<:expr< match $id$ with [ V.Ext (_, $npid$) -> $expr_of_value _loc t$ $nid$ | $runtime_error id "Ext"$ ] >>
-			else
-				<:expr< match $id$ with [
-				  V.Var (n, __id__) -> Lazy.force (List.assoc __id__ __env__.Deps.$lid:t$)
-				| V.Rec ((n, __id__), $npid$ ) ->
-					let _ = Printf.printf "a\n%!" in
-					let rec __new_env__  = { (__env__) with Deps.$lid:t$ = [ (__id__, lazy ($expr_of_value_aux _loc t$ __new_env__ $nid$)) :: __env__.Deps.$lid:t$ ] } in
-					let _ = Printf.printf "b\n%!" in
-					let r  = Lazy.force (List.assoc __id__ __new_env__.Deps.$lid:t$) in
-					let _ = Printf.printf "c\n%!" in
-					r
-				| $runtime_error id (Printf.sprintf "Var/Rec(%s)" t)$ ] >>
+		| <:ctyp< $lid:t$ >> -> if List.mem t names then <:expr< $expr_of_value_aux _loc t$ __env__ $id$ >> else <:expr< $expr_of_value _loc t$ $id$ >> 
 
 		| _ -> raise (Type_not_supported ctyp)
 
 	let gen_one names name ctyp =
 		let _loc = loc_of_ctyp ctyp in
-		let nid, pid = new_id _loc in
-		<:binding< $patt_of_value_aux _loc name$ = fun __env__ -> fun $pid$ ->
+		let nid, npid = new_id _loc in
+		let nid2, npid2 = new_id _loc in
+		<:binding< $patt_of_value_aux _loc name$ = fun __env__ -> fun $npid$ ->
 			let module V = Value in
-			let _ = Printf.printf "%s_of_value <-- %s %s \n%!" $str:name$ $string_of_env _loc names$ (V.to_string $nid$) in 
+			let _ = Printf.printf "%s_of_value <-- %s %s \\n%!" $str:name$ $string_of_env _loc names$ (V.to_string $nid$) in
+			match $nid$ with [
+			  V.Var (n, __id__) -> Lazy.force (List.assoc __id__ __env__.Deps.$lid:name$)
+			| V.Rec ((n, __id__), $npid2$ ) ->
+				if List.mem_assoc __id__ __env__.Deps.$lid:name$ then
+					Lazy.force (List.assoc __id__ __env__.Deps.$lid:name$)
+				else
+					let rec __new_env__  = { (__env__) with Deps.$lid:name$ = [ (__id__, lazy ($expr_of_value_aux _loc name$ __new_env__ $nid2$)) :: __env__.Deps.$lid:name$ ] } in
+					let _ = Printf.printf "Lazy.force ...\\n%!" in
+					let r  = Lazy.force (List.assoc __id__ __new_env__.Deps.$lid:name$) in
+					let _ = Printf.printf "Lazy.force: OK\\n%!" in r
+			| _ ->  
 			let res = $create names nid ctyp$ in
-			let _ = Printf.printf "%s_of_value <-- OK \n%!" $str:name$ in
-			res
-		>>
+			let _ = Printf.printf "%s_of_value <-- OK \\n%!" $str:name$ in
+			res ]
+		>> 
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in
