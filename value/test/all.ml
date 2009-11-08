@@ -86,7 +86,7 @@ and tu ()  = ( int (), f (), pp ())
 let o () : o = object method x = f () method y = string () method z = (fun i -> string () ^ string_of_int i) end
 
 let test_marshall () =
-	for i = 1 to 1000 do begin
+	for i = 1 to 200 do begin
 		let p = p () in
 		let pp = pp () in
 		let t = t () in
