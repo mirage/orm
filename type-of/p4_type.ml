@@ -41,7 +41,7 @@ let create tds : (loc * string * t) list =
   let apply name arg = bind name ((Hashtbl.find tablefn name) arg) in
   let exists name = Hashtbl.mem tablefn name in
 
-  let rec aux bind_vars ctyp =
+  let rec aux bound_vars ctyp =
     match ctyp with
     | <:ctyp< unit >>         -> Unit
     | <:ctyp< int >>          -> Int
@@ -51,10 +51,10 @@ let create tds : (loc * string * t) list =
     | <:ctyp< bool >>         -> Bool
     | <:ctyp< char >>         -> Char
     | <:ctyp< string >>       -> String
-    | <:ctyp< option $ty$ >>  -> Option (aux bind_vars ty)
-    | <:ctyp< ( $tup:tp$ ) >> -> Tuple (List.map (aux bind_vars) (list_of_ctyp tp []))
+    | <:ctyp< option $ty$ >>  -> Option (aux bound_vars ty)
+    | <:ctyp< ( $tup:tp$ ) >> -> Tuple (List.map (aux bound_vars) (list_of_ctyp tp []))
     | <:ctyp< list $ctyp$ >>
-    | <:ctyp< array $ctyp$ >> -> Enum (aux bind_vars ctyp)
+    | <:ctyp< array $ctyp$ >> -> Enum (aux bound_vars ctyp)
     | <:ctyp< [< $variants$ ] >> 
     | <:ctyp< [> $variants$ ] >>
     | <:ctyp< [= $variants$ ] >> 
@@ -62,7 +62,7 @@ let create tds : (loc * string * t) list =
         let rec fn accu = function
           | <:ctyp< $t1$ | $t2$ >>     -> fn (fn accu t1) t2
           | <:ctyp< `$uid:id$ of $t$ >>
-          | <:ctyp< $uid:id$ of $t$ >> -> (id, List.map (aux bind_vars) (list_of_ctyp t [])) :: accu
+          | <:ctyp< $uid:id$ of $t$ >> -> (id, List.map (aux bound_vars) (list_of_ctyp t [])) :: accu
           | <:ctyp< `$uid:id$ >>
           | <:ctyp< $uid:id$ >>        -> (id, []) :: accu
           | _ -> failwith "unexpected AST" in
@@ -70,17 +70,17 @@ let create tds : (loc * string * t) list =
     | <:ctyp< { $fields$ } >> | <:ctyp< < $fields$ > >> ->
 	let rec fn accu = function
           | <:ctyp< $t1$; $t2$ >>             -> fn (fn accu t1) t2
-          | <:ctyp< $lid:id$ : mutable $t$ >> -> (id, `M, aux bind_vars t) :: accu
-          | <:ctyp< $lid:id$ : $t$ >>         -> (id, `I, aux bind_vars t) :: accu
+          | <:ctyp< $lid:id$ : mutable $t$ >> -> (id, `M, aux bound_vars t) :: accu
+          | <:ctyp< $lid:id$ : $t$ >>         -> (id, `I, aux bound_vars t) :: accu
           | _                                 -> failwith "unexpected AST" in
         Dict (fn []  fields)
-	| <:ctyp< $t$ -> $u$ >>   -> Arrow ( (aux bind_vars t), (aux bind_vars u) )
-    | <:ctyp< $lid:id$ >> when not (exists id) || List.mem id bind_vars -> Var id
-    | <:ctyp< $lid:id$ >>     -> apply id (id :: bind_vars)
+	| <:ctyp< $t$ -> $u$ >>   -> Arrow ( (aux bound_vars t), (aux bound_vars u) )
+    | <:ctyp< $lid:id$ >> when not (exists id) || List.mem id bound_vars -> Var id
+    | <:ctyp< $lid:id$ >>     -> apply id (id :: bound_vars)
     | x                       -> raise (Type_not_supported x) in
 
   let ctyps = list_of_ctyp_decl tds in
-  List.iter (fun (loc, name, ctyp) -> register name (fun bind_vars -> aux bind_vars ctyp)) ctyps;
+  List.iter (fun (loc, name, ctyp) -> register name (fun bound_vars -> aux bound_vars ctyp)) ctyps;
   List.map (fun (loc, name, ctyp) -> loc, name, apply name [name]) ctyps
 
 let make_name t =
