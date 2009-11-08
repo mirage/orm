@@ -27,7 +27,7 @@ and t = {
 with type_of
 
 type o =
-  < x: f; y: string; z: (int -> string) > 
+  < x: f; y: x; z: (int -> string) > 
   with type_of
 
 open OUnit

@@ -2,8 +2,8 @@
 
 P4INC := -I$(shell ocamlfind query type-conv) -I ..
 PA    := pa_type.cma
-BINC := -I .. type.cma
-NINC := -I .. type.cmx
+BINC := -I .. pa_type.cma
+NINC := -I .. pa_type.cmx
 
 PACKS= -package unix,oUnit
 

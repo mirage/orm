@@ -35,7 +35,7 @@ exception Type_not_supported of ctyp
 (* For each type declaration in tds, returns the corresponding unrolled Type.t.        *)
 (* The remaining free variables in the type corresponds to external type declarations. *)
 let create tds : (loc * string * t) list =
-  let bind v t = if List.mem v (free_vars t) then Rec (v, t) else t in
+  let bind v t = if List.mem v (free_vars t) then Rec (v, t) else Ext (v, t) in
   let tablefn = Hashtbl.create 16 in
   let register name fn = Hashtbl.replace tablefn name fn in
   let apply name arg = bind name ((Hashtbl.find tablefn name) arg) in
@@ -86,16 +86,17 @@ let create tds : (loc * string * t) list =
 let make_name t =
   "type_of_"^t
 
-let gen module_name tds =
+let gen tds =
   let _loc = loc_of_ctyp tds in
   let types = create tds in
   let subst_external_var (_loc, name, t) =
     let freev = free_vars t in
     let rec aux = function
     | Var v when List.mem v freev
-                 -> <:expr< $lid:make_name v$ >>
+                 -> <:expr< T.Ext $lid:make_name v$ >>
     | Var v      -> <:expr< T.Var $str:v$ >>
     | Rec (v, t) -> <:expr< T.Rec ($str:v$, $aux t$) >>
+    | Ext (v, t) -> <:expr< T.Ext ($str:v$, $aux t$) >>
     | Unit       -> <:expr< T.Unit >>
     | Int        -> <:expr< T.Int >>
     | Int32      -> <:expr< T.Int32 >>
@@ -120,7 +121,7 @@ let gen module_name tds =
       <:expr< T.Dict $fn <:expr< [] >> ts$ >>
     | Arrow(t, s) -> <:expr< T.Arrow( $aux t$, $aux s$ ) >>
     in
-    <:binding< $lid:make_name name$ = let module T = $uid:module_name$ in $aux t$ >>
+    <:binding< $lid:make_name name$ = let module T = Type in $aux t$ >>
   in
   let bindings = List.map subst_external_var types in
   <:str_item< value $biAnd_of_list bindings$ >>

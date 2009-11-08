@@ -28,6 +28,6 @@ let _ =
     (fun tds ->
       let _loc = loc_of_ctyp tds in
        <:str_item<
-           $P4_type.gen "Type" tds$;
+           $P4_type.gen tds$;
        >>
     )
