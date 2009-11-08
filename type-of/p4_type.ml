@@ -93,7 +93,7 @@ let gen tds =
     let freev = free_vars t in
     let rec aux = function
     | Var v when List.mem v freev
-                 -> <:expr< T.Ext $lid:make_name v$ >>
+                 -> <:expr< $lid:make_name v$ >>
     | Var v      -> <:expr< T.Var $str:v$ >>
     | Rec (v, t) -> <:expr< T.Rec ($str:v$, $aux t$) >>
     | Ext (v, t) -> <:expr< T.Ext ($str:v$, $aux t$) >>
