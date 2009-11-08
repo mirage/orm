@@ -1,7 +1,7 @@
 export OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
-SOURCES = ../weakid/hweak.mli ../weakid/hweak.ml ../type-of/type.ml sql_backend.ml
+SOURCES = ../weakid/hweak.mli ../weakid/hweak.ml ../type-of/type.ml sql_backend.ml sql_init.ml
 RESULT = orm
 PACKS = sqlite3
 LIB_PACK_NAME = orm

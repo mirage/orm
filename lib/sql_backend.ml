@@ -99,7 +99,7 @@ let transaction db fn =
     )
 
 (* iterate over a result set *)
-let step_fold db stmt iterfn =
+let step_map db stmt iterfn =
     let stepfn () = Sqlite3.step stmt in
     let rec fn a = match db_busy_retry db stepfn with
     |Sqlite3.Rc.ROW -> fn (iterfn stmt :: a)
@@ -109,8 +109,8 @@ let step_fold db stmt iterfn =
     fn []
 
 (* iterate over a result set and return an array *)
-let step_fold_array db stmt iterfn =
-  Array.of_list (step_fold db stmt iterfn)
+let step_map_array db stmt iterfn =
+  Array.of_list (step_map db stmt iterfn)
 
 (* List version of Array.iteri *)
 let list_iteri fn =
