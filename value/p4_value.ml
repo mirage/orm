@@ -113,6 +113,12 @@ module Value_of = struct
 		<:expr< let __new_id__ = let count = ref 0L in let x () = do { count.val := Int64.add count.val 1L; count.val } in x in
 			{ $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ ; __new_id__ = __new_id__ } >>
 
+	let replace_env _loc names id t =
+		if List.length names = 1 then
+			<:expr< { Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+		else
+			<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		match ctyp with
@@ -171,7 +177,7 @@ module Value_of = struct
 			let expr = <:expr< V.Dict $expr_list_of_list _loc (List.map2 one_expr ids fields)$ >> in
 			<:expr< let $biAnd_of_list bindings$ in $expr$ >>
 
-		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Arrow (let module M = Marshal in M.to_string $id$  [ M.No_sharing; M.Closures ]) >>
+		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Arrow (let module M = Marshal in M.to_string $id$  [ M.Closures ]) >>
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
@@ -182,9 +188,7 @@ module Value_of = struct
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
 						let __id__ = __env__.Deps.__new_id__ () in
-						let __value__ = $expr_value_of_aux _loc t$
-							{ (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] }
-							$id$ in
+						let __value__ = $expr_value_of_aux _loc t$ $replace_env _loc names id t$ $id $ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__ )
 						else
@@ -224,6 +228,12 @@ module Of_value = struct
 
 	let empty_env _loc names =
 		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ } >>
+
+	let replace_env _loc names name =
+		if List.length names = 1 then
+			<:expr< { Deps.$lid:name$ = [ (__id__, __value0__) :: __env__.Deps.$lid:name$ ] } >>
+		else
+			<:expr< { (__env__) with Deps.$lid:name$ = [ (__id__, __value0__) :: __env__.Deps.$lid:name$ ] } >>
 
 	let string_of_env _loc names =
 		<:expr< Printf.sprintf "{%s}" (String.concat "," $expr_list_of_list _loc (List.map
@@ -369,7 +379,7 @@ module Of_value = struct
 					List.assoc __id__ __env__.Deps.$lid:name$
 				else
 					let __value0__ = $default_value _loc ctyp$ in
-					let __env__  = { (__env__) with Deps.$lid:name$ = [ (__id__, __value0__) :: __env__.Deps.$lid:name$ ] } in
+					let __env__  = $replace_env _loc names name$ in
 					let __value1__ = $expr_of_value_aux _loc name$ __env__ $nid2$ in
 					let () = $set_value _loc ctyp$ in
 					__value0__
