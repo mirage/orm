@@ -95,7 +95,7 @@ let make_function _loc ?opt_args ?label_args ?return_type ~name ~args ~body () =
 let list_of_ctyp_decl tds =
 	let rec aux accu = function
 	| Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
-	| Ast.TyDcl (loc, id, _, ty, []) -> (id, ty) :: accu
+	| Ast.TyDcl (loc, id, _, ty, []) -> (loc, id, ty) :: accu
 	| _                               ->  failwith "list_of_ctyp_decl: unexpected type"
 	in aux [] tds
 

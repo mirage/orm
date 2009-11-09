@@ -110,7 +110,7 @@ let mapi fn l = foldi (fun accu i x -> fn i x :: accu) [] l
 let map_strings sep fn sl = String.concat sep (List.map fn sl)
 let map_stringsi sep fn sl = String.concat sep (mapi fn sl)
 
-let create_tables env db t =
+let init_tables ~env ~db t =
 
   let sub_tables = ref [] in
   let process t s =
@@ -157,59 +157,3 @@ let create_tables env db t =
     | `Index l  -> List.iter (process_custom_index `I) l
 	| _         -> ()
     ) env
-
-(*let process_table = function
-  | Unit -> "CREATE TABLE IF NOT EXISTS '%s' (id )"
-
-     (* Simpler case: just add a new field to the current table *)
-     Field.add ~env ~t_name ~f_name:name ~f_info:(Data (Field.data_of_t env s))
-
-  | Product sl ->
-    (* Create new tables containing the tuple values, and link them to the current table *)
-    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Normal ~t_exposed ~parent:(t_name, name) in
-    foldi (fun env pos t ->
-      process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:(name >>> pos) t
-      ) env sl
-
-  | Collection s ->
-    (* Create a new table containing an ordered collection of values, and link it to the current table *)
-    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:List ~t_exposed ~parent:(t_name, name) in 
-    let env = Field.add_list_counter ~env ~t_name:(t_name >> name) in
-    process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name s
-
-  | Named_product sl ->
-    (* Create a new table containing the fields' values, and link them to the current table *)
-    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Normal ~t_exposed ~parent:(t_name, name) in
-    List.fold_left (fun env (field_name, is_mutable, s) ->
-      process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:field_name s
-      ) env sl
-
-  | Named_sum sl ->
-    (* Create a new table for each element of the sum type, and link them to the current table *)
-    let env = Table.add ~env ~t_name:(t_name >> name) ~t_info:Variant ~t_exposed ~parent:(t_name, name) in
-    let env = Field.add_row_name ~env ~t_name:(t_name >> name) sl in
-    List.fold_left (fun env (row_name, sl) ->
-      foldi (fun env pos s ->
-        process_sig ~env ~t_name:(t_name >> name) ~t_exposed:false ~name:(row_name >>> pos) s
-        ) env sl
-      ) env sl
-
-  | Option s ->
-    let env = process_sig ~env ~t_name ~t_exposed ~name s in
-    Field.set_optional ~env ~t_name ~f_name:name
-
-  | Rec (v, s) ->
-    Env.with_table_alias ~env ~t_name:v ~alias:(t_name >> name)
-      (fun env -> process_sig ~env ~t_name ~t_exposed ~name s)
-
-  | Var v      ->
-    if Env.mem_alias env v then
-	  Field.add_foreign_internal ~env ~t_name ~f_name:name ~foreign:(Env.find_alias env v)
-    else
-      Field.add_foreign_external ~env ~t_name ~f_name:name ~foreign:v
-
-let process env =
-  List.fold_left
-    (fun env (_, name, s) -> process_sig ~env ~t_name:Env.toplevel_table_name ~t_exposed:true ~name s)
-    env env.e_type
-*)

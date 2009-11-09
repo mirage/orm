@@ -66,7 +66,7 @@ let test_get () =
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
