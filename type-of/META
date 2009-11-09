@@ -1,0 +1,13 @@
+name = "type-of"
+version = "0.1"
+description = "Type introspection in OCaml"
+archive(byte) = "type.cmo"
+archive(native) = "type.cmx"
+
+package "syntax" (
+  name = "type-f"
+  version = "0.1"
+  description = "Syntax extension for type introspection in OCaml"
+  requires = "type-conv.syntax, camlp4"
+  archive(syntax, preprocessor) = "pa_type.cma"
+)

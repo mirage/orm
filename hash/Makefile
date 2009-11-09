@@ -7,8 +7,17 @@ RESULT = pa_hash
 USE_CAMLP4 = yes
 
 .PHONY: all
-all: dcl ncl
+all: dcl
 	@ :
 
+install: all
+	ocamlfind install hash META pa_hash.cm{i,a} p4_hash.cm{i,o}
+
+uninstall:
+	ocamlfind remove hash
+
+reinstall:
+	$(MAKE) uninstall
+	$(MAKE) install
 
 include $(OCAMLMAKEFILE)

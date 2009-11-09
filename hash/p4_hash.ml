@@ -30,6 +30,13 @@ let hash_variant s =
   (* make it signed for 64 bits architectures *)
   if !accu > 0x3FFFFFFF then !accu - (1 lsl 31) else !accu
 
+exception Type_not_supported of ctyp
+
+let patt_tuple_of_list _loc = function
+	| []   -> <:patt< >>
+	| [x]  -> x
+	| h::t -> PaTup(_loc, List.fold_left (fun accu p -> <:patt< $accu$, $p$ >>) h t)
+
 let rec t ~envfn depth ctyp =
   let _loc = loc_of_ctyp ctyp in
   let default = <:expr< Hashtbl.hash x >> in
@@ -68,21 +75,27 @@ let rec t ~envfn depth ctyp =
     let rec fn acc = function
         <:ctyp< $t1$ | $t2$ >> -> fn (fn acc t1) t2
       | <:ctyp< $uid:id$ of $t$ >> ->
-          <:match_case< $uid:id$ x -> 
-             _combine $`int:hash_variant id$ $again t$ >> :: acc
+          let ts = list_of_ctyp t [] in
+          let patts = List.map (fun _ -> <:patt< _ >>) ts in
+          let patt = <:patt< $uid:id$ $patt_tuple_of_list _loc (<:patt< x >> :: (List.tl patts))$ >> in
+          <:match_case< $patt$ ->
+             _combine $`int:hash_variant id$ $again (List.hd ts)$ >> :: acc
       | <:ctyp< $uid:id$ >> ->
           <:match_case< $uid:id$ -> $`int:hash_variant id$ >> :: acc
       | <:ctyp< ` $uid:id$ >> ->
           <:match_case< `$uid:id$ -> $`int:hash_variant id$ >> :: acc
       | <:ctyp< `$uid:id$ of $t$ >> ->
-          <:match_case< `$uid:id$ x -> 
-             _combine $`int:hash_variant id$ $again t$ >> :: acc
+          let ts = list_of_ctyp t [] in
+          let patts = List.map (fun _ -> <:patt< _ >>) ts in
+          let patt = <:patt< `$uid:id$ $patt_tuple_of_list _loc (<:patt< x >> :: (List.tl patts))$ >> in
+          <:match_case< $patt$ -> 
+             _combine $`int:hash_variant id$ $again (List.hd ts)$ >> :: acc
       | _ -> assert false in
     <:expr< match x with [ $mcOr_of_list (fn [] rf)$ ] >>
 
   | <:ctyp< < $_$ > >> -> default
 
-  | <:ctyp@loc< ( $tup:tp$ ) >> ->
+  | <:ctyp< ( $tup:tp$ ) >> ->
      let tys = list_of_ctyp tp [] in
      let pos = ref 0 in
      let vn p = "c" ^ (string_of_int p) in
@@ -100,16 +113,18 @@ let rec t ~envfn depth ctyp =
        | _ -> assert false in
      <:expr< match x with [ $tup:mcp$ -> $tubis$ ] >>
 
-  | <:ctyp@loc< list $t$ >> ->
+  | <:ctyp< list $t$ >> ->
      <:expr< List.fold_left (fun a x -> _combine a $again t$) 0 x >>
 
-  | <:ctyp@loc< array $t$ >> ->
+  | <:ctyp< array $t$ >> ->
      <:expr< Array.fold_left (fun a x -> _combine a $again t$) 0 x >>
 
   | <:ctyp< $lid:id$ >> ->
       <:expr< $again (envfn id)$ >>
 
-  | _ -> failwith "unknown type"
+  | <:ctyp< $_$ -> $_$ >> -> default
+
+  | _ -> raise (Type_not_supported ctyp)
 
 let gen1 ~envfn ctyp =
   let _loc = loc_of_ctyp ctyp in

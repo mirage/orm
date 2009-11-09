@@ -22,9 +22,9 @@ open PreCast
 open Ast
 open Syntax
 
-module PP = Camlp4.Printers.OCaml.Make(Syntax)
+(* module PP = Camlp4.Printers.OCaml.Make(Syntax)
 let pp = new PP.printer ()
-let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty
+let debug_ctyp ty = Format.eprintf "DEBUG CTYP: %a@." pp#ctyp ty *)
 
 (* convenience function to wrap the TyDcl constructor since I cant
    find an appropriate quotation to use for this *)
@@ -66,6 +66,11 @@ let access_array _loc a i =
   let make x = Ast.ExId (_loc, Ast.IdLid (_loc, x)) in
   Ast.ExAre (_loc, make a, Ast.ExInt (_loc, string_of_int i))
 
+let ctyp_is_list = function
+  | <:ctyp< list $c$ >> 
+  | <:ctyp< array $c$ >> -> true
+  | _ -> false
+
 (* List.map with the integer position passed to the function *)
 let mapi fn =
   let pos = ref 0 in
@@ -73,3 +78,43 @@ let mapi fn =
     incr pos;
     fn !pos x
   ) 
+
+let make_function _loc ?opt_args ?label_args ?return_type ~name ~args ~body () =
+	let opt_args = match opt_args with
+	| None      -> []
+	| Some opts -> List.map (fun o -> <:patt< ? $lid:o$ >>) opts in
+	let label_args = match label_args with
+	| None      -> []
+	| Some labs -> List.map (fun l -> <:patt< ~ $lid:l$ >>) labs in
+    let args = List.map (fun a -> <:patt< $lid:a$ >>) args in
+	let body = match return_type with
+	| None      -> body
+	| Some rtyp -> <:expr< ( $body$ : $rtyp$ ) >> in
+	<:binding< $lid:name$ = $List.fold_right (fun b a -> <:expr< fun $b$ -> $a$ >>) (opt_args @ label_args @ args) body$ >>
+
+let list_of_ctyp_decl tds =
+	let rec aux accu = function
+	| Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
+	| Ast.TyDcl (loc, id, _, ty, []) -> (loc, id, ty) :: accu
+	| _                               ->  failwith "list_of_ctyp_decl: unexpected type"
+	in aux [] tds
+
+let expr_list_of_list _loc exprs =
+	match List.rev exprs with
+	| []   -> <:expr< [] >>
+	| h::t -> List.fold_left (fun accu x -> <:expr< [ $x$ :: $accu$ ] >>) <:expr< [ $h$ ] >> t 
+
+let patt_list_of_list _loc patts =
+	match List.rev patts with
+	| []   -> <:patt< [] >>
+	| h::t -> List.fold_left (fun accu x -> <:patt< [ $x$ :: $accu$ ] >>) <:patt< [ $h$ ] >> t
+
+let expr_tuple_of_list _loc = function
+	| []   -> <:expr< >>
+	| [x]  -> x
+	| h::t -> ExTup (_loc, List.fold_left (fun accu n -> <:expr< $accu$, $n$ >>) h t)
+
+let patt_tuple_of_list _loc = function
+	| []   -> <:patt< >>
+	| [x]  -> x
+	| h::t -> PaTup (_loc, List.fold_left (fun accu n -> <:patt< $accu$, $n$ >>) h t)

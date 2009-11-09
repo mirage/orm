@@ -3,8 +3,8 @@
 TYPE_CONV_PATH "All"
 
 type p =
- |One of int array
- |Two of t
+ |One of int array * string * float * bool * (char list)
+ |Two
  |Three of x option list
 
 and pp = [ `Poly1 | `Poly2 | `Poly3 of int ]
@@ -31,12 +31,12 @@ f = {
 
 and tu = ( int  * f * pp ) 
 
-and o = < x: int; y: string; z: (int -> string) >
-
 with hash
 
+type o = < x: int; y: string; z: (int -> string) > with hash
+
 module FH = Hashtbl.Make(struct
-  let hash = Hash.f
+  let hash = hash_of_f
   let equal = (=)
   let compare = compare
   type t = f

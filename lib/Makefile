@@ -1,17 +1,19 @@
 .DEFAULT: all
 
 all:
-	ln -nsf ../hash/p4_hash.ml
-	ln -nsf ../hash/p4_hash.mli
-	$(MAKE) -f Makefile.syntax $@
+	$(MAKE) -C syntax $@
 	$(MAKE) -f Makefile.orm $@
 
 clean:
-	$(MAKE) -f Makefile.syntax $@
+	$(MAKE) -C syntax $@
 	$(MAKE) -f Makefile.orm $@
 
-libinstall: all
-	ocamlfind install orm META orm.cma orm.cmx orm.cmxa orm.a orm.cmi pa_orm.cma
+install: all
+	ocamlfind install orm META orm.cm{i,a,xa} syntax/pa_orm.cma
 
-libuninstall:
+uninstall:
 	ocamlfind remove orm
+
+reinstall:
+	$(MAKE) uninstall
+	$(MAKE) install

@@ -10,7 +10,7 @@ slow: dnc
 
 export INCDIRS = ../hash
 export LIBDIRS = ../hash
-export PACKS = unix ounit
+export PACKS = unix oUnit
 
 RESULT= run_test
 TESTS=  all

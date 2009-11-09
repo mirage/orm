@@ -1,12 +1,12 @@
 export OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
-SOURCES = types.ml hweak.ml sql_access.ml
+SOURCES = sql_backend.ml sql_init.ml sql_save.ml sql_get.ml sql_delete.ml
 RESULT = orm
-PACKS = sqlite3
+PACKS = sqlite3 type-of value
 LIB_PACK_NAME = orm
 
-LIBINSTALL_FILES = orm.cmx orm.cmxa orm.a orm.cmi
+LIBINSTALL_FILES = orm.cmx orm.cmxa orm.cma orm.cmi
 
 .PHONY: all
 all: ncl dcl

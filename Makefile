@@ -1,20 +1,41 @@
 .PHONY: all
 all:
-	@cd lib && $(MAKE)
-	@cd lib_test && $(MAKE)
+	$(MAKE) -C hash/
+	$(MAKE) -C hash/ reinstall
+
+	$(MAKE) -C weakid/
+	$(MAKE) -C weakid/ reinstall
+
+	$(MAKE) -C type-of/
+	$(MAKE) -C type-of/ reinstall
+
+	$(MAKE) -C value/
+	$(MAKE) -C value/ reinstall
+
+	$(MAKE) -C lib/
+	$(MAKE) -C lib/ reinstall
+
+	$(MAKE) -C lib_test/
 
 .PHONY: test
 test:
-	@cd lib && $(MAKE)
-	@cd lib_test && ($(MAKE) run || $(MAKE) slow)
+	$(MAKE) -C hash/test/
+	$(MAKE) -C weakid/test/
+	$(MAKE) -C type-of/test/
+	$(MAKE) -C value/test/
+	$(MAKE) -C lib_test/ run
+	$(MAKE) -C lib_test/ slow
 
 .PHONY: install
-install:
-	@cd lib && $(MAKE) libinstall
+install: all
 
 .PHONY: uninstall
 uninstall:
-	@cd lib && $(MAKE) libuninstall
+	$(MAKE) -C hash/ reinstall
+	$(MAKE) -C weakid/ reinstall
+	$(MAKE) -C type-of/ reinstall
+	$(MAKE) -C value/ reinstall
+	$(MAKE) -C lib/ uninstall
 
 .PHONY: reinstall
 reinstall:
@@ -23,6 +44,10 @@ reinstall:
 
 .PHONY: clean
 clean:
-	@cd lib && $(MAKE) clean
-	@cd lib_test && $(MAKE) clean
-	@cd lib_test && $(MAKE) -f Makefile.debug clean
+	$(MAKE) -C hash/ clean
+	$(MAKE) -C weakid/ clean
+	$(MAKE) -C type-of/ clean
+	$(MAKE) -C value/ clean
+	$(MAKE) -C lib/ clean
+	$(MAKE) -C lib_test/ clean
+	$(MAKE) -C lib_test/ -f Makefile.debug clean
