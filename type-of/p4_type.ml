@@ -23,6 +23,8 @@ open Ast
 
 open Type
 
+let type_of t = "type_of_" ^ t
+
 let list_of_ctyp_decl tds =
   let rec aux accu = function
   | Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
@@ -83,9 +85,6 @@ let create tds : (loc * string * t) list =
   List.iter (fun (loc, name, ctyp) -> register name (fun bound_vars -> aux bound_vars ctyp)) ctyps;
   List.map (fun (loc, name, ctyp) -> loc, name, apply name [name]) ctyps
 
-let make_name t =
-  "type_of_"^t
-
 let gen tds =
   let _loc = loc_of_ctyp tds in
   let types = create tds in
@@ -93,7 +92,7 @@ let gen tds =
     let freev = free_vars t in
     let rec aux = function
     | Var v when List.mem v freev
-                 -> <:expr< $lid:make_name v$ >>
+                 -> <:expr< $lid:type_of v$ >>
     | Var v      -> <:expr< T.Var $str:v$ >>
     | Rec (v, t) -> <:expr< T.Rec ($str:v$, $aux t$) >>
     | Ext (v, t) -> <:expr< T.Ext ($str:v$, $aux t$) >>
@@ -121,7 +120,7 @@ let gen tds =
       <:expr< T.Dict $fn <:expr< [] >> ts$ >>
     | Arrow(t, s) -> <:expr< T.Arrow( $aux t$, $aux s$ ) >>
     in
-    <:binding< $lid:make_name name$ = let module T = Type in $aux t$ >>
+    <:binding< $lid:type_of name$ = let module T = Type in $aux t$ >>
   in
   let bindings = List.map subst_external_var types in
   <:str_item< value $biAnd_of_list bindings$ >>

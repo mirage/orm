@@ -47,36 +47,6 @@ let free_vars t =
     | Ext (n,t)  -> aux accu t in
   aux [] t
 
-(* Give the list of (type-name,t') which are in the decomposition if t *)
-let types_of t =
-  let rec aux accu = function
-    | Rec (n, t) -> aux ((n,t) :: accu) t
-    | Enum t
-    | Option t   -> aux accu t
-    | Tuple ts   -> List.fold_left aux accu ts
-    | Dict ts    -> List.fold_left (fun accu (_,_,t) -> aux accu t) accu ts
-    | Sum ts     -> List.fold_left (fun accu (_,t) -> List.fold_left aux accu t) accu ts
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String | Var _
-                 -> accu
-    | Arrow(t,s) -> aux (aux accu t) s
-    | Ext (n,t)  -> aux accu t in
-  aux [ ] t
-
-(* Give the links between types *)
-let links_of t =
-  let rec aux p accu = function
-    | Rec (n, t) -> aux (Some n) ((p,n) :: accu) t
-    | Enum t
-    | Option t   -> aux p accu t
-    | Tuple ts   -> List.fold_left (aux p) accu ts
-    | Dict ts    -> List.fold_left (fun accu (_,_,t) -> aux p accu t) accu ts
-    | Sum ts     -> List.fold_left (fun accu (_,t) -> List.fold_left (aux p) accu t) accu ts
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String | Var _
-                 -> accu
-    | Arrow(t,s) -> aux p (aux p accu t) s
-    | Ext (n,t)  -> aux (Some n) ((p,n) :: accu) t in
-  List.fold_left (fun accu (x,n) -> match x with None -> accu | Some y -> (y,n) :: accu) [] (aux None [] t)
-
 let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let rec to_string t = match t with                                                                    
