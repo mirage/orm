@@ -19,237 +19,63 @@
 open Camlp4
 open PreCast
 open Ast
-open P4_utils
 
-open Printf
-open Type
-open Idl
+let init n = n ^ "init"
 
-(* --- Name functions *)
+(* Utils *)
+let list_of_ctyp_decl tds =
+  let rec aux accu = function
+    | Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
+    | Ast.TyDcl (loc, id, _, ty, []) -> (id, ty) :: accu
+    | _                               ->  failwith "list_of_ctyp_decl: unexpected type"
+  in aux [] tds
 
-module Name = struct
+module Env = struct
+  type t = {
+    indices: (bool * string * string list) list;
+    debug_sql: bool;
+    debug_binds: bool;
+    debug_cache: bool;
+    debug_dot: string option;
+  }
 
-  let get t f = sprintf "%s_get_%s" t.t_name f.f_name
+  let empty = { indices = []; debug_sql = false; debug_binds = false; debug_cache = false; debug_dot = None }
 
-  let count = ref 0
-  let create () =
-      let _loc = Loc.ghost in
-      incr count; 
-      <:expr< $lid:sprintf "__var%i__" !count$ >>,
-      <:patt< $lid:sprintf "__var%i__" !count$ >>
+  let create_sig tds =
+    let _loc = loc_of_ctyp tds in
+    let bindings = List.flatten (List.map (fun (n,_) -> [
+      <:ctyp< $lid:P4_weakid.weakid_of n$ : $lid:n$ -> int64 >> ;
+      <:ctyp< $lid:P4_weakid.of_weakid n$ : int64 -> $lid:n$ >> ;
+      <:ctyp< $lid:P4_weakid.has_weakid n$ : $lid:n$ -> bool >> ;
+      <:ctyp< $lid:P4_weakid.create_weakid n$ : $lid:n$ -> int64 >> ;
+      <:ctyp< $lid:P4_weakid.set_weakid n$ : $lid:n$ -> int64 -> unit >> ]
+      ) (list_of_ctyp_decl tds)) in
+    <:ctyp< { $tySem_of_list bindings$ } >>
 
+  let create tds =
+    let _loc = loc_of_ctyp tds in
+    let bindings = List.flatten (List.map (fun (n,_) -> [
+      <:rec_binding< Deps.$lid:P4_weakid.weakid_of n$ = W.$lid:P4_weakid.weakid_of n$ >> ;
+      <:rec_binding< Deps.$lid:P4_weakid.of_weakid n$ = W.$lid:P4_weakid.of_weakid n$ >> ;
+      <:rec_binding< Deps.$lid:P4_weakid.has_weakid n$ = W.$lid:P4_weakid.has_weakid n$ >> ;
+      <:rec_binding< Deps.$lid:P4_weakid.create_weakid n$ = W.$lid:P4_weakid.create_weakid n$ >> ;
+      <:rec_binding< Deps.$lid:P4_weakid.set_weakid n$ = W.$lid:P4_weakid.set_weakid n$ >> ]
+      ) (list_of_ctyp_decl tds)) in
+    <:expr< let module W = struct $P4_weakid.gen tds$ end in { $rbSem_of_list bindings$ } >>
 end
 
-let debug env ty n e =
-  let _loc = Loc.ghost in
-  let d () = <:binding< () = prerr_endline ($str:n^": "$ ^ $e$) >> in
-  let b () = <:binding< () = () >> in
-  if (match ty with
-    | `Sql   -> env.debug_sql
-    | `Cache -> env.debug_cache
-    | `Binds -> env.debug_binds
-  ) then d() else b()
-
-let map_strings sep fn sl = String.concat sep (List.map fn sl)
-
-module Schema_of = struct
-
-  let rec field ~env ~getfn f =
-    let _loc = f.f_loc in
-    match f.f_info with
-    | Autoid                 -> <:expr< `INT $getfn$ >>
-    | Foreign (Internal , t) ->
-      let id, pid = Name.create () in <:expr< let $pid$ = $getfn$ in `ROW $table ~env id (Table.find env t)$ >>
-    | Foreign (External , t) -> <:expr< `FOREIGN $getfn$ >>
-    | Row_name _             -> <:expr< `TEXT $getfn$ >>
-    | List_counter           -> <:expr< `INT $getfn$ >>
-    | Data d                 ->
-      match d with
-      | F_unit   -> <:expr< `INT 1L >>
-      | F_int    -> <:expr< `INT (Int64.of_int $getfn$) >>
-      | F_int32  -> <:expr< `INT (Int64.of_int32 $getfn$) >>
-      | F_int64  -> <:expr< `INT $getfn$ >>
-      | F_float  -> <:expr< `FLOAT $getfn$ >>
-      | F_char   -> <:expr< `INT (Int64.of_int (Char.code $getfn$)) >>
-      | F_string -> <:expr< `TEXT $getfn$ >>
-      | F_bool   -> <:expr< `INT (if $getfn$ then 1L else 0L) >>
-
-  and table ~env id t =
-    let _loc = t.t_loc in
-    let getfn f = <:expr< $str:Name.get t f$ $id$ >> in
-    <:expr< ( 
-      $str:t.t_name$, 
-      [ $List.fold_right (fun f accu -> <:expr< [ $field ~env ~getfn:(getfn f) f$ :: $accu$ ] >>) t.t_fields <:expr< [] >>$ ]
-    ) >> 
-
-end
-
-(*
-    exSem_of_list exprs
-
-  (* the INSERT statement for a table. This let the recursive foreign fields blanked. *)
-  let rec insert env t =
-    let _loc = t.t_loc in
-    let foreign env t = insert env (Table.find env t) in
-    let recursive env t = <:expr< Sqlit3.Data.NULL >> in
-    let fields = Table.no_autoid_fields env t.t_name in
-    <:expr< do {
-      let __sql__ = sprintf "INSERT INTO %s (%s) VALUES(%s);"
-        t.t_name
-        (map_strings "," (fun f -> f.f_name) fields)
-        (map_strings "," (fun f -> "?") fields) in
-      let $debug env `Sql "insert" <:expr< __sql__ >>$ in
-      let __stmt__ = Sqlite3.prepare db.OS.db __sql__ in
-      $bind ~env ~foreign ~recursive fields$
-      OS.db_must_step db __stmt__;
-      let __id__ = Sqlite3.last_insert_rowid db.OS.db in
-      $uid:Name.whashfn env t$.add db.OS.cache.$lid:Name.tidfn env t$ $lid:t.t_name$ __id__;
-      $uid:Name.rhashfn env t$.add db.OS.cache.$lid:Name.tridfn env t$ __id__ $lid:t.t_name$;
-      Sqlite3.Data.INT __id__
-    } >>
-
-  (* the UPDATE statement for a table *)
-  let rec update env t =
-    let foreign env t = update in
-    let recursive =
-      <:expr<
-        let __id__ = $uid:Name.whashfn t$.find db.OS.cache.$lid:Name.tidfn t$ $lid:t.t_name$ in
-        if Hashtbl.mem __cache__ ( $str:t.t_name$, __id__) then
-            ()
-        else do {
-          Hashtbl.replace __cache__ ( $str:t.t_name$, __id__);
-          $update_recursive_foreigns env t$ };
-        Sqlite3.Data.INT __id__
-      >> in 
-        let fields = Field.recursive_foreigns env t @ [ Field.autoid env t ] in
-        <:expr< do {
-          let __sql__ = sprintf "UPDATE %s SET %s WHERE id=?;"
-            t.t_name
-            (map_strings "," (fun f -> sprintf "%s=?" f.f_name) fields) in
-          let $debug env `Sql "update_aux" <:expr< __sql__ >>$ in
-          let __stmt__ = Sqlite3.prepare db.OS.db __sql__ in
-          $bind ~env ~foreign ~recursive fields$
-          OS.db_must_step db __stmt__;
-        } >> in
-     aux t
-
-   (* if there are no fields to update, then that would generate invalid 
-      SQL above, so set no_update true so the code gen can skip update in this case *)
-   let no_update = List.length t.t_fields = 1 in
-
-    <:expr<
-        let __id__ = $uid:Name.whashfn t$.find db.OS.cache.$lid:Name.tidfn t$ $lid:t.t_name$ in
-        if Hashtbl.mem __cache__ ( $str:t_tname$, __id__ ) then
-          __id__
-        else (
-
-          $lid:Name.savefn t$ ~__cache__ db >>
-        
-        
-
-end
-
-module Foo = struct
-  let get ~env ~internal_table ~external_table ~recursive_table id f =
-    let _loc = f.f_loc in
-    let qerror = <:match_case< x -> failwith ("unexpected res: " ^ (Sqlite3.Data.to_string x)) >> in
-    match f.f_info with
-    | Autoid                 -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Some x | $qerror$ ] >>
-    | Foreign (Internal , t) -> internal_table env id t
-    | Foreign (External , t) -> external_table env id t
-    | Row_name _             -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | $qerror$ ] >>
-    | List_counter           -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | $qerror$ ] >>
-    | Data d                 ->
-      match d with
-      | F_unit   -> <:expr< () >>
-      | F_int    -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int x | $qerror$ ] >>
-      | F_int32  -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Int64.to_int32 x | $qerror$] >>
-      | F_int64  -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> x | $qerror$ ] >>
-      | F_float  -> <:expr< match $id$ with [ Sqlite3.Data.FLOAT x -> x | $qerror$] >>
-      | F_char   -> <:expr< match $id$ with [ Sqlite3.Data.INT x -> Char.chr (Int64.to_int x) | $qerror$ ] >>
-      | F_string -> <:expr< match $id$ with [ Sqlite3.Data.TEXT x -> x | $qerror$ ] >>
-      | F_bool   -> <:expr< match $id$ with [ Sqlite3.Data.INT 1L -> True | Sqlite3.Data.INT 0L -> False | $qerror$] >>
-
-  let to_string ~env ~internal_table ~external_table ~recursive_table id f =
-    let _loc = f.f_loc in
-    match f.f_info with
-    | Autoid                 -> <:expr< Int64.to_string $id$ >>
-    | Foreign (Internal , t) -> internal_table env id t
-    | Foreign (External , t) -> external_table env id t
-    | Row_name _             -> <:expr< $id$ >>
-    | List_counter           -> <:expr< Int64.to_string $id$ >>
-    | Data d                 -> 
-      match d with
-      | F_unit   -> <:expr< "1" >>
-      | F_int    -> <:expr< string_of_int $id$ >>
-      | F_int32  -> <:expr< Int32.to_string $id$ >>
-      | F_int64  -> <:expr< Int64.to_string $id$ >>
-      | F_float  -> <:expr< string_of_float $id$ >>
-      | F_char   -> <:expr< String.make 1 $id$ >>
-      | F_string -> <:expr< $id$ >>
-      | F_bool   -> <:expr< string_of_bool $id$ >>
-
-  let select ~env id f =
-    let _loc = f.f_loc in
-    let none =
-      if f.f_optional then
-        <:match_case< Some `None -> $str:f.f_name ^ "IS NULL"$ | None -> "" >>
-      else
-        <:match_case< None -> "" >> in
-    match f.f_info with
-    | Autoid                 -> <:expr< match $id$ with [ Some (`Id _) -> $str:f.f_name ^ "=?"$ | $none$ ] >>
-    | Foreign (Internal , t) -> error env "select internal table %s" t
-    | Foreign (External , t) -> error env "select external table %s" t
-    | Row_name s             -> failwith "TODO"
-    | List_counter           -> error env "select list counter" 
-    | Data d                 -> 
-      match d with
-      | F_unit -> <:expr< match $id$ with [ Some `Unit -> $str:f.f_name^"=1"$ | $none$ ] >>
-      | F_bool -> <:expr< match $id$ with [ Some `Eq   -> $str:f.f_name^"=?"$ | $none$ ] >>
-      | F_int | F_int32 | F_int64 | F_char | F_float ->
-        <:expr< match $id$ with [ 
-          Some (`Eq  _)     -> $str:f.f_name^" = ?"$
-        | Some (`Neq _)     -> $str:f.f_name ^ " != ?"$
-        | Some (`Le  _)     -> $str:f.f_name ^ " < ?"$
-        | Some (`Leq _)     -> $str:f.f_name ^ " <= ?"$
-        | Some (`Ge  _)     -> $str:f.f_name ^ " > ?"$
-        | Some (`Geq _)     -> $str:f.f_name ^ " >= ?"$
-        | Some (`Between _) -> $str:sprintf "%s >= ? AND %s <= ?" f.f_name f.f_name$ 
-        | $none$ ] >>
-      | F_string -> 
-        <:expr< match $id$ with [ Some (`Eq _) -> $str:f.f_name^"=?"$ | Some (`Contains _) -> $str:f.f_name^" like '%?%'"$ ] >>
-
-
-
-(*      <:expr< match $id$ with [
-          `Id i -> do { $bind <:expr< Sqlite3.Data.INT i >>$ }
-         |`Eq x -> 
-             let i = try $uid:Name.whashfn env t$.find db.OS.cache.$lid:Name.tidfn env t$ x 
-             with [ Not_found -> Int64.minus_one ] in
-             do { $bind <:expr< Sqlite3.Data.INT i >>$ }
-        ] >> *)
-
-end
-
-(*
-module Table = struct
-
-  let field_names fields = List.map (fun f -> sprintf "%s.%s" f.f_table f.f_name) fields
-
-  let select ~env t =
-    let _loc = t.t_loc in
-    let fields = Field.no_autoid env t.t_name in
-
-    let names = field_names fields in
-    let select = match t.t_info with
-      | Normal  -> sprintf "SELECT %s FROM %s" (String.concat "," names) t.t_name
-      | List    -> sprintf "SELECT %s FROM %s ORDER BY __idx__" (String.concat "," names) t.t_name
-      | Variant -> sprintf "SELECT %s FROM %s" (String.concat "," names) t.t_name in
-
-   let where = List.map (fun f -> Field.select ~env <:expr< $lid:f.f_name$ >> f) fields in
-    let where = "TODO" in
-    let where = if where = "" then "" else " WHERE " ^ where in ()
- end 
-*)
-
-*)
+let gen env tds =
+  let _loc = loc_of_ctyp tds in
+  let ts = list_of_ctyp_decl tds in
+  let bindings = List.map (fun (n,t) ->
+    <:binding< $lid:init n$ =
+      let module Deps = struct
+	type env = $Env.create_sig tds$;
+	$P4_type.gen tds$;
+      end in
+      fun db_name ->
+        let db = Sql_backend.new_state $Env.create tds$ db_name in
+        Sql_init.create_tables db $lid:P4_type.type_of n$ >>) ts in
+  <:str_item<
+    value $biAnd_of_list bindings$
+  >>

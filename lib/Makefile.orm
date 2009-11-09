@@ -1,9 +1,9 @@
 export OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
-SOURCES = hweak.mli hweak.ml type.ml sql_backend.ml
+SOURCES = sql_backend.ml sql_init.ml
 RESULT = orm
-PACKS = sqlite3
+PACKS = sqlite3 type-of
 LIB_PACK_NAME = orm
 
 LIBINSTALL_FILES = orm.cmx orm.cmxa orm.cma orm.cmi

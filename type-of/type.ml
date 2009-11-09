@@ -27,6 +27,7 @@ type t =
   | Rec of string * t
   | Var of string
   | Arrow of t * t
+  | Ext of string * t
 
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
@@ -37,12 +38,13 @@ let free_vars t =
     | Var n     -> n :: accu
     | Enum t
     | Option t  -> aux accu t
-    | Tuple ts  -> List.flatten (List.map (aux accu) ts)
-    | Dict ts   -> List.flatten (List.map (fun (_,_,t) -> aux accu t) ts)
-    | Sum ts    -> List.flatten (List.map (fun (_,t) -> List.flatten (List.map (aux accu) t)) ts)
+    | Tuple ts  -> List.fold_left aux accu ts
+    | Dict ts   -> List.fold_left (fun accu (_,_,t) -> aux accu t) accu ts
+    | Sum ts    -> List.fold_left (fun accu (_,t) -> List.fold_left aux accu t) accu ts
     | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
                  -> accu
-    | Arrow(t,s) -> aux (aux accu t) s in
+    | Arrow(t,s) -> aux (aux accu t) s
+    | Ext (n,t)  -> aux accu t in
   aux [] t
 
 let map_strings sep fn l = String.concat sep (List.map fn l)
@@ -64,6 +66,7 @@ let rec to_string t = match t with
   | Rec (n,t)  -> sprintf "R@%s@%s" n (to_string t)
   | Var n      -> sprintf "@%s" n
   | Arrow(a,b) -> sprintf "#(%s)#(%s)" (to_string a) (to_string b)
+  | Ext (n,t)  -> sprintf "E/%s/%s" n (to_string t)
 
 (* Is [t1] a subtype of [t2] ?                                                *)
 (* Our subtype relation is the following:                                     *)
@@ -79,33 +82,20 @@ let string_of_last_type_error () =
 
 let is_subtype_of (t1:t) (t2:t) =
   let table = Hashtbl.create 128 in
-  let types1 = Hashtbl.create 128 in
-  let types2 = Hashtbl.create 128 in
-  let add_t1 n t = Hashtbl.replace types1 n t in
-  let add_t2 n t = Hashtbl.replace types2 n t in
-  let rm_t1 n = Hashtbl.remove types1 n in
-  let rm_t2 n = Hashtbl.remove types2 n in
-  let find_t1 n = Hashtbl.find types1 n in
-  let find_t2 n = Hashtbl.find types2 n in
   let found_error = ref false in
   let rec (<:) t s =
     if Hashtbl.mem table (t,s) then
       Hashtbl.find table (t,s)
     else begin
       let result = match (t,s) with
-      | Rec (n,tt) , Rec (m,ss) -> add_t1 n tt; add_t2 m ss; let r = tt <: ss in rm_t1 n; rm_t2 m; r
-      | Rec (n,tt) , _          -> add_t1 n tt; let r = tt <: t2 in rm_t1 n; r
-      | _          , Rec (m,ss) -> add_t2 m ss; let r = t1 <: ss in rm_t2 m; r
-
-      | Var v      , Var w      -> v = w || ( Hashtbl.replace table (t,s) true; (find_t1 v) <: (find_t2 w) )
-      | Var v      , _                -> (find_t1 v) <: t2
-      | _          , Var v      -> t1 <: (find_t2 v)
-
-      | Enum t     , Enum s     -> t <: s
-      | Option t   , Option s   -> t <: s
-      | Option t   , _          -> t <: s
+      | Rec (n,tt) , Rec (m,ss) -> n = m && tt <: ss
+      | Ext (n,tt) , Ext (m,ss) -> n = m && tt <: ss
+      | Var v      , Var w      -> v = w
+      | Enum tt    , Enum ss    -> tt <: ss
+      | Option tt  , Option ss  -> tt <: ss
+      | Option tt  , _          -> tt <: s
       | Tuple ts   , Tuple ss   -> List.for_all2 (<:) ts ss
-      | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,_,y2) -> x1=x2 && y1 <: y2) ss) ts
+      | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,m,y2) -> m=m && x1=x2 && y1 <: y2) ss) ts
       | Sum ts     , Sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
 
       | Unit, Unit
@@ -205,7 +195,7 @@ let rec of_string s : t  = match s.[0] with
   | '?' -> Option (of_string (String.sub s 1 (String.length s - 1)))
   | 'R' ->
      begin match split_par ~limit:3 '@' s with
-     | [ _; var; t ] -> Rec (var, of_string t)
+     | [ "R"; var; t ] -> Rec (var, of_string t)
      | _ -> parse_error s
      end
   | '@' -> Var (String.sub s 1 (String.length s - 1))
@@ -215,6 +205,11 @@ let rec of_string s : t  = match s.[0] with
       let ss = String.sub s 1 (String.length s - 2) in
       let tt = String.sub t 1 (String.length t - 2) in
       Arrow (of_string ss, of_string tt)
+    | _ -> parse_error s
+    end
+  | 'E' ->
+    begin match split_par '/' s with
+    | ["E"; var; t ] -> Ext (var, of_string t)
     | _ -> parse_error s
     end
   | _   -> parse_error s

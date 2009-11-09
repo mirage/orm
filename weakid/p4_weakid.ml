@@ -20,18 +20,18 @@ open Camlp4
 open PreCast
 open Ast
 
+let weakid_of n     = "weakid_of_" ^ n
+let of_weakid n     = n ^ "_of_weakid"
+let has_weakid n    = n ^ "_has_weakid"
+let create_weakid n = n ^ "_create_weakid"
+let set_weakid n    = n ^ "_set_weakid"
+
 let list_of_ctyp_decl tds =
   let rec aux accu = function
   | Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
   | Ast.TyDcl (loc, id, _, ty, []) -> (id, ty) :: accu
   | _                               ->  failwith "list_of_ctyp_decl: unexpected type"
   in aux [] tds
-
-let weakid_of _loc n = <:patt< $lid:"weakid_of_" ^ n$ >>
-let of_weakid _loc n = <:patt< $lid:n ^ "_of_weakid"$ >>
-let has_weakid _loc n = <:patt< $lid:n ^ "_has_weakid"$ >>
-let create_weakid _loc n = <:patt< $lid:n ^ "_create_weakid"$ >>
-let set_weakid _loc n = <:patt< $lid:n ^ "_set_weakid"$ >>
 
 let gen_body envfn name ctyp =
   let _loc = loc_of_ctyp ctyp in
@@ -63,11 +63,11 @@ let gen_body envfn name ctyp =
 let gen_fn envfn (name, ctyp) =
   let _loc = loc_of_ctyp ctyp in
   <:binding< 
-    ( $weakid_of _loc name$,
-      $of_weakid _loc name$,
-      $has_weakid _loc name$,
-      $create_weakid _loc name$,
-      $set_weakid _loc name$ ) =
+    ( $lid:weakid_of name$,
+      $lid:of_weakid name$,
+      $lid:has_weakid name$,
+      $lid:create_weakid name$,
+      $lid:set_weakid name$ ) =
         let module H = Hweak in $gen_body envfn name ctyp$ >>
 
 let gen tds =

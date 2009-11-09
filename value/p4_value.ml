@@ -113,6 +113,12 @@ module Value_of = struct
 		<:expr< let __new_id__ = let count = ref 0L in let x () = do { count.val := Int64.add count.val 1L; count.val } in x in
 			{ $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ ; __new_id__ = __new_id__ } >>
 
+	let replace_env _loc names id t =
+		if List.length names = 1 then
+			<:expr< { Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+		else
+			<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		match ctyp with
@@ -171,7 +177,7 @@ module Value_of = struct
 			let expr = <:expr< V.Dict $expr_list_of_list _loc (List.map2 one_expr ids fields)$ >> in
 			<:expr< let $biAnd_of_list bindings$ in $expr$ >>
 
-		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Arrow (let module M = Marshal in M.to_string $id$  [ M.No_sharing; M.Closures ]) >>
+		| <:ctyp< $t$ -> $u$ >> -> <:expr< V.Arrow (let module M = Marshal in M.to_string $id$  [ M.Closures ]) >>
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
@@ -182,9 +188,7 @@ module Value_of = struct
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
 						let __id__ = __env__.Deps.__new_id__ () in
-						let __value__ = $expr_value_of_aux _loc t$
-							{ (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] }
-							$id$ in
+						let __value__ = $expr_value_of_aux _loc t$ $replace_env _loc names id t$ $id $ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__ )
 						else
@@ -220,10 +224,16 @@ end
 module Of_value = struct
 
 	let env_type _loc names =
-		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list (int64 * Lazy.t $lid:n$) ; $accu$ >>) <:ctyp< >> names$ } >>
+		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list (int64 * $lid:n$) ; $accu$ >>) <:ctyp< >> names$ } >>
 
 	let empty_env _loc names =
 		<:expr< { $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ } >>
+
+	let replace_env _loc names name =
+		if List.length names = 1 then
+			<:expr< { Deps.$lid:name$ = [ (__id__, __value0__) :: __env__.Deps.$lid:name$ ] } >>
+		else
+			<:expr< { (__env__) with Deps.$lid:name$ = [ (__id__, __value0__) :: __env__.Deps.$lid:name$ ] } >>
 
 	let string_of_env _loc names =
 		<:expr< Printf.sprintf "{%s}" (String.concat "," $expr_list_of_list _loc (List.map
@@ -330,9 +340,31 @@ module Of_value = struct
 				[ V.Arrow f -> (let module M = Marshal in M.from_string f : $t$ -> $u$) | $runtime_error id "Marshal"$ ]
 			>>
 
-		| <:ctyp< $lid:t$ >> -> if List.mem t names then <:expr< $expr_of_value_aux _loc t$ __env__ $id$ >> else <:expr< $expr_of_value _loc t$ $id$ >> 
+		| <:ctyp< $lid:t$ >> ->
+			if List.mem t names then
+				<:expr< $expr_of_value_aux _loc t$ __env__ $id$ >>
+			else
+				let nid, npid = new_id _loc in
+				<:expr< match $id$ with [ V.Ext (v,$npid$) -> $expr_of_value _loc t$ $nid$ | $runtime_error id "Ext"$ ] >> 
 
 		| _ -> raise (Type_not_supported ctyp)
+
+	let default_value _loc = function
+		| <:ctyp< { $t$ } >> ->
+			let fields = decompose_fields _loc t in
+			let fields = List.map (fun (n, ctyp) -> <:rec_binding< $lid:n$ = Obj.magic 0 >>) fields in
+			<:expr< { $rbSem_of_list fields$ } >>
+
+		| _ -> <:expr< failwith "Cyclic values should be defined via record fields only" >>
+
+	let set_value _loc = function
+		| <:ctyp< { $t$ } >> ->
+			let fields = decompose_fields _loc t in
+			let field = ref (-1) in
+			let fields = List.map (fun (n, ctyp) -> incr field; <:expr< Obj.set_field (Obj.repr __value0__) $`int:!field$ (Obj.field (Obj.repr __value1__) $`int:!field$) >>) fields in
+			<:expr< do { $exSem_of_list fields$ } >>
+
+		| _ -> <:expr< failwith "Cyclic values should be defined via record fields only"  >>
 
 	let gen_one names name ctyp =
 		let _loc = loc_of_ctyp ctyp in
@@ -340,21 +372,19 @@ module Of_value = struct
 		let nid2, npid2 = new_id _loc in
 		<:binding< $patt_of_value_aux _loc name$ = fun __env__ -> fun $npid$ ->
 			let module V = Value in
-			let _ = Printf.printf "%s_of_value <-- %s %s \\n%!" $str:name$ $string_of_env _loc names$ (V.to_string $nid$) in
 			match $nid$ with [
-			  V.Var (n, __id__) -> Lazy.force (List.assoc __id__ __env__.Deps.$lid:name$)
+			  V.Var (n, __id__) -> List.assoc __id__ __env__.Deps.$lid:name$
 			| V.Rec ((n, __id__), $npid2$ ) ->
 				if List.mem_assoc __id__ __env__.Deps.$lid:name$ then
-					Lazy.force (List.assoc __id__ __env__.Deps.$lid:name$)
+					List.assoc __id__ __env__.Deps.$lid:name$
 				else
-					let rec __new_env__  = { (__env__) with Deps.$lid:name$ = [ (__id__, lazy ($expr_of_value_aux _loc name$ __new_env__ $nid2$)) :: __env__.Deps.$lid:name$ ] } in
-					let _ = Printf.printf "Lazy.force ...\\n%!" in
-					let r  = Lazy.force (List.assoc __id__ __new_env__.Deps.$lid:name$) in
-					let _ = Printf.printf "Lazy.force: OK\\n%!" in r
+					let __value0__ = $default_value _loc ctyp$ in
+					let __env__  = $replace_env _loc names name$ in
+					let __value1__ = $expr_of_value_aux _loc name$ __env__ $nid2$ in
+					let () = $set_value _loc ctyp$ in
+					__value0__
 			| _ ->  
-			let res = $create names nid ctyp$ in
-			let _ = Printf.printf "%s_of_value <-- OK \\n%!" $str:name$ in
-			res ]
+			$create names nid ctyp$ ]
 		>> 
 
 	let gen tds =

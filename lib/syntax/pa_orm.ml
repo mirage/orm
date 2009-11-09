@@ -24,7 +24,7 @@ open PreCast
 open Ast
 
 open Pa_type_conv
-open Idl
+open P4_orm
 
 module Syntax = struct
   (* Extend grammar with options for SQL tables *)
@@ -32,14 +32,12 @@ module Syntax = struct
     | Unique of (bool * string * string list) list (* unique, table, fields *)
     | Debug of string list
     | Dot of string
-    | Name of string
 
   let string_of_p_keys = function
     | Unique sl ->  "unique: " ^ ( String.concat "," 
        (List.map (fun (u,x,y) -> sprintf "%s(%s:%b)" x (String.concat "," y) u) sl ))
     | Debug d -> "debug: " ^ (String.concat "," d)
     | Dot f -> "dot: " ^ f
-    | Name n -> "name: " ^ n
 
   let orm_parms = Gram.Entry.mk "orm_parms"
   EXTEND Gram
@@ -57,7 +55,6 @@ module Syntax = struct
      | "index"; ":" ; x = orm_tables -> Unique (List.map (fun (x,y) -> (false,x,y)) x)
      | "debug";  ":" ; x = orm_svars -> Debug x 
      | "dot";    ":" ; x = STRING -> Dot x 
-     | "modname";":" ; x = STRING -> Name x
   ]];
 
   orm_parms: [
@@ -68,27 +65,25 @@ module Syntax = struct
 
   let parse_keys ctyp =
     List.fold_left (fun env -> function
-      |Unique fl -> { env with e_indices = fl @ env.e_indices }
-      |Name n -> { env with e_name=n }
-      |Debug modes -> List.fold_left (fun env -> function
-        |"leak" -> { env with debug_leak=true }
-        |"sql" -> { env with debug_sql=true } 
-        |"binds" -> { env with debug_binds=true }
-        |"cache" -> { env with debug_cache=true }
-        |"all" -> { env with debug_cache=true; debug_binds=true; debug_sql=true }
-        |"none" -> { env with debug_cache=false; debug_binds=false; debug_sql=false }
-        |_ -> failwith "unknown debug mode"
+      | Unique fl -> { env with Env.indices = fl @ env.Env.indices }
+      | Debug modes -> List.fold_left (fun env -> function
+        | "sql" -> { env with Env.debug_sql=true } 
+        | "binds" -> { env with Env.debug_binds=true }
+        | "cache" -> { env with Env.debug_cache=true }
+        | "all" -> { env with Env.debug_cache=true; Env.debug_binds=true; Env.debug_sql=true }
+        | "none" -> { env with Env.debug_cache=false; Env.debug_binds=false; Env.debug_sql=false }
+        | _ -> failwith "unknown debug mode"
         ) env modes
-      |Dot file -> { env with debug_dot=(Some file) }
-    ) (Env.empty ctyp) 
+      | Dot file -> { env with Env.debug_dot=(Some file) }
+    ) Env.empty
 
-  let debug_dot env =
+  (* let debug_dot env =
     match env.debug_dot with
     |None -> ()
     |Some fl ->
       let fout = open_out fl in
       Printf.fprintf fout "%s" (Dot_of.env env);
-      close_out fout
+      close_out fout *)
 
   let _ = 
     add_generator_with_arg "orm"
@@ -99,16 +94,9 @@ module Syntax = struct
         |_, None ->
           Loc.raise _loc (Stream.Error "pa_orm: arg required")
         |_, Some pkeys ->
-          let env = process (parse_keys tds pkeys) in
-          debug_dot env;
+          (* debug_dot env (Type.create ctyp); *)
           <:str_item<
-            module $uid:String.capitalize env.e_name$ = struct
-              module OS = Orm.Sql_backend;
-              module OT = Orm.Type;
-              $P4_weakid.gen tds$;
-              $P4_type.gen tds$;
-              $P4_create.gen tds$;
-            end
+            $P4_orm.gen (parse_keys tds) tds$
           >>
         )
 end
