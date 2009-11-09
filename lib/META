@@ -1,5 +1,5 @@
 name = "orm"
-version = "0.4"
+version = "0.5"
 description = "An Object-Relational Mapping layer to persist OCaml data" 
 requires = "orm.core"
 

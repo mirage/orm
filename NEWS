@@ -1,3 +1,8 @@
+0.5:
+
+* Breakdown core into smaller sub-libraries for value, hash, type
+  comparison, and weak table generation [9 Nov 2009]
+
 0.4:
 
 * Add a hash function generation library for most ML types [31 Oct 2009]
