@@ -11,7 +11,7 @@ all: dcl
 	@ :
 
 install: all
-	ocamlfind install weakid META pa_weakid.cma pa_weakid.cmi hweak.cmo hweak.cmi
+	ocamlfind install weakid META pa_weakid.cm{i,a} p4_weakid.cm{i,o} hweak.cm{i,o}
 
 uninstall:
 	ocamlfind remove weakid

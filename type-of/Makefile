@@ -11,7 +11,7 @@ all: dcl ncl
 	@ :
 
 install: all
-	ocamlfind install type-of META type.cmi type.cmx type.cmo pa_type.cmi pa_type.cma
+	ocamlfind install type-of META type.cm{i,o,x} pa_type.cm{i,a} p4_type.cm{i,o}
 
 uninstall:
 	ocamlfind remove type-of

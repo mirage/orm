@@ -11,7 +11,7 @@ all: dcl
 	@ :
 
 install: all
-	ocamlfind install hash META pa_hash.cma pa_hash.cmi
+	ocamlfind install hash META pa_hash.cm{i,a} p4_hash.cm{i,o}
 
 uninstall:
 	ocamlfind remove hash
