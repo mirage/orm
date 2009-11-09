@@ -110,9 +110,13 @@ let mapi fn l = foldi (fun accu i x -> fn i x :: accu) [] l
 let map_strings sep fn sl = String.concat sep (List.map fn sl)
 let map_stringsi sep fn sl = String.concat sep (mapi fn sl)
 
-let create_tables indices db t =
+let create_tables env db t =
 
-  let process s = db_must_ok db (fun () -> exec db.db s) in
+  let sub_tables = ref [] in
+  let process t s =
+    let sql = sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ PRIMARY KEY AUTOINCREMENT, %s)" t s in
+	sub_tables := t :: !sub_tables;
+	db_must_ok db (fun () -> exec db.db sql) in
 
   let rec field name = function 
     | Unit | Int | Int32 | Int64 | Char | Bool
@@ -128,26 +132,31 @@ let create_tables indices db t =
     | Option t -> field name t
 
   and table ?name t = match t with
-    | Type.Ext (n, t) | Type.Rec (n, t) ->
-      process (sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ PRIMARY KEY AUTOINCREMENT, %s)" n (field n t))
+    | Type.Ext (n, t) | Type.Rec (n, t) -> process n (field n t)
     | Type.Enum t ->
       begin match name with
-      | None -> process_error "create_tables"
-      | Some n ->
-        process (sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ PRIMARY KEY AUTOINCREMENT, __idx__ INT, PRIMARY KEY (__id__, __idx___), %s)" n (field n t))
+      | None   -> process_error "create_tables"
+      | Some n -> process n (sprintf "__idx__ INT, PRIMARY KEY (__id__, __idx___), %s" (field n t))
       end;
     | _ -> raise (Sql_process_error "create_tables") in
 
   (* Create all the sub-table of t*)
   table t;
 
+  let process_custom_index kind (t, fs) =
+    if List.mem t !sub_tables then begin
+        let sql = match kind with
+        | `U -> sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs)
+        | `I -> sprintf "CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs) in
+        db_must_ok db (fun () -> exec db.db sql)
+	end in
+
   (* Process indices *)
-  List.iter (fun (unique,t,fs) ->
-    let s = sprintf "CREATE %sINDEX IF NOT EXISTS idx_%s_%s ON %s (%s);"
-       (match unique with true -> "UNIQUE " |false -> "")
-       t (String.concat "_" fs) t (String.concat "," fs) in
-     process s
-    ) indices
+  List.iter (function 
+    | `Unique l -> List.iter (process_custom_index `U) l
+    | `Index l  -> List.iter (process_custom_index `I) l
+	| _         -> ()
+    ) env
 
 (*let process_table = function
   | Unit -> "CREATE TABLE IF NOT EXISTS '%s' (id )"

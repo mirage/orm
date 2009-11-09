@@ -20,7 +20,9 @@ open Camlp4
 open PreCast
 open Ast
 
-let init n = n ^ "init"
+open P4_utils
+
+let init n = n ^ "_init"
 
 (* Utils *)
 let list_of_ctyp_decl tds =
@@ -31,16 +33,6 @@ let list_of_ctyp_decl tds =
   in aux [] tds
 
 module Env = struct
-  type t = {
-    indices: (bool * string * string list) list;
-    debug_sql: bool;
-    debug_binds: bool;
-    debug_cache: bool;
-    debug_dot: string option;
-  }
-
-  let empty = { indices = []; debug_sql = false; debug_binds = false; debug_cache = false; debug_dot = None }
-
   let create_sig tds =
     let _loc = loc_of_ctyp tds in
     let bindings = List.flatten (List.map (fun (n,_) -> [
@@ -64,6 +56,16 @@ module Env = struct
     <:expr< let module W = struct $P4_weakid.gen tds$ end in { $rbSem_of_list bindings$ } >>
 end
 
+let env_to_env _loc env =
+  let sl_of_sl sl = 
+    expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) sl) in
+  let aux = function
+  | `Unique l -> <:expr< `Unique $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
+  | `Index l  -> <:expr< `Index $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
+  | `Debug l  -> <:expr< `Debug $sl_of_sl l$ >>
+  | `Dot f    -> <:expr< `Dot $str:f$ >> in
+  expr_list_of_list _loc (List.map aux env)
+
 let gen env tds =
   let _loc = loc_of_ctyp tds in
   let ts = list_of_ctyp_decl tds in
@@ -74,8 +76,9 @@ let gen env tds =
 	$P4_type.gen tds$;
       end in
       fun db_name ->
-        let db = Sql_backend.new_state $Env.create tds$ db_name in
-        Sql_init.create_tables db $lid:P4_type.type_of n$ >>) ts in
+        let db = Orm.Sql_backend.new_state $Env.create tds$ db_name in
+        let env = $env_to_env _loc env$ in
+        Orm.Sql_init.create_tables env db Deps.$lid:P4_type.type_of n$ >>) ts in
   <:str_item<
     value $biAnd_of_list bindings$
   >>
