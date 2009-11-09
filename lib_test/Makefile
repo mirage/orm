@@ -1,4 +1,5 @@
 OCAMLMAKEFILE=../OCamlMakefile
+ANNOTATE=yes
 
 .PHONY: run
 run: dnc

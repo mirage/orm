@@ -44,7 +44,9 @@ let test_id () =
 
 let test_save () =
   let db = open_db x_init name in
-  x_save db x
+  let db2 = open_db ~rm:false x_init_read_only name in
+  x_save db x;
+  x_save db2 x
 
 let test_update () =
   let db = open_db x_init name in
