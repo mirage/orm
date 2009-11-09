@@ -211,7 +211,7 @@ module Value_of = struct
 		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:value_of x$ : $lid:x$ -> Value.t) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $lid:value_of x$ $empty_env _loc ids$ $lid:x$ >>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $lid:value_of_aux x$ $empty_env _loc ids$ $lid:x$ >>) ids)
 
 end
 
@@ -338,7 +338,7 @@ module Of_value = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if List.mem t names then
-				<:expr< $lid:of_value t$ __env__ $id$ >>
+				<:expr< $lid:of_value_aux t$ __env__ $id$ >>
 			else
 				let nid, npid = new_id _loc in
 				<:expr< match $id$ with [ V.Ext (v,$npid$) -> $lid:of_value t$ $nid$ | $runtime_error id "Ext"$ ] >> 
@@ -376,7 +376,7 @@ module Of_value = struct
 				else
 					let __value0__ = $default_value _loc ctyp$ in
 					let __env__  = $replace_env _loc names name$ in
-					let __value1__ = $lid:of_value name$ __env__ $nid2$ in
+					let __value1__ = $lid:of_value_aux name$ __env__ $nid2$ in
 					let () = $set_value _loc ctyp$ in
 					__value0__
 			| _ ->  
@@ -389,12 +389,11 @@ module Of_value = struct
 		let bindings = List.map2 (gen_one ids) ids ctyps in
 		biAnd_of_list bindings
 
-
 	let inputs _loc ids =
 		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:of_value x$ : Value.t -> $lid:x$) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $lid:of_value x$ $empty_env _loc ids$ >>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $lid:of_value_aux x$ $empty_env _loc ids$ >>) ids)
 end
 
 
