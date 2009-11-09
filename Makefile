@@ -1,8 +1,18 @@
 .PHONY: all
 all:
-	@cd lib && $(MAKE)
-	$(MAKE) reinstall
-	@cd lib_test && $(MAKE)
+	$(MAKE) -C hash/
+	$(MAKE) -C hash/ reinstall
+
+	$(MAKE) -C weakid/
+	$(MAKE) -C weakid/ reinstall
+
+	$(MAKE) -C type-of/
+	$(MAKE) -C type-of/ reinstall
+
+	$(MAKE) -C lib/
+	$(MAKE) -C lib/ reinstall
+
+	$(MAKE) -C lib_test/
 
 .PHONY: test
 test:

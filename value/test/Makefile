@@ -2,11 +2,11 @@ OCAMLMAKEFILE=../../OCamlMakefile
 ANNOTATE = yes
 
 .PHONY: run
-run: dnc
+run: dc
 	./$(RESULT) -verbose
 
 .PHONY: slow
-slow: dnc
+slow: dc
 	env SLOW=1 ./$(RESULT) -verbose
 
 export INCDIRS = ..
