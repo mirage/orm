@@ -11,10 +11,10 @@ all: dcl ncl
 	@ :
 
 install: all
-	ocamlfind install type-of META type.cm{i,o,x} pa_type.cm{i,a} p4_type.cm{i,o}
+	$(SUDO) ocamlfind install type-of META type.cm{i,o,x} pa_type.cm{i,a} p4_type.cm{i,o}
 
 uninstall:
-	ocamlfind remove type-of
+	$(SUDO) ocamlfind remove type-of
 
 reinstall:
 	$(MAKE) uninstall

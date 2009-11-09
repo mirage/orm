@@ -11,10 +11,10 @@ all: dcl
 	@ :
 
 install: all
-	ocamlfind install hash META pa_hash.cm{i,a} p4_hash.cm{i,o}
+	$(SUDO) ocamlfind install hash META pa_hash.cm{i,a} p4_hash.cm{i,o}
 
 uninstall:
-	ocamlfind remove hash
+	$(SUDO) ocamlfind remove hash
 
 reinstall:
 	$(MAKE) uninstall

@@ -9,10 +9,10 @@ clean:
 	$(MAKE) -f Makefile.orm $@
 
 install: all
-	ocamlfind install orm META orm.cm{i,a,xa} syntax/pa_orm.cma
+	$(SUDO) ocamlfind install orm META orm.cm{i,a,xa} syntax/pa_orm.cma
 
 uninstall:
-	ocamlfind remove orm
+	$(SUDO) ocamlfind remove orm
 
 reinstall:
 	$(MAKE) uninstall

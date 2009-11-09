@@ -6,10 +6,10 @@ all:
 	$(MAKE) -f Makefile.core
 
 install: all
-	ocamlfind install weakid META pa_weakid.cm{i,a} p4_weakid.cm{i,o} hweak.{o,cm{i,o,x}}
+	$(SUDO) ocamlfind install weakid META pa_weakid.cm{i,a} p4_weakid.cm{i,o} hweak.{o,cm{i,o,x}}
 
 uninstall:
-	ocamlfind remove weakid
+	$(SUDO) ocamlfind remove weakid
 
 reinstall:
 	$(MAKE) uninstall

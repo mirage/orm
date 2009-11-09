@@ -1,3 +1,5 @@
+-include Makefile.config
+
 .PHONY: all
 all:
 	$(MAKE) -C hash/
