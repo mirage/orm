@@ -110,7 +110,7 @@ let mapi fn l = foldi (fun accu i x -> fn i x :: accu) [] l
 let map_strings sep fn sl = String.concat sep (List.map fn sl)
 let map_stringsi sep fn sl = String.concat sep (mapi fn sl)
 
-let init_tables ~env ~db t =
+let init_tables ~mode ~env ~db t =
 
   let sub_tables = ref [] in
   let process t s =
