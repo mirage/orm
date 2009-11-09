@@ -5,7 +5,7 @@ TYPE_CONV_PATH "Variant_nested"
 module A = struct
   type n =
   | Non of int64
-  | Ntwo
+  | NTwo
   | Nthree of string
   | Nfour of x
   and x = 
@@ -22,7 +22,7 @@ module B = struct
   type n =
   | Nfour of x
   and x =
-  | Xone
+  | XONE
   | Xtwo of n
   | Xthree of int
   and t = {
@@ -37,9 +37,9 @@ open Orm
 open OUnit
 open Test_utils
 
-let t1 = {foo = Xone; bar = Nfour (Xthree 34); xyz = 12 }
-let t2 = {foo = Xtwo (Nfour Xone) ; bar = Nfour (Xthree 12) ;xyz = 66 }
-let t3 = {foo = Xtwo (Nfour (Xthree 32)) ; bar = Nfour Xone ; xyz = 88 }
+let t1 = {foo = XONE; bar = Nfour (Xthree 34); xyz = 12 }
+let t2 = {foo = Xtwo (Nfour XONE) ; bar = Nfour (Xthree 12) ;xyz = 66 }
+let t3 = {foo = Xtwo (Nfour (Xthree 32)) ; bar = Nfour XONE ; xyz = 88 }
 
 let name = "variant_nested.db"
 

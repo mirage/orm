@@ -479,7 +479,7 @@ module Get = struct
         let idx = listi (fun f -> f.f_info = Internal_field) t.t_fields in
         let mcs = Hashtbl.fold (fun vuid (id,args) a ->
           let ex = if args then begin
-            let idx = listi (fun f -> f.f_name = String.lowercase vuid) t.t_fields in
+            let idx = listi (fun f -> f.f_name = String.uncapitalize vuid) t.t_fields in
             let f = List.nth t.t_fields idx in
             <:expr< $uid:vuid$ 
               (let $lid:"__"^f.f_name$ = Sqlite3.column stmt $`int:idx$ in
