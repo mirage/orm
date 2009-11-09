@@ -27,9 +27,5 @@ let _ =
   add_generator "weakid"
     (fun tds ->
       let _loc = loc_of_ctyp tds in
-       <:str_item<
-         module Hash = struct
-           $P4_weakid.gen tds$
-         end
-       >>
+      <:str_item< $P4_weakid.gen tds$ >>
     )

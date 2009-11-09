@@ -1,17 +1,12 @@
-OCAMLMAKEFILE = ../OCamlMakefile
-ANNOTATE = yes
-
-SOURCES = p4_weakid.ml pa_weakid.ml hweak.mli hweak.ml
-PACKS = type-conv hash.syntax
-RESULT = pa_weakid
-USE_CAMLP4 = yes
+.DEFAULT: all
 
 .PHONY: all
-all: dcl
-	@ :
+all:
+	$(MAKE) -f Makefile.syntax
+	$(MAKE) -f Makefile.core
 
 install: all
-	ocamlfind install weakid META pa_weakid.cm{i,a} p4_weakid.cm{i,o} hweak.cm{i,o}
+	ocamlfind install weakid META pa_weakid.cm{i,a} p4_weakid.cm{i,o} hweak.{o,cm{i,o,x}}
 
 uninstall:
 	ocamlfind remove weakid
@@ -20,4 +15,6 @@ reinstall:
 	$(MAKE) uninstall
 	$(MAKE) install
 
-include $(OCAMLMAKEFILE)
+clean:
+	$(MAKE) -f Makefile.syntax clean
+	$(MAKE) -f Makefile.core clean

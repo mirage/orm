@@ -30,8 +30,8 @@ type o =
 
 open OUnit
 
-let test_marshall () =
-()
+let test_syntax () = ()
+
 let suite = [
-	"all_f_marshall" >::  test_marshall
+	"all_f_syntax" >::  test_syntax
 ]
