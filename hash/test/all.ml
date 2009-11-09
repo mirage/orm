@@ -1,4 +1,4 @@
-(*pp camlp4o -I ../hash -I `ocamlfind query type-conv` pa_type_conv.cmo pa_hash.cma *)
+(*pp camlp4o -I .. -I `ocamlfind query type-conv` pa_type_conv.cmo pa_hash.cma *)
 
 TYPE_CONV_PATH "All"
 
