@@ -22,15 +22,11 @@ open Camlp4
 open PreCast
 open Ast
 
-let patt_value_of _loc n = <:patt< $lid:"value_of_" ^ n$ >>
-let patt_value_of_aux _loc n = <:patt< $lid:"value_of_" ^ n ^ "_aux"$ >>
-let patt_of_value _loc n = <:patt< $lid:n ^ "_of_value"$ >>
-let patt_of_value_aux _loc n = <:patt< $lid:n ^ "_of_value_aux"$ >>
+let value_of n = "value_of_" ^ n
+let of_value n = n ^ "_of_value"
 
-let expr_value_of _loc n = <:expr< $lid:"value_of_" ^ n$ >>
-let expr_value_of_aux _loc n = <:expr< $lid:"value_of_" ^ n ^ "_aux"$ >>
-let expr_of_value _loc n = <:expr< $lid:n ^ "_of_value"$ >>
-let expr_of_value_aux _loc n = <:expr< $lid:n ^ "_of_value_aux"$ >>
+let of_value_aux n = n ^ "_of_value_aux"
+let value_of_aux n = "value_of_" ^ n ^ "_aux"
 
 (* Utils *)
 
@@ -181,14 +177,14 @@ module Value_of = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
-				<:expr< V.Ext ($str:t$, $expr_value_of _loc t$ $id$) >>
+				<:expr< V.Ext ($str:t$, $lid:value_of t$ $id$) >>
 			else
 				<:expr<
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
 						let __id__ = __env__.Deps.__new_id__ () in
-						let __value__ = $expr_value_of_aux _loc t$ $replace_env _loc names id t$ $id $ in
+						let __value__ = $lid:value_of_aux t$ $replace_env _loc names id t$ $id $ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__ )
 						else
@@ -200,7 +196,7 @@ module Value_of = struct
 	let gen_one names name ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		let id, pid = new_id _loc in
-		<:binding< $patt_value_of_aux _loc name$ = fun __env__ -> fun $pid$ ->
+		<:binding< $lid:value_of_aux name$ = fun __env__ -> fun $pid$ ->
 			let module V = Value in
 			$create names id ctyp$
 		>>
@@ -212,10 +208,10 @@ module Value_of = struct
 		biAnd_of_list bindings
 
 	let inputs _loc ids =
-		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($patt_value_of _loc x$ : $lid:x$ -> Value.t) >>) ids)
+		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:value_of x$ : $lid:x$ -> Value.t) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $expr_value_of_aux _loc x$ $empty_env _loc ids$ $lid:x$ >>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $lid:value_of x$ $empty_env _loc ids$ $lid:x$ >>) ids)
 
 end
 
@@ -342,10 +338,10 @@ module Of_value = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if List.mem t names then
-				<:expr< $expr_of_value_aux _loc t$ __env__ $id$ >>
+				<:expr< $lid:of_value t$ __env__ $id$ >>
 			else
 				let nid, npid = new_id _loc in
-				<:expr< match $id$ with [ V.Ext (v,$npid$) -> $expr_of_value _loc t$ $nid$ | $runtime_error id "Ext"$ ] >> 
+				<:expr< match $id$ with [ V.Ext (v,$npid$) -> $lid:of_value t$ $nid$ | $runtime_error id "Ext"$ ] >> 
 
 		| _ -> raise (Type_not_supported ctyp)
 
@@ -370,7 +366,7 @@ module Of_value = struct
 		let _loc = loc_of_ctyp ctyp in
 		let nid, npid = new_id _loc in
 		let nid2, npid2 = new_id _loc in
-		<:binding< $patt_of_value_aux _loc name$ = fun __env__ -> fun $npid$ ->
+		<:binding< $lid:of_value_aux name$ = fun __env__ -> fun $npid$ ->
 			let module V = Value in
 			match $nid$ with [
 			  V.Var (n, __id__) -> List.assoc __id__ __env__.Deps.$lid:name$
@@ -380,7 +376,7 @@ module Of_value = struct
 				else
 					let __value0__ = $default_value _loc ctyp$ in
 					let __env__  = $replace_env _loc names name$ in
-					let __value1__ = $expr_of_value_aux _loc name$ __env__ $nid2$ in
+					let __value1__ = $lid:of_value name$ __env__ $nid2$ in
 					let () = $set_value _loc ctyp$ in
 					__value0__
 			| _ ->  
@@ -395,10 +391,10 @@ module Of_value = struct
 
 
 	let inputs _loc ids =
-		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($patt_of_value _loc x$ : Value.t -> $lid:x$) >>) ids)
+		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:of_value x$ : Value.t -> $lid:x$) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $expr_of_value_aux _loc x$ $empty_env _loc ids$ >>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $lid:of_value x$ $empty_env _loc ids$ >>) ids)
 end
 
 
