@@ -1,4 +1,4 @@
-OCAMLMAKEFILE=../OCamlMakefile
+OCAMLMAKEFILE=../../OCamlMakefile
 
 .PHONY: run
 run: dnc
@@ -10,7 +10,8 @@ slow: dnc
 
 export INCDIRS = ../hash
 export LIBDIRS = ../hash
-export PACKS = unix oUnit
+export PACKS = unix oUnit type-conv.syntax
+export DEPS = camlp4o
 
 RESULT= run_test
 TESTS=  all

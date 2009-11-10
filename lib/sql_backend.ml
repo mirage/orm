@@ -17,6 +17,16 @@
 open Sqlite3
 open Printf
 
+let debug env ty n e = 
+  let in_env s = List.exists (function | `Debug sl -> List.mem s sl | _ -> false)  env in
+  let d () = prerr_endline (n ^ ": " ^ e) in
+  let b () = () in
+  if (match ty with
+		  |`Sql -> in_env "sql" || in_env "all"
+		  |`Cache -> in_env "cache" || in_env "all"
+		  |`Bind -> in_env "binds" || in_env "all"
+	 ) then d() else b()
+
 type transaction_mode = [
     |`Deferred
     |`Immediate
