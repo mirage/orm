@@ -33,10 +33,10 @@ install: all
 
 .PHONY: uninstall
 uninstall:
-	$(MAKE) -C hash/ reinstall
-	$(MAKE) -C weakid/ reinstall
-	$(MAKE) -C type-of/ reinstall
-	$(MAKE) -C value/ reinstall
+	$(MAKE) -C hash/ uninstall
+	$(MAKE) -C weakid/ uninstall
+	$(MAKE) -C type-of/ uninstall
+	$(MAKE) -C value/ uninstall
 	$(MAKE) -C lib/ uninstall
 
 .PHONY: reinstall

@@ -11,7 +11,7 @@ all: dcl ncl
 	@ :
 
 install: all
-	$(SUDO) ocamlfind install value META value.cm{i,o,x} pa_value.cm{i,a} p4_value.cm{i,o}
+	$(SUDO) ocamlfind install value META value.{o,cm{i,o,x}} pa_value.cm{i,a} p4_value.cm{i,o}
 
 uninstall:
 	$(SUDO) ocamlfind remove value
