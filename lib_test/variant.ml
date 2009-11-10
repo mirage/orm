@@ -4,15 +4,11 @@ type s =
   |Foo
   |Bar of int
   |Xyz of string
-and
-x = {
+and x = {
   foo: s;
   bar: s;
-}
-with orm()
+} with orm
 
-open Printf
-open Orm
 open OUnit
 open Test_utils
 
@@ -21,33 +17,30 @@ let string_of_s = function
   |Bar i -> "Bar " ^ (string_of_int i) 
   |Xyz z -> "Xyz " ^ z
 
-let string_of_x x =
-  sprintf "foo=%s bar=%s" (string_of_s x.foo) (string_of_s x.bar)
-
 let name = "variant.db"
 
 let x1 = { foo=Foo; bar=(Bar 1) }
 let x2 = { foo=(Xyz "hello"); bar=Foo }
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db s_init name);
+  ignore(open_db ~rm:false x_init name);
+  ignore(open_db ~rm:false x_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2;
   x_save db x1;
   x_save db x2
 
 let test_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db ~rm:false x_init name in
   let i = x_get db in
   "2 in db" @? (List.length i = 2);
   match i with 
@@ -57,7 +50,7 @@ let test_get () =
   | _ -> assert false
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   match x_get db with
   [i] -> "structurally equal after get" @? ( x1 == i)

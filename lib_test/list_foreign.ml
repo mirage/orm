@@ -3,12 +3,9 @@ TYPE_CONV_PATH "List_foreign"
 type s = {
   foo: int;
   bar: string
-} 
-and x = {
+} and x = {
   one: s list;
-}
-with
-orm()
+} with orm
 
 let t1 = {foo=1; bar="t1"}
 let t2 = {foo=2; bar="t2"}
@@ -17,34 +14,34 @@ let x2 = {one=[]}
 
 let name = "list_foreign.db"
 
-open Orm
 open OUnit
 open Test_utils
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db x_init name);
+  ignore(open_db ~rm:false x_init name);
+  ignore(open_db ~rm:false s_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2;
   x_save db x1;
   x_save db x2
 
 let test_get () =
-  let db = open_db ~rm:false init name in
-  "2 x in db" @? (List.length (x_get db) = 2);
-  "2 s in db" @? (List.length (s_get db) = 2)
+  let dbx = open_db ~rm:false x_init name in
+  let dbs = open_db ~rm:false s_init name in
+  "2 x in db" @? (List.length (x_get dbx) = 2);
+  "2 s in db" @? (List.length (s_get dbs) = 2)
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   let i = x_get db in
   "1 in db" @? (List.length i = 1);

@@ -2,25 +2,16 @@ TYPE_CONV_PATH "Simple"
 
 open Printf
 
-module A = struct
-  type x = {
-    foo: int;
-    bar: string
-  } with
+type x = {
+  foo: int;
+  bar: string
+} with
   orm(
     unique: x<foo,bar>, x<bar>;
     debug: all;
     dot: "simple.dot"
   )
-end
 
-module B = struct
-  type x = {
-    foo: int64;
-  } with orm (debug: all)
-end
-
-open A
 open OUnit
 open Test_utils
 
@@ -46,7 +37,7 @@ let test_save () =
   let db = open_db x_init name in
   let db2 = open_db ~rm:false x_init_read_only name in
   x_save db x;
-  x_save db2 x
+  x_save db x
 
 let test_update () =
   let db = open_db x_init name in
@@ -54,11 +45,16 @@ let test_update () =
   x_save db x
 
 let test_subtype () =
-  let db = open_db ~rm:false B.x_init name in
-  let i = B.x_get db in
+  let module A = struct
+    type x = {
+      foo: int64;
+    } with orm (debug: all)
+  end in
+  let db = open_db ~rm:false A.x_init name in
+  let i = A.x_get db in
   "2 in db" @? (List.length i = 1);
   let i = List.hd i in
-  "values match" @? (i.B.foo = Int64.of_int x.foo)
+  "values match" @? (i.A.foo = Int64.of_int x.foo)
 
 let test_get () =
   let db = open_db ~rm:false x_init name in

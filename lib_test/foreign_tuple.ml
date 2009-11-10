@@ -3,16 +3,12 @@ TYPE_CONV_PATH "Foreign_tuple"
 type t = {
   foo: string;
   bar: int64;
-}
-and x = {
+} and x = {
   first: (string * int64 * t);
   second: t;
   third: int;
-}
-with orm ()
+} with orm
 
-open Printf
-open Orm
 open OUnit
 open Test_utils
 
@@ -22,28 +18,28 @@ let x = { first=("first",3434L,s); second=s; third=99 }
 let name = "foreign_tuple.db"
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db x_init name);
+  ignore(open_db ~rm:false t_init name);
+  ignore(open_db ~rm:false x_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   x_save db x
 
 let test_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db ~rm:false x_init name in
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.first = x.first && (i.second = x.second))
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   let i = x_get db in
   "1 in db" @? (List.length i = 1);

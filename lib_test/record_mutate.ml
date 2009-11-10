@@ -8,8 +8,6 @@ type x = {
     unique: x<foo>
   )
 
-open Printf
-open Orm
 open Test_utils
 open OUnit
 
@@ -34,7 +32,7 @@ let test_mutate_nodb_hash () =
   let t1 = { foo="foo"; bar=None } in
   let h = H.create 1 in
   for i = 0 to 10000; do
-    H.add h { foo=(sprintf "foo%d" i); bar=None } (Random.int64 1000L)
+    H.add h { foo=(Printf.sprintf "foo%d" i); bar=None } (Random.int64 1000L)
   done;
   H.add h t1 1L;
   "in hash1" @? (H.find h t1 = 1L);
@@ -42,7 +40,7 @@ let test_mutate_nodb_hash () =
   "in hash2" @? (H.find h t1 = 1L)
 
 let test_mutate_basic () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   let t1 = { foo="foo"; bar=None } in
   x_save db t1;
   t1.foo <- "foo2";
@@ -50,7 +48,7 @@ let test_mutate_basic () =
 
 (* same as previous, but changes bar *)
 let test_mutate_option () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   let t1 = { foo="foo"; bar=None } in
   x_save db t1;
   t1.bar <- Some "bar";

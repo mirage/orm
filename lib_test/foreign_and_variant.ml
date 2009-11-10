@@ -1,23 +1,19 @@
 TYPE_CONV_PATH "Foreign_and_variant"
 
 type v =
-|Alice
-|Bob of int
-|Charlie of (int * int64)
+| Alice
+| Bob of int
+| Charlie of (int * int64)
 and s = {
   foo: string;
   bar: int64;
   xyz: v;
-}
-and x = {
+} and x = {
   first: s;
   second: s;
   third: int;
-}
-with orm ()
+} with orm
 
-open Printf
-open Orm
 open OUnit
 open Test_utils
 
@@ -28,21 +24,21 @@ let s = { foo="s1"; bar=99L; xyz=v }
 let x = { first=s; second=s; third=99 }
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db v_init name);
+  ignore(open_db ~rm:false s_init name);
+  ignore(open_db ~rm:false x_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   x_save db x
 
 let test_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db ~rm:false x_init name in
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
   match i with 
@@ -51,7 +47,7 @@ let test_get () =
   | _ -> assert false
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   match x_get db with
   [i] -> "structurally equal after get" @? ( x == i)

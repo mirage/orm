@@ -3,11 +3,8 @@ TYPE_CONV_PATH "List_list"
 type x = {
   foo: int list list;
   bar: string
-} with
-orm()
+} with orm
 
-open Printf
-open Orm
 open OUnit
 open Test_utils
 
@@ -18,18 +15,18 @@ let x2 = {foo=[[2;3;4];[6;7]] ;bar="t2"}
 let x3 = {foo=[]; bar="t3" }
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db x_init name);
+  ignore(open_db ~rm:false x_init name);
+  ignore(open_db ~rm:false x_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2;
   x_save db x3
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2;
   x_save db x2;
@@ -38,11 +35,11 @@ let test_update () =
   x_save db x3
 
 let test_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db ~rm:false x_init name in
   "3 x in db" @? (List.length (x_get db) = 3)
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x1;
   x_save db x2;
   x_save db x3;

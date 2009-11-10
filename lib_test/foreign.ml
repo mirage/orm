@@ -4,14 +4,12 @@ type t = {
   foo: string;
   bar: int64;
   mutable xyz: char;
-}
-and x = {
+} and x = {
   first: t;
   mutable second: t;
   third: int;
-}
-with orm (
- debug:sql;
+} with orm (
+ debug: sql, bind;
  unique: t<xyz>, t<bar>;
  index: x<first,second>
 )
@@ -21,33 +19,32 @@ let s1 = { foo="hello"; bar=100L; xyz='a' }
 let s2 = { foo="world"; bar=200L; xyz='z' }
 let x = { first=s1; second=s2; third=111 }
 
-open Orm
 open Test_utils
 open OUnit
 
 let test_init () =
-  ignore(open_db init name);
-  ignore(open_db ~rm:false init name);
-  ignore(open_db ~rm:false init name)
+  ignore(open_db t_init name);
+  ignore(open_db ~rm:false x_init name);
+  ignore(open_db ~rm:false x_init name)
 
 let test_save () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x
 
 let test_update () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   x_save db x
 
 let test_get () =
-  let db = open_db ~rm:false init name in
+  let db = open_db ~rm:false x_init name in
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.first = x.first && (i.second = x.second))
 
 let test_save_get () =
-  let db = open_db init name in
+  let db = open_db x_init name in
   x_save db x;
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
