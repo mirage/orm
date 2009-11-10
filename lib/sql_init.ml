@@ -44,8 +44,8 @@ let create_types_table env db t =
   let rec process (n, t) =
     debug env `Sql "init" select;
     let stmt = prepare db.db select in
-    debug env `Bind "init" (Type.to_string t);
-    db_must_bind db stmt 1 (Data.TEXT (Type.to_string t));
+    debug env `Bind "init" n;
+    db_must_bind db stmt 1 (Data.TEXT n);
     begin match step_map db stmt (fun stmt -> column stmt 0) with
     | [] ->
       debug env `Sql "init" insert;
