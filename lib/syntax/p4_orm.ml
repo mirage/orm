@@ -64,7 +64,7 @@ let env_to_env _loc env =
   expr_list_of_list _loc (List.map aux env)
 
 let init_binding tds (_loc, n, t) =
-  <:binding< $lid:init n$ : string -> db $lid:n$ [=`RW] =
+  <:binding< $lid:init n$ =
     fun db_name ->
       let db = Orm.Sql_backend.new_state $Env.create tds$ db_name in
       let () = Orm.Sql_init.init_tables ~mode:`RW ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
@@ -72,7 +72,7 @@ let init_binding tds (_loc, n, t) =
   >>
 
 let initRO_binding tds (_loc, n, t) =
-  <:binding< $lid:initRO n$ : string -> db $lid:n$ [=`RO] =
+  <:binding< $lid:initRO n$ =
     fun db_name ->
       let db = Orm.Sql_backend.new_state $Env.create tds$ db_name in
       let () = Orm.Sql_init.init_tables ~mode:`RO ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
@@ -80,7 +80,7 @@ let initRO_binding tds (_loc, n, t) =
   >>
 
 let save_binding (_loc, n, t) =
-  <:binding< $lid:save n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit =
+  <:binding< $lid:save n$ =
     fun ~db -> fun $lid:n$ ->
       let id = if db.OS.cache.Deps.$lid:P4_weakid.has_weakid n$ $lid:n$ then
           Some (db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$)
@@ -91,13 +91,13 @@ let save_binding (_loc, n, t) =
 
 (* TODO: find a generic way to build the args valid here *)
 let get_binding (_loc, n, t) =
-  <:binding< $lid:get n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> list $lid:n$ =
+  <:binding< $lid:get n$ =
     fun ~db ->
       List.map Deps.$lid:P4_value.of_value n$ (Orm.Sql_get.get_values ~env:Deps.env ~db ())
   >>
 
 let delete_binding (_loc, n, t) =
-  <:binding< $lid:delete n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit =
+  <:binding< $lid:delete n$ =
     fun ~db -> fun $lid:n$ ->
       Orm.Sql_delete.delete_value ~env:Deps.env ~db
         (db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$)
@@ -121,20 +121,33 @@ let gen env tds =
   let delete_bindings = List.map delete_binding ts in
   let id_bindings = List.map id_binding ts in
 
-  (* TODO: module OS and Deps should be local modules in order to not be exported *)
+  let sigs =
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:init n$ : string -> db $lid:n$ [=`RW] >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:initRO n$ : string -> db $lid:n$ [=`RO] >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:save n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:get n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:delete n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 >>) ts in
+
   <:str_item<
-    module OS = Orm.Sql_backend;
-    module Deps = struct
-      $P4_type.gen tds$;
-      $P4_value.gen tds$;
-      type env = $Env.create_sig tds$;
-      value env = $env_to_env _loc env$;
+    module Internal : sig
+      type db 'a 'b;
+      $sgSem_of_list sigs$;
+    end = struct
+      module OS = Orm.Sql_backend;
+      module Deps = struct
+        $P4_type.gen tds$;
+        $P4_value.gen tds$;
+        type env = $Env.create_sig tds$;
+        value env = $env_to_env _loc env$;
+      end;
+      type db 'a 'b = OS.state Deps.env;
+      value $biAnd_of_list init_bindings$;
+      value $biAnd_of_list initRO_bindings$;
+      value rec $biAnd_of_list save_bindings$;
+      value rec $biAnd_of_list get_bindings$;
+      value $biAnd_of_list id_bindings$;
+      value $biAnd_of_list delete_bindings$;
     end;
-    type db 'a 'b = OS.state Deps.env;
-    value $biAnd_of_list init_bindings$;
-    value $biAnd_of_list initRO_bindings$;
-    value rec $biAnd_of_list save_bindings$;
-    value rec $biAnd_of_list get_bindings$;
-    value $biAnd_of_list id_bindings$;
-    value $biAnd_of_list delete_bindings$;
+    include Internal
   >>
