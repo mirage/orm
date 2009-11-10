@@ -122,10 +122,27 @@ let step_map db stmt iterfn =
 let step_map_array db stmt iterfn =
   Array.of_list (step_map db stmt iterfn)
 
+let list_foldi fn accu l =
+  let accu, _ = List.fold_left (fun (accu, i) x -> fn accu i x, i + 1) (accu, 0) l in accu
+
+let list_mapi fn l = list_foldi (fun accu i x -> fn i x :: accu) [] l
+
+let map_strings sep fn sl = String.concat sep (List.map fn sl)
+
+let map_stringsi sep fn sl = String.concat sep (list_mapi fn sl)
+
 (* List version of Array.iteri *)
 let list_iteri fn =
   let p = ref 0 in
   List.iter (fun x ->
     fn !p x;
     incr p
-  ) 
+  )
+
+let string_of_data = function
+  | Data.NULL    -> "NULL"
+  | Data.NONE    -> "NONE"
+  | Data.INT i   -> Int64.to_string i
+  | Data.TEXT t  -> t
+  | Data.FLOAT f -> string_of_float f
+  | Data.BLOB _  -> "<blob>"

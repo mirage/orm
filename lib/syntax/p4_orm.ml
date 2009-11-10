@@ -86,7 +86,8 @@ let save_binding (_loc, n, t) =
           Some (db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$)
         else
           None in
-      Orm.Sql_save.save_value ~env:Deps.env ~db ~id (Deps.$lid:P4_value.value_of n$ $lid:n$)
+      let id = Orm.Sql_save.save_value ~env:Deps.env ~db ~id (Deps.$lid:P4_value.value_of n$ $lid:n$) in
+      db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id
   >> 
 
 (* TODO: find a generic way to build the args valid here *)

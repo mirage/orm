@@ -28,7 +28,8 @@ let process_error t s =
 
 let enum n = sprintf "%s__enum" n
 let tuple n i = sprintf "%s__%i" n i
-let row n r i = sprintf "%s__%s__%i" n r i
+let sum n r i = sprintf "%s__%s__%i" n r i
+let dict n f = sprintf "%s__%s" n f
 
 let init_and_check_types_table ~mode ~env ~db t =
   let create = "CREATE TABLE IF NOT EXISTS __types__ (n TEXT, t TEXT)" in
@@ -134,13 +135,6 @@ let init_links_table ~mode ~env ~db t =
 
   aux t
 
-let foldi fn accu l =
-  let accu, _ = List.fold_left (fun (accu, i) x -> fn accu i x, i + 1) (accu, 0) l in accu
-
-let mapi fn l = foldi (fun accu i x -> fn i x :: accu) [] l
-let map_strings sep fn sl = String.concat sep (List.map fn sl)
-let map_stringsi sep fn sl = String.concat sep (mapi fn sl)
-
 let init_tables ~mode ~env ~db t =
 
   init_and_check_types_table ~mode ~env ~db t;
@@ -164,8 +158,8 @@ let init_tables ~mode ~env ~db t =
       | String   -> sprintf "%s TEXT" name
       | Arrow _  -> sprintf "%s BLOB" name
       | Tuple tl -> map_stringsi ", " (fun i t -> table ~name t; field (tuple name i) t) tl
-      | Dict tl  -> map_strings ", " (fun (m,_,t) -> table ~name t; field m t) tl
-      |   Sum tl   -> map_strings "__row__ TEXT, %s" (fun (r, tl) -> map_stringsi "," (fun i t -> table ~name t; field (row name r i) t) tl) tl
+      | Dict tl  -> map_strings ", " (fun (m,_,t) -> table ~name t; field (dict name m) t) tl
+      | Sum tl   -> map_strings "__row__ TEXT, %s" (fun (r, tl) -> map_stringsi "," (fun i t -> table ~name t; field (sum name r i) t) tl) tl
       | Option t -> field name t
 
     and table ?name t = match t with
