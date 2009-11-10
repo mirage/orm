@@ -71,8 +71,8 @@ let gen_fn envfn (name, ctyp) =
         let module H = Hweak in $gen_body envfn name ctyp$ >>
 
 let gen tds =
-  let env = list_of_ctyp_decl tds in
-  let envfn id = List.assoc id env in
-  let bindings = List.map (gen_fn envfn) env in
   let _loc = loc_of_ctyp tds in
+  let env = list_of_ctyp_decl tds in
+  let envfn id = try List.assoc id env with Not_found -> <:ctyp< t >> in
+  let bindings = List.map (gen_fn envfn) env in
   <:str_item< value $biAnd_of_list bindings$ >>
