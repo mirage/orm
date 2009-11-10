@@ -47,6 +47,27 @@ let free_vars t =
     | Ext (n,t)  -> aux accu t in
   aux [] t
 
+(* Replace the Vars  by their type contained in env, and update the Ext/Rec stuff *)
+let unroll env t =
+  let rec aux name = function
+    | Rec (m, _) | Ext (m, _) when m = name
+                 -> Var name
+    | Rec (m, s) 
+    | Ext (m, s) -> let ss = aux name s in if List.mem m (free_vars ss) then Rec (m, ss) else Ext (m, ss)
+    | Var n when List.mem_assoc n env
+                 -> aux name (List.assoc n env)
+    | Var _ | Unit | Int | Int32 | Int64 | Bool | Float | Char | String as t
+                 -> t
+    | Enum t     -> Enum (aux name t)
+    | Tuple tl   -> Tuple (List.map (aux name) tl)
+    | Dict tl    -> Dict (List.map (fun (n, m, t) -> (n, m, aux name t)) tl)
+    | Sum tl     -> Sum (List.map (fun (n, tl) -> (n, List.map (aux name) tl)) tl)
+    | Option t   -> Option (aux name t)
+	| Arrow(s,t) -> Arrow (aux name s, aux name t) in
+  match t with
+  | Rec (n, s) | Ext (n, s) -> let ss = aux n s in if List.mem n (free_vars ss) then Rec (n, ss) else Ext (n, ss)
+  | _                       -> t
+
 let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let rec to_string t = match t with                                                                    
