@@ -35,6 +35,7 @@ type t =
 	| Rec of (string * int64) * t
 	| Arrow of string
 	| Ext of string * t
+ with weakid
 
 (* If there are still some Var v, then the type is recursive for the type v *)
 let free_vars t =
