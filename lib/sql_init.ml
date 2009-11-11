@@ -163,7 +163,7 @@ let init_tables ~mode ~env ~db t =
       | Option t -> field name t
 
     and table ?name t = match t with
-      | Type.Ext (n, t) | Type.Rec (n, t) -> process n (field "" t)
+      | Type.Ext (n, t) | Type.Rec (n, t) -> process n (field n t)
       | Type.Enum t ->
         begin match name with
         | None   -> process_error t "init_tables:1"
@@ -172,6 +172,7 @@ let init_tables ~mode ~env ~db t =
       | _ -> () in
 
     let process_custom_index kind (t, fs) =
+      let fs = List.map (fun f -> sprintf "%s__%s" t f) fs in
       if List.mem t !sub_tables then begin
           let sql = match kind with
           | `U -> sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs)
