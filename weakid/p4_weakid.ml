@@ -25,7 +25,7 @@ let of_weakid n     = n ^ "_of_weakid"
 let has_weakid n    = n ^ "_has_weakid"
 let create_weakid n = n ^ "_create_weakid"
 let set_weakid n    = n ^ "_set_weakid"
-
+let create_weakid_fns n    = n ^ "_create_weakid_fns"
 let list_of_ctyp_decl tds =
   let rec aux accu = function
   | Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
@@ -62,17 +62,19 @@ let gen_body envfn name ctyp =
 
 let gen_fn envfn (name, ctyp) =
   let _loc = loc_of_ctyp ctyp in
-  <:binding< 
-    ( $lid:weakid_of name$,
-      $lid:of_weakid name$,
-      $lid:has_weakid name$,
-      $lid:create_weakid name$,
-      $lid:set_weakid name$ ) =
-        let module H = Hweak in $gen_body envfn name ctyp$ >>
+  <:str_item<
+    value $lid:create_weakid_fns name$ = fun () -> let module H = Hweak in $gen_body envfn name ctyp$;
+    value ( $lid:weakid_of name$,
+            $lid:of_weakid name$,
+            $lid:has_weakid name$,
+            $lid:create_weakid name$,
+            $lid:set_weakid name$ ) =
+      $lid:create_weakid_fns name$ ()
+  >>
 
 let gen tds =
   let _loc = loc_of_ctyp tds in
   let env = list_of_ctyp_decl tds in
   let envfn id = try List.assoc id env with Not_found -> <:ctyp< t >> in
   let bindings = List.map (gen_fn envfn) env in
-  <:str_item< value $biAnd_of_list bindings$ >>
+  <:str_item< $stSem_of_list bindings$ >>
