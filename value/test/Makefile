@@ -9,9 +9,9 @@ run: dc
 slow: dc
 	env SLOW=1 ./$(RESULT) -verbose
 
-export INCDIRS = ..
-export LIBDIRS = ..
-export LIBS = pa_value
+export INCDIRS = .. ../../weakid
+export LIBDIRS = .. ../../weakid
+export LIBS = pa_weakid pa_value
 export PACKS = unix oUnit
 
 RESULT= run_test

@@ -188,7 +188,7 @@ module Value_of = struct
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__ )
 						else
-							__value__
+							V.Ext ($str:t$, __value__)
 					end >>
 
 		| _ -> raise (Type_not_supported ctyp)
@@ -379,9 +379,9 @@ module Of_value = struct
 					let __value1__ = $lid:of_value_aux name$ __env__ $nid2$ in
 					let () = $set_value _loc ctyp$ in
 					__value0__
-			| _ ->  
-			$create names nid ctyp$ ]
-		>> 
+                        | V.Ext (n, $npid2$) -> $create names nid2 ctyp$
+                        | _ -> $create names nid ctyp$ ]
+		>>
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in
