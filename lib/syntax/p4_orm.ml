@@ -30,27 +30,48 @@ let id n     = n ^ "_id"
 let delete n = n ^ "_delete"
 
 module Env = struct
+  let value = "__value__"
   let create_sig tds =
     let bindings = List.flatten (List.map (fun (_loc, n, _) -> [
       <:ctyp< $lid:P4_weakid.weakid_of n$ : $lid:n$ -> int64 >> ;
       <:ctyp< $lid:P4_weakid.of_weakid n$ : int64 -> $lid:n$ >> ;
       <:ctyp< $lid:P4_weakid.has_weakid n$ : $lid:n$ -> bool >> ;
-      <:ctyp< $lid:P4_weakid.create_weakid n$ : $lid:n$ -> int64 >> ;
       <:ctyp< $lid:P4_weakid.set_weakid n$ : $lid:n$ -> int64 -> unit >> ]
       ) (list_of_ctyp_decl tds)) in
     let _loc = loc_of_ctyp tds in
-    <:ctyp< { $tySem_of_list bindings$ } >>
+    <:ctyp< {
+      $tySem_of_list bindings$;
+      $lid:P4_weakid.weakid_of value$ : Value.t -> int64;
+      $lid:P4_weakid.of_weakid value$ : int64 -> Value.t;
+      $lid:P4_weakid.has_weakid value$ : Value.t -> bool;
+      $lid:P4_weakid.set_weakid value$ : Value.t -> int64 -> unit;
+     } >>
 
   let create tds =
     let bindings = List.flatten (List.map (fun (_loc, n, _) -> [
       <:rec_binding< Deps.$lid:P4_weakid.weakid_of n$ = W.$lid:P4_weakid.weakid_of n$ >> ;
       <:rec_binding< Deps.$lid:P4_weakid.of_weakid n$ = W.$lid:P4_weakid.of_weakid n$ >> ;
       <:rec_binding< Deps.$lid:P4_weakid.has_weakid n$ = W.$lid:P4_weakid.has_weakid n$ >> ;
-      <:rec_binding< Deps.$lid:P4_weakid.create_weakid n$ = W.$lid:P4_weakid.create_weakid n$ >> ;
       <:rec_binding< Deps.$lid:P4_weakid.set_weakid n$ = W.$lid:P4_weakid.set_weakid n$ >> ]
       ) (list_of_ctyp_decl tds)) in
     let _loc = loc_of_ctyp tds in
-    <:expr< let module W = struct $P4_weakid.gen tds$ end in { $rbSem_of_list bindings$ } >>
+    <:expr<
+      let module W = struct $P4_weakid.gen tds$ end in
+      let module WV = struct
+        value ( $lid:P4_weakid.weakid_of value$,
+                $lid:P4_weakid.of_weakid value$,
+                $lid:P4_weakid.has_weakid value$,
+                _,
+                $lid:P4_weakid.set_weakid value$ ) =
+          Value.$lid:P4_weakid.create_weakid_fns "t"$ ();
+      end in
+      { 
+        $rbSem_of_list bindings$;
+        Deps.$lid:P4_weakid.weakid_of value$ = WV.$lid:P4_weakid.weakid_of value$;
+        Deps.$lid:P4_weakid.of_weakid value$ = WV.$lid:P4_weakid.of_weakid value$;
+        Deps.$lid:P4_weakid.has_weakid value$ = WV.$lid:P4_weakid.has_weakid value$;
+        Deps.$lid:P4_weakid.set_weakid value$ = WV.$lid:P4_weakid.set_weakid value$;
+      } >>
 end
 
 let env_to_env _loc env =
