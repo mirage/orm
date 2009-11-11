@@ -22,6 +22,7 @@ TESTS=  simple tuple variant alltypes foreign recursive array_simple \
 	stress record_mutate list_mutate recursive_mutate
  
 SOURCES= test_utils.ml $(TESTS:%=%.ml) suite.ml
+ANNOTATE=yes
 
 pc_%:
 	$(MAKE) -f Makefile.debug $@
