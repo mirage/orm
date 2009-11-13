@@ -177,7 +177,7 @@ module Value_of = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
-				<:expr< V.Ext ($str:t$, $lid:value_of t$ $id$) >>
+				<:expr< $lid:value_of t$ $id$  >>
 			else
 				<:expr<
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
@@ -198,7 +198,7 @@ module Value_of = struct
 		let id, pid = new_id _loc in
 		<:binding< $lid:value_of_aux name$ = fun __env__ -> fun $pid$ ->
 			let module V = Value in
-			$create names id ctyp$
+			match $create names id ctyp$ with [ V.Rec ((n,_),_) as x when n = $str:name$ -> x | x -> V.Ext ($str:name$, x) ]
 		>>
 
 	let gen tds =
@@ -340,8 +340,7 @@ module Of_value = struct
 			if List.mem t names then
 				<:expr< $lid:of_value_aux t$ __env__ $id$ >>
 			else
-				let nid, npid = new_id _loc in
-				<:expr< match $id$ with [ V.Ext (v,$npid$) -> $lid:of_value t$ $nid$ | $runtime_error id "Ext"$ ] >> 
+				<:expr< $lid:of_value t$ $id$ >>
 
 		| _ -> raise (Type_not_supported ctyp)
 
@@ -379,9 +378,9 @@ module Of_value = struct
 					let __value1__ = $lid:of_value_aux name$ __env__ $nid2$ in
 					let () = $set_value _loc ctyp$ in
 					__value0__
-			| _ ->  
-			$create names nid ctyp$ ]
-		>> 
+                        | V.Ext (n, $npid2$) -> $create names nid2 ctyp$
+                        | $runtime_error nid "Var/Rec/Ext"$ ]
+		>> (* _ -> $create names nid ctyp$ ] *)
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in

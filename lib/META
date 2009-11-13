@@ -4,7 +4,7 @@ description = "An Object-Relational Mapping layer to persist OCaml data"
 requires = "orm.core"
 
 package "core" (
-  requires = "sqlite3, type-of"
+  requires = "sqlite3, type-of, value"
   archive(byte) = "orm.cma"
   archive(native) = "orm.cmxa"
 )

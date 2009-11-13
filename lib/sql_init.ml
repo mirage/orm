@@ -29,7 +29,7 @@ let process_error t s =
 let enum n = sprintf "%s__enum" n
 let tuple n i = sprintf "%s__%i" n i
 let sum n r i = sprintf "%s__%s__%i" n r i
-let dict n f = sprintf "%s__%s" n f
+let dict n f = if n = "" then f else sprintf "%s__%s" n f
 
 let init_and_check_types_table ~mode ~env ~db t =
   let create = "CREATE TABLE IF NOT EXISTS __types__ (n TEXT, t TEXT)" in
@@ -172,6 +172,7 @@ let init_tables ~mode ~env ~db t =
       | _ -> () in
 
     let process_custom_index kind (t, fs) =
+      let fs = List.map (fun f -> sprintf "%s__%s" t f) fs in
       if List.mem t !sub_tables then begin
           let sql = match kind with
           | `U -> sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs)
