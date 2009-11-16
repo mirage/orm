@@ -146,3 +146,81 @@ let string_of_data = function
   | Data.TEXT t  -> t
   | Data.FLOAT f -> string_of_float f
   | Data.BLOB _  -> "<blob>"
+
+module Name = struct
+  let enum_table n = sprintf "%s__enum" n
+  let tuple_field n i = sprintf "%s__%i" n i
+  let sum_field n r i = sprintf "%s__%s__%i" n r i
+  let dict_field n f = if n = "" then f else sprintf "%s__%s" n f
+end
+
+exception Not_valid_type of Type.t
+let not_valid_type t =
+  Printf.printf "ERROR: %s is not a well-formed type" (Type.to_string t);
+  raise (Not_valid_type t)
+
+let with_valid_type fn t =
+  let module T = Type in
+  match t with
+  | T.Ext (v, t) | T.Rec (v, t) -> fn v t
+  | _                           -> not_valid_type t
+
+(* Build up the list of fields from a Type.t *)
+let field_names_of_type ~id t =
+  let module T = Type in
+  let rec aux name = function
+    | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
+                 -> [ name ]
+    | T.Option t -> sprintf "%s_o_" name :: aux name t
+    | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
+    | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict_field name n) t) [] tl
+    | T.Sum tl   -> 
+      "__row__" :: List.fold_left (fun accu (r,tl) ->
+        list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) accu tl
+        ) [] tl in
+  if id then "__id__" :: aux "" t else aux "" t
+
+(* Build up the list of field types from a Type.t *)
+let field_types_of_type ~id t =
+  let module T = Type in
+  let rec aux = function
+    | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
+    | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ 
+                 -> [ "INTEGER" ]
+    | T.Float    -> [ "FLOAT" ]
+    | T.String   -> [ "STRING" ]
+    | T.Arrow _  -> [ "BLOB" ]
+    | T.Tuple tl -> List.fold_left (fun accu t -> accu @ aux t) [] tl
+    | T.Dict tl  -> List.fold_left (fun accu (_,_,t) -> accu @ aux t) [] tl
+    | T.Sum tl   -> "TEXT" :: List.fold_left (fun accu (_,tl) -> accu @ List.fold_left (fun accu t -> accu @ aux t) accu tl) [] tl
+    | T.Option t -> "INTEGER" :: aux t in
+  if id then "INTEGER" :: aux t else aux t
+
+(* Return the sub-tables for a Type.t *)
+let subtables_of_type t =
+  let module T = Type in
+  let rec aux name = function 
+    | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
+    | T.Float | T.String | T.Arrow _
+                  -> []
+    | T.Option t  -> aux name t
+    | T.Tuple tl  -> List.fold_left (fun accu t -> accu @ aux name t) [] tl
+    | T.Dict tl   -> List.fold_left (fun accu (_,_,t) -> accu @ aux name t) [] tl
+    | T.Sum tl    -> List.fold_left (fun accu (_,tl) -> List.fold_left (fun accu t -> accu @ aux name t) accu tl) [] tl
+    | T.Var v     -> []
+    | T.Rec (v,t)
+    | T.Ext (v,t) -> (v, t) :: aux v t 
+    | T.Enum t    -> (Name.enum_table name, t) :: aux (Name.enum_table name) t in
+  aux "" t
+
+(* Build up the list of fields from a Value.t *)
+let field_names_of_value ~id t =
+  let module V = Value in
+  let rec aux name = function
+    | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
+                   -> [ name ]
+    | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
+    | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
+    | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) [] tl in
+  if id then "__id__" :: aux "" t else aux "" t
+  

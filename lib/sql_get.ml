@@ -29,20 +29,6 @@ let process_error t s =
   raise (Sql_process_error (t,s))
 
 (* Build up the list of fields actually needed to save the row *)
-let rec field_names_aux name = function
-  | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
-               -> [ name ]
-  | T.Option t -> sprintf "%s_o_" name :: field_names_aux name t
-  | T.Tuple tl -> list_foldi (fun accu i t -> accu @ field_names_aux (Sql_init.tuple name i) t) [] tl
-  | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ field_names_aux (Sql_init.dict name n) t) [] tl
-  | T.Sum tl   -> 
-    "__row__" :: List.fold_left (fun accu (r,tl) ->
-      list_foldi (fun accu i t -> accu @ field_names_aux (Sql_init.sum name r i) t) accu tl
-      ) [] tl
-
-let field_names name t = "__id__" :: field_names_aux name t
-
-(* Build up the list of fields actually needed to save the row *)
 let rec parse_row ~env ~db ?(skip=false) ~id t row n =
   match t, row.(n) with
   | T.Unit    , Data.INT 0L -> V.Null, n + 1
@@ -58,14 +44,20 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
   | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~id t row (n + 1) in (if r=0L then V.Null else res), j
   | T.Tuple tl, _            ->
-    let tuple, n = List.fold_left (fun (accu, i) t -> let res, j = parse_row ~env ~db ~id t row i in res :: accu, j) ([], n) tl in
+    let tuple, n = List.fold_left (fun (accu, i) t ->
+      let res, j = parse_row ~env ~db ~id t row i in res :: accu, j
+      ) ([], n) tl in
     V.Tuple (List.rev tuple), n
   | T.Dict tl , _            ->
-    let dict, n = List.fold_left (fun (accu, i) (f,_,t) -> let res, j = parse_row ~env ~db ~id t row i in (f, res) :: accu, j) ([], n) tl in
+    let dict, n = List.fold_left (fun (accu, i) (f,_,t) ->
+      let res, j = parse_row ~env ~db ~id t row i in (f, res) :: accu, j
+      ) ([], n) tl in
     V.Dict (List.rev dict), n
   | T.Sum tl  , Data.TEXT r  ->
     let row, n = List.fold_left (fun (accu, i) (rn, tl) ->
-      List.fold_left (fun (accu, j) t -> let res, k = parse_row ~skip:(rn<>r) ~env ~db ~id t row i in (if rn<>r then accu else res :: accu), k) (accu, i) tl)
+      List.fold_left (fun (accu, j) t ->
+        let res, k = parse_row ~skip:(rn<>r) ~env ~db ~id t row i in (if rn<>r then accu else res :: accu), k
+        ) (accu, i) tl)
       ([], n) tl in
     V.Sum (r, List.rev row), n
   | T.Rec(r, t), Data.INT i  ->
@@ -86,7 +78,7 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
 and get_values ~env ~db ?id t =
 
   let process n t =
-    let fields = field_names n t in
+    let fields = field_names_of_type ~id:true t in
     let sql = sprintf "SELECT %s FROM %s" (String.concat "," fields) n in
     debug env `Sql "get" sql;
     let stmt = prepare db.db sql in

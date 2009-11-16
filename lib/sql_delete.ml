@@ -18,5 +18,26 @@
 open Printf
 open Sqlite3
 open Sql_backend
+open Value
 
-let delete_value ~env ~db (id:int64) (t : Value.t) = ()
+let delete_value ~env ~db (id : int64) v =
+
+  let process table id =
+    let sql = "DELETE FROM %s WHERE __id__=?" in
+    debug env `Sql "delete" sql;
+    let stmt = prepare db.db sql in
+    debug env `Bind "delete" (Int64.to_string id);
+    db_must_bind db stmt 1 (Data.INT id);
+    db_must_step db stmt in
+
+  let rec aux ?name id v = match v, name with
+    | Null, _ | Int _, _ | Bool _, _ | Float _, _ | String _, _ | Arrow _, _ | Enum _, None | Var _, _ -> ()
+    | Enum t    , Some n    -> process (Name.enum_table n) id
+    | Ext ((n,i),v), _
+    | Rec ((n,i),v), _      -> process n id; aux ~name:n i v
+    | Sum (_,tl), Some name -> List.iter (aux ~name id) tl
+    | Dict tl   , Some name -> List.iter (fun (_,t) -> aux ~name id t) tl
+    | Tuple tl  , Some name -> List.iter (aux ~name id) tl
+    | _                     -> failwith "TODO:5" in
+
+  aux id v

@@ -26,11 +26,6 @@ let process_error t s =
   Printf.printf "ERROR(%s): %s\n%!" s (to_string t);
   raise (Sql_process_error (t,s))
 
-let enum n = sprintf "%s__enum" n
-let tuple n i = sprintf "%s__%i" n i
-let sum n r i = sprintf "%s__%s__%i" n r i
-let dict n f = if n = "" then f else sprintf "%s__%s" n f
-
 let init_and_check_types_table ~mode ~env ~db t =
   let create = "CREATE TABLE IF NOT EXISTS __types__ (n TEXT, t TEXT)" in
   let select = "SELECT t FROM __types__ WHERE n=?" in
@@ -125,7 +120,7 @@ let init_links_table ~mode ~env ~db t =
       match t with
       | Ext (n, s)
 	  | Rec (n, s) -> process p n; aux ~p:n s
-      | Enum s     -> process p (enum p); aux ~p:(enum p) s
+      | Enum s     -> process p (Name.enum_table p); aux ~p:(Name.enum_table p) s
       | Var v      -> process p v
       | Tuple tl -> List.iter (aux ~p) tl
       | Dict tl  -> List.iter (fun (_,_,t) -> aux ~p t) tl
@@ -142,47 +137,27 @@ let init_tables ~mode ~env ~db t =
   if mode = `RW then begin
     init_links_table ~mode ~env ~db t;
   
-    let sub_tables = ref [] in
-    let process t s =
-      let sql = sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ INTEGER PRIMARY KEY AUTOINCREMENT, %s)" t s in
-      sub_tables := t :: !sub_tables;
+    let process (name, t) =
+      let field_names = field_names_of_type ~id:false t in
+      let field_types = field_types_of_type ~id:false t in
+      let fields = List.map2 (sprintf "%s %s") field_names field_types in
+      let extra = match t with Enum _ -> "__idx__ INT, PRIMARY KEY (__id__, __idx___), " | _ -> "" in
+      let sql = sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ INTEGER PRIMARY KEY AUTOINCREMENT, %s%s)"
+        name extra (String.concat "," fields) in
       debug env `Sql "init" sql;
 	  db_must_ok db (fun () -> exec db.db sql) in
 
-    let rec field name = function 
-      | Unit | Int | Int32 | Int64 | Char | Bool
-      | Var _ | Rec _ | Ext _
-                 -> sprintf "%s INTEGER" name
-      | Enum t   -> table ~name (Enum t); sprintf "%s INT" name
-      | Float    -> sprintf "%s REAL" name
-      | String   -> sprintf "%s TEXT" name
-      | Arrow _  -> sprintf "%s BLOB" name
-      | Tuple tl -> map_stringsi ", " (fun i t -> table ~name t; field (tuple name i) t) tl
-      | Dict tl  -> map_strings ", " (fun (m,_,t) -> table ~name t; field (dict name m) t) tl
-      | Sum tl   -> map_strings "__row__ TEXT, %s" (fun (r, tl) -> map_stringsi "," (fun i t -> table ~name t; field (sum name r i) t) tl) tl
-      | Option t -> field name t
-
-    and table ?name t = match t with
-      | Type.Ext (n, t) | Type.Rec (n, t) -> process n (field n t)
-      | Type.Enum t ->
-        begin match name with
-        | None   -> process_error t "init_tables:1"
-        | Some n -> process n (sprintf "__idx__ INT, PRIMARY KEY (__id__, __idx___), %s" (field n t))
-        end;
-      | _ -> () in
+    let sub_tables = subtables_of_type t in
+    List.iter process sub_tables;
 
     let process_custom_index kind (t, fs) =
-      let fs = List.map (fun f -> sprintf "%s__%s" t f) fs in
-      if List.mem t !sub_tables then begin
+      if List.mem_assoc t sub_tables then begin
           let sql = match kind with
           | `U -> sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs)
           | `I -> sprintf "CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s (%s);" t (String.concat "_" fs) t (String.concat "," fs) in
           debug env `Sql "init" sql;
           db_must_ok db (fun () -> exec db.db sql)
       end in
-
-    (* Create all the sub-table of t*)
-    table t;
 
     (* Process indices *)
     List.iter (function 
