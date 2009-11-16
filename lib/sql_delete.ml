@@ -20,10 +20,10 @@ open Sqlite3
 open Sql_backend
 open Value
 
-let delete_value ~env ~db (id : int64) v =
+let delete_value ~env ~db ~id v =
 
   let process table id =
-    let sql = "DELETE FROM %s WHERE __id__=?" in
+    let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
     debug env `Sql "delete" sql;
     let stmt = prepare db.db sql in
     debug env `Bind "delete" (Int64.to_string id);
