@@ -26,6 +26,14 @@ let process_error t s =
   Printf.printf "ERROR(%s): %s\n%!" s (to_string t);
   raise (Sql_process_error (t,s))
 
+(* Build up the list of fields actually needed to save the row *)
+let rec field_names name = function
+  | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Rec _ | Ext _ | Enum _ | Arrow _
+             -> [ name ]
+  | Tuple tl   -> list_foldi (fun accu i t -> accu @ field_names (Sql_init.tuple name i) t) [] tl
+  | Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ field_names (Sql_init.dict name n) t) [] tl
+  | Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ field_names (Sql_init.sum name r i) t) [] tl
+
 let save_value ~env ~db ?id (t : Value.t) =
 
   (* Insert/update a specific row in a specific table *)
@@ -51,14 +59,6 @@ let save_value ~env ~db ?id (t : Value.t) =
     | Some id -> id
     in
 
-  (* Build up the list of fields actually needed to save the row *)
-  let rec field_names name = function
-  | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Rec _ | Ext _ | Enum _ | Arrow _
-               -> [ name ]
-  | Tuple tl   -> list_foldi (fun accu i t -> accu @ field_names (Sql_init.tuple name i) t) [] tl
-  | Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ field_names (Sql_init.dict name n) t) [] tl
-  | Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ field_names (Sql_init.sum name r i) t) [] tl in
-
   (* Build up the list of values which are composing the row *)
   let ids = ref [] in
   let rec field_values ?(nullforeign=false) name = function
@@ -74,10 +74,10 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values (Sql_init.sum name r i) t) [] tl
   | Var (n,i)     when nullforeign -> [ Data.INT 0L ]
   | Rec ((n,i),t) when nullforeign -> [ Data.INT 0L ]
-  | Ext (n,t)     when nullforeign -> [ Data.INT 0L ]
+  | Ext ((n,i),t) when nullforeign -> [ Data.INT 0L ]
   | Var (n,i)     -> [ Data.INT (List.assoc i !ids) ]
   | Rec ((n,i),t) -> let id = save n t in ids := (i, id) :: !ids; [ Data.INT id ]
-  | Ext (n,t)     -> let id = save n t in [ Data.INT id ]
+  | Ext ((n,i),t) -> let id = save n t in [ Data.INT id ]
 
   (* Recursively save all the sub-rows in the dabatabse *)
   and save ?id n = function
@@ -87,7 +87,7 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Rec ((n,i),t) ->
     let id = process_row n (field_names n t) (field_values ~nullforeign:true n t) in
     process_row n ~id (field_names n t) (field_values n t)
-  | Ext (n,t)     -> process_row n (field_names n t) (field_values n t)
+  | Ext ((n,i),t) -> process_row n (field_names n t) (field_values n t)
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
  in

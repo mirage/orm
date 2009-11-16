@@ -198,7 +198,9 @@ module Value_of = struct
 		let id, pid = new_id _loc in
 		<:binding< $lid:value_of_aux name$ = fun __env__ -> fun $pid$ ->
 			let module V = Value in
-			match $create names id ctyp$ with [ V.Rec ((n,_),_) as x when n = $str:name$ -> x | x -> V.Ext ($str:name$, x) ]
+			match $create names id ctyp$ with [
+              V.Rec ((n,_),_) as x when n = $str:name$ -> x 
+            | x -> let __id__ = __env__.Deps.__new_id__ () in V.Ext (($str:name$, __id__), x) ]
 		>>
 
 	let gen tds =
