@@ -93,7 +93,5 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
   in
-  Printf.printf "Saving(%s) - id = %s\n%!" (Value.to_string t) (match id with None -> "none " | Some i -> Int64.to_string i);
-  let id = save ?id "" t in
-  Printf.printf "Saved(%s) - id = %Ld\n%!" (Value.to_string t) id;
-  id
+  save ?id "" t
+
