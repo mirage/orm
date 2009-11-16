@@ -38,21 +38,21 @@ let save_value ~env ~db ?id (t : Value.t) =
 
   (* Insert/update a specific row in a specific table *)
   let process_row ?id table_name field_names field_values =
-    let op_name, id_str, field_values = match id with
-      | None    -> "INSERT", "", field_values
-      | Some id -> "UPDATE", " WHERE __id__=?", field_values @ [ Data.INT id ] in
-    let qmarks = List.map (fun _ -> "?") field_names in
-    let sql = sprintf "%s INTO %s (%s) VALUES (%s)%s"
-      op_name table_name
-      (String.concat "," field_names)
-      (String.concat "," qmarks)
-      id_str in
+    let sql, binds = match id with
+    | None    ->
+      let qmarks = List.map (fun _ -> "?") field_names in
+      sprintf "INSERT INTO %s (%s) VALUES (%s)" table_name (String.concat "," field_names) (String.concat "," qmarks),
+      field_values
+    | Some id ->
+      let fields = List.map (fun n -> sprintf "%s=?" n) field_names in
+      sprintf "UPDATE %s SET %s WHERE __id__=?" table_name (String.concat "," fields),
+      ( field_values @ [ Data.INT id ] ) in
     debug env `Sql "save" sql;
     let stmt = prepare db.db sql in
     list_iteri (fun i v ->
       debug env `Bind "save" (string_of_data v);
       db_must_bind db stmt (i+1) v
-      ) field_values;
+      ) binds;
     db_must_step db stmt;
     match id with
     | None    -> last_insert_rowid db.db 
@@ -82,14 +82,18 @@ let save_value ~env ~db ?id (t : Value.t) =
   (* Recursively save all the sub-rows in the dabatabse *)
   and save ?id n = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _ as f
-                  -> process_row n (field_names n f) (field_values n f)
+                  -> process_row ?id n (field_names n f) (field_values n f)
   | Enum t        -> process_error (Enum t) "TODO" (* begin match id with None -> assert false | Some id -> process n ("__idx__" :: field_names n t) (id :: field_values n t) end *)
   | Rec ((n,i),t) ->
-    let id = process_row n (field_names n t) (field_values ~nullforeign:true n t) in
-    process_row n ~id (field_names n t) (field_values n t)
-  | Ext ((n,i),t) -> process_row n (field_names n t) (field_values n t)
+    let id = match id with
+      | None    -> process_row ?id n (field_names n t) (field_values ~nullforeign:true n t)
+      | Some id -> id in
+    process_row ~id n (field_names n t) (field_values n t)
+  | Ext ((n,i),t) -> process_row ?id n (field_names n t) (field_values n t)
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
- in
-
-  save "" t
+  in
+  Printf.printf "Saving(%s) - id = %s\n%!" (Value.to_string t) (match id with None -> "none " | Some i -> Int64.to_string i);
+  let id = save ?id "" t in
+  Printf.printf "Saved(%s) - id = %Ld\n%!" (Value.to_string t) id;
+  id
