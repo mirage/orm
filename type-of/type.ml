@@ -29,6 +29,21 @@ type t =
   | Arrow of t * t
   | Ext of string * t
 
+(* Check whether a struct is mutable *)
+let is_mutable t =
+  let rec aux = function
+    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> false
+    | Enum t    -> aux t
+    | Tuple tl  -> List.exists aux tl
+    | Dict tl   -> List.exists (fun (_,m,t) -> m = `M || aux t) tl
+    | Sum tl    -> List.exists (fun (_,tl) -> List.exists aux tl) tl
+    | Option t  -> aux t
+    | Rec (n,t) -> aux t
+    | Var n     -> false
+    | Arrow _   -> false
+    | Ext (n,t) -> aux t in
+  aux t
+
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
   let rec aux accu = function
@@ -234,3 +249,4 @@ let rec of_string s : t  = match s.[0] with
     | _ -> parse_error s
     end
   | _   -> parse_error s
+

@@ -114,8 +114,17 @@ let save_binding (_loc, n, t) =
 (* TODO: find a generic way to build the args valid here *)
 let get_binding (_loc, n, t) =
   <:binding< $lid:get n$ =
-    fun ~db ->
-      List.map Deps.$lid:P4_value.of_value n$ (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+    if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
+      fun ~db ->
+        List.map
+         (fun (_,v) -> Deps.$lid:P4_value.of_value n$ v)
+         (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+    ) else (
+      fun ~db ->
+        List.map
+          (fun (id,v) -> try db.OS.cache.Deps.$lid:P4_weakid.of_weakid n$ id with [ Not_found -> Deps.$lid:P4_value.of_value n$ v ])
+          (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+    )
   >>
 
 let delete_binding (_loc, n, t) =

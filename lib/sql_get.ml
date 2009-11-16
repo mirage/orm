@@ -62,14 +62,14 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
     V.Sum (r, List.rev row), n
   | T.Rec(r, t), Data.INT i  ->
     begin match get_values ~env ~db ~id:i t with
-    | [v] when List.mem (r,id) (V.free_vars v) -> V.Rec ((r, i), v), n + 1
-    | [v]                                      -> V.Ext ((r, i), v), n + 1
-    | _   -> failwith "TODO:1"
+    | [_,v] when List.mem (r,id) (V.free_vars v) -> V.Rec ((r, i), v), n + 1
+    | [_,v]                                      -> V.Ext ((r, i), v), n + 1
+    | _                                          -> failwith "TODO:1"
     end
   | T.Ext(e,t), Data.INT i   ->
     begin match get_values ~env ~db ~id:i t with
-    | [v] -> V.Ext ((e, i), v), n + 1
-    | _   -> failwith "TODO:2"
+    | [_,v] -> V.Ext ((e, i), v), n + 1
+    | _     -> failwith "TODO:2"
     end
   | T.Var v   , Data.INT i   -> V.Var (v, i), n + 1
   | _ when skip              -> V.Null, n + 1
@@ -88,9 +88,9 @@ and get_values ~env ~db ?id t =
       let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
       let r, _ = parse_row ~env ~db ~id t row 1 in
       if List.mem (n, id) (V.free_vars r) then
-        V.Rec ((n,id),r)
+        id, V.Rec ((n,id),r)
       else
-        V.Ext ((n,id),r))
+        id, V.Ext ((n,id),r))
 
   in
   match t with
