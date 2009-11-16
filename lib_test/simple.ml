@@ -50,7 +50,7 @@ let test_subtype () =
       foo: int64;
     } with orm (debug: all)
   end in
-  let db = open_db ~rm:false A.x_init name in
+  let db = open_db ~rm:false A.x_init_read_only name in
   let i = A.x_get db in
   "2 in db" @? (List.length i = 1);
   let i = List.hd i in
