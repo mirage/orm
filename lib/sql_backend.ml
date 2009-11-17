@@ -148,7 +148,6 @@ let string_of_data = function
   | Data.BLOB _  -> "<blob>"
 
 module Name = struct
-  let enum_table n = sprintf "%s__enum" n
   let tuple_field n i = sprintf "%s__%i" n i
   let sum_field n r i = sprintf "%s__%s__%i" n r i
   let dict_field n f = if n = "" then f else sprintf "%s__%s" n f
@@ -164,6 +163,8 @@ let with_valid_type fn t =
   match t with
   | T.Ext (v, t) | T.Rec (v, t) -> fn v t
   | _                           -> not_valid_type t
+
+let get_internal_type = with_valid_type (fun name t -> t)
 
 (* Build up the list of fields from a Type.t *)
 let field_names_of_type ~id t =
@@ -192,29 +193,38 @@ let field_types_of_type ~id t =
     | T.Arrow _  -> [ "BLOB" ]
     | T.Tuple tl -> List.fold_left (fun accu t -> accu @ aux t) [] tl
     | T.Dict tl  -> List.fold_left (fun accu (_,_,t) -> accu @ aux t) [] tl
-    | T.Sum tl   -> "TEXT" :: List.fold_left (fun accu (_,tl) -> accu @ List.fold_left (fun accu t -> accu @ aux t) accu tl) [] tl
+    | T.Sum tl   -> "TEXT" :: List.fold_left (fun accu (_,tl) -> accu @ List.fold_left (fun accu t -> accu @ aux t) [] tl) [] tl
     | T.Option t -> "INTEGER" :: aux t in
   if id then "INTEGER" :: aux t else aux t
 
-(* Return the sub-tables for a Type.t *)
+(* Return the sub-tables for a Type.t and the links between them *)
 let subtables_of_type t =
   let module T = Type in
-  let rec aux name = function 
+  let (>>) (l1, l2) (l3, l4) = ( l1 @ l3, l2 @ l4 ) in
+  let rec aux ?parent name ((tables,_) as accu) = function
     | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
     | T.Float | T.String | T.Arrow _
-                  -> []
-    | T.Option t  -> aux name t
-    | T.Tuple tl  -> List.fold_left (fun accu t -> accu @ aux name t) [] tl
-    | T.Dict tl   -> List.fold_left (fun accu (_,_,t) -> accu @ aux name t) [] tl
-    | T.Sum tl    -> List.fold_left (fun accu (_,tl) -> List.fold_left (fun accu t -> accu @ aux name t) accu tl) [] tl
-    | T.Var v     -> []
-    | T.Rec (v,t)
-    | T.Ext (v,t) -> (v, t) :: aux v t 
-    | T.Enum t    -> (Name.enum_table name, t) :: aux (Name.enum_table name) t in
-  aux "" t
+                  -> accu
+    | T.Option t  -> aux ?parent name accu t
+    | T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent (Name.tuple_field name i) accu t) accu tl
+    | T.Dict tl   ->
+        List.fold_left (fun accu (n,_,t) -> aux ?parent (Name.dict_field name n) accu t) accu tl
+    | T.Sum tl    ->
+      List.fold_left (fun accu (r,tl) ->
+        list_foldi (fun accu i t -> aux ?parent (Name.sum_field name r i) accu t) accu tl
+        ) accu tl
+    | T.Var v     -> ( [], [name, v] ) >> accu
+    | T.Rec (v,s)
+    | T.Ext (v,s) as t ->
+      let res = ( [v, Type.unroll tables t], match parent with None -> [] | Some p -> [p, v] ) in
+      if List.mem_assoc v tables then accu else aux ~parent:v v (res >> accu) s
+    | T.Enum s    as t ->
+      let res = ( [name, Type.unroll tables t], match parent with None -> failwith "TODO:1" | Some p -> [p, name] ) in
+      res >> (aux ~parent:name name accu s) in
+  aux "" ([], []) t
 
 (* Build up the list of fields from a Value.t *)
-let field_names_of_value ~id t =
+let field_names_of_value ~id v =
   let module V = Value in
   let rec aux name = function
     | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
@@ -222,5 +232,5 @@ let field_names_of_value ~id t =
     | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
     | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) [] tl in
-  if id then "__id__" :: aux "" t else aux "" t
-  
+  if id then "__id__" :: aux "" v else aux "" v
+

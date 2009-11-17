@@ -27,6 +27,7 @@ let process_error t s =
   raise (Sql_process_error (t,s))
 
 let save_value ~env ~db ?id (t : Value.t) =
+Printf.printf "Saving %s\n%!" (Value.to_string t);
 
   (* Insert/update a specific row in a specific table *)
   let process_row ?id table_name field_names field_values =
@@ -60,16 +61,16 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Float f       -> [ Data.FLOAT f ]
   | String s      -> [ Data.TEXT s ]
   | Arrow a       -> [ Data.BLOB a ]
-  | Enum tl       -> let id = save (Name.enum_table name) (Enum tl) in [ Data.INT id ]
+  | Enum tl       -> let id = save name (Enum tl) in [ Data.INT id ]
   | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values (Name.tuple_field name i) t) [] tl
   | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values (Name.dict_field name n) t) [] tl
   | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values (Name.sum_field name r i) t) [] tl
   | Var (n,i)     when nullforeign -> [ Data.INT 0L ]
-  | Rec ((n,i),t) when nullforeign -> [ Data.INT 0L ]
-  | Ext ((n,i),t) when nullforeign -> [ Data.INT 0L ]
+  | Rec ((n,i),_) when nullforeign -> [ Data.INT 0L ]
+  | Ext ((n,i),_) when nullforeign -> [ Data.INT 0L ]
   | Var (n,i)     -> [ Data.INT (List.assoc i !ids) ]
-  | Rec ((n,i),t) -> let id = save n t in ids := (i, id) :: !ids; [ Data.INT id ]
-  | Ext ((n,i),t) -> let id = save n t in [ Data.INT id ]
+  | Rec ((n,i),_) as t -> let id = save n t in ids := (i, id) :: !ids; [ Data.INT id ]
+  | Ext ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
 
   (* Recursively save all the sub-rows in the dabatabse *)
   and save ?id n = function
