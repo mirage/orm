@@ -132,8 +132,9 @@ let is_subtype_of (t1:t) (t2:t) =
       | Option tt  , _          -> tt <: s
       | Tuple ts   , Tuple ss   -> List.for_all2 (<:) ts ss
       | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,m,y2) -> m=m && x1=x2 && y1 <: y2) ss) ts
-      | Sum ts     , Sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
-
+      | Sum ts     , Sum ss     ->
+        List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
+        && List.for_all (fun (x1,_) -> List.exists (fun (x2,_) -> x1=x2) ss) ts (* TODO: this can be improved later *)
       | Unit, Unit
       | Int, Int
       | Int32, Int32 | Int32, Int

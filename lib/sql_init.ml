@@ -54,10 +54,13 @@ let init_and_check_types_table ~mode ~env ~db tables =
       db_must_step db stmt
     | [] -> ()
     | [Data.TEXT x] ->
-      if not (t <: (Type.of_string x)) then
+      if not (t <: (Type.of_string x)) then begin
+        Printf.printf "%s\n%!" (string_of_last_type_error ());
         raise (Type.Subtype_error (Type.to_string t, x));
-      if mode = `RW && not (Type.of_string x <: t) then
+      end else if mode = `RW && not (Type.of_string x <: t) then begin
+        Printf.printf "%s\n%!" (string_of_last_type_error ());
         raise (Type.Subtype_error (x, Type.to_string t));
+      end
     | _ -> process_error t "create_types_table:1" in
   
   List.iter process tables
