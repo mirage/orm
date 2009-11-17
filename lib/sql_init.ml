@@ -100,15 +100,21 @@ let init_links_table ~mode ~env ~db t table_links =
 let create_tables ~mode ~env ~db tables =
 
   let process (name, t) =
-    let t_internal = get_internal_type t in
-    let field_names = field_names_of_type ~id:false t_internal in
+    let t_internal = if is_enum t then get_enum_type t else get_internal_type t in
+    let t_name = if is_enum t then name else "" in
+    let field_names = field_names_of_type ~id:false ~name:t_name t_internal in
     let field_types = field_types_of_type ~id:false t_internal in
     let fields = List.map2 (sprintf "%s %s") field_names field_types in
-    let extra = match t with Enum _ -> "__idx__ INT, PRIMARY KEY (__id__, __idx___), " | _ -> "" in
+    let extra = if is_enum t then "__idx__ INTEGER, " else "" in
     let sql =
-      sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ INTEGER PRIMARY KEY AUTOINCREMENT, %s%s)" name extra (String.concat "," fields) in
+      sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ INTEGER PRIMARY KEY AUTOINCREMENT, %s%s);" name extra (String.concat "," fields) in
     debug env `Sql "init" sql;
-	db_must_ok db (fun () -> exec db.db sql) in
+	db_must_ok db (fun () -> exec db.db sql);
+    if is_enum t then begin
+      let sql = sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_enum ON %s (__id__,__idx__);" name name in
+      debug env `Sql "init" sql;
+      db_must_ok db (fun () -> exec db.db sql)
+    end in
 
   if mode = `RW then List.iter process tables
 
