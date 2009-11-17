@@ -72,6 +72,7 @@ let save_value ~env ~db ?id (t : Value.t) =
   let ids = ref [] in
   let rec field_values ?(nullforeign=false) name = function
   | Null          -> [ Data.INT 0L ]
+  | Value v       -> Data.INT 1L :: field_values ~nullforeign name v
   | Int i         -> [ Data.INT i ]
   | Bool b        -> if b then [ Data.INT 1L ] else [ Data.INT 0L ]
   | Float f       -> [ Data.FLOAT f ]
@@ -91,7 +92,7 @@ let save_value ~env ~db ?id (t : Value.t) =
 
   (* Recursively save all the sub-rows in the dabatabse *)
   and save ?id name = function
-  | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _ as f
+  | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _  | Value _ as f
                   -> process_row ?id name (field_names_of_value ~id:false ~name f) (field_values name f)
   | Enum tl       -> process_enum_rows ?id name (field_names_of_value ~id:false ~name t) (List.map (field_values name) tl)
   | Rec ((n,i),t) ->
