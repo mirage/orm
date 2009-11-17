@@ -22,11 +22,11 @@ open Sql_backend
 module T = Type
 module V = Value
 
-exception Sql_process_error of Data.t * string
+exception Sql_process_error of T.t * Data.t * string
 
-let process_error t s =
-  Printf.printf "ERROR(%s): %s\n%!" s (string_of_data t);
-  raise (Sql_process_error (t,s))
+let process_error v d s =
+  Printf.printf "ERROR(%s): %s - %s\n%!" s (T.to_string v) (string_of_data d);
+  raise (Sql_process_error (v, d, s))
 
 (* Build up the list of fields actually needed to save the row *)
 let rec parse_row ~env ~db ?(skip=false) ~id t row n =
@@ -40,7 +40,7 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
   | T.Bool    , Data.INT 1L  -> V.Bool true, n + 1
   | T.Float   , Data.FLOAT f -> V.Float f, n + 1
   | T.String  , Data.TEXT t  -> V.String t, n + 1
-  | T.Enum t  , Data.INT i   -> failwith "TODO"
+  | T.Enum t  , Data.INT _   -> process_error t row.(n) "TODO:1 (enum_get)"
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
   | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~id t row (n + 1) in (if r=0L then V.Null else res), j
   | T.Tuple tl, _            ->
@@ -60,20 +60,22 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
         ) (accu, i) tl)
       ([], n) tl in
     V.Sum (r, List.rev row), n
-  | T.Rec(r, t), Data.INT i  ->
-    begin match get_values ~env ~db ~id:i t with
+  | T.Rec(r, s), Data.INT i  ->
+    begin match get_values ~env ~db ~id:i s with
     | [_,v] when List.mem (r,id) (V.free_vars v) -> V.Rec ((r, i), v), n + 1
     | [_,v]                                      -> V.Ext ((r, i), v), n + 1
-    | _                                          -> failwith "TODO:1"
+    | []                                         -> process_error t row.(n) "No value found"
+    | _                                          -> process_error t row.(n) "Too many values found"
     end
-  | T.Ext(e,t), Data.INT i   ->
-    begin match get_values ~env ~db ~id:i t with
+  | T.Ext(e, s), Data.INT i  ->
+    begin match get_values ~env ~db ~id:i s with
     | [_,v] -> V.Ext ((e, i), v), n + 1
-    | _     -> failwith "TODO:2"
+    | []    -> process_error t row.(n) "No value found"
+    | _     -> process_error t row.(n) "Too many values found"
     end
   | T.Var v   , Data.INT i   -> V.Var (v, i), n + 1
   | _ when skip              -> V.Null, n + 1
-  | _                        -> failwith "TODO:3"
+  | _                        -> process_error t row.(n) "unknown"
 
 and get_values ~env ~db ?id t =
 
