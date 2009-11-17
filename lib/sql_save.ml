@@ -27,7 +27,6 @@ let process_error t s =
   raise (Sql_process_error (t,s))
 
 let save_value ~env ~db ?id (t : Value.t) =
-Printf.printf "Saving %s\n%!" (Value.to_string t);
 
   (* Insert/update a specific row in a specific table *)
   let process_row ?id table_name field_names field_values =
