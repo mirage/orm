@@ -51,6 +51,23 @@ let save_value ~env ~db ?id (t : Value.t) =
     | Some id -> id
     in
 
+  (* Insert a collection of rows in a specific table *)
+  let process_enum_rows ?id table_name field_names field_values_enum =
+	let aux field_values others =
+      let id = process_row table_name field_names field_values in
+      let sql = sprintf "UPDATE %s SET __idx__=%Ld WHERE __id__=%Ld" table_name id id in
+      debug env `Sql "save" sql;
+      db_must_ok db (fun () -> exec db.db sql);
+      List.iter (fun field_values ->
+        let (_:int64) = process_row table_name ("__idx__" :: field_names) (Data.INT id :: field_values) in ()
+        ) others;
+      id in
+
+    match id, field_values_enum with
+    | _      , []     -> failwith "TODO"
+    | None   , h :: t -> aux h t
+    | Some id, h :: t -> aux h t in (* TODO: need to be optimized later to reuse the elements which are equal *)
+
   (* Build up the list of values which are composing the row *)
   let ids = ref [] in
   let rec field_values ?(nullforeign=false) name = function
@@ -60,6 +77,7 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Float f       -> [ Data.FLOAT f ]
   | String s      -> [ Data.TEXT s ]
   | Arrow a       -> [ Data.BLOB a ]
+  | Enum []       -> [ Data.NULL ]
   | Enum tl       -> let id = save name (Enum tl) in [ Data.INT id ]
   | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values (Name.tuple_field name i) t) [] tl
   | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values (Name.dict_field name n) t) [] tl
@@ -72,12 +90,12 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Ext ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
 
   (* Recursively save all the sub-rows in the dabatabse *)
-  and save ?id n = function
+  and save ?id name = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _ as f
-                  -> process_row ?id n (field_names_of_value false f) (field_values n f)
-  | Enum t        -> process_error (Enum t) "TODO" (* begin match id with None -> assert false | Some id -> process n ("__idx__" :: field_names n t) (id :: field_values n t) end *)
+                  -> process_row ?id name (field_names_of_value ~id:false ~name f) (field_values name f)
+  | Enum tl       -> process_enum_rows ?id name (field_names_of_value ~id:false ~name t) (List.map (field_values name) tl)
   | Rec ((n,i),t) ->
-    let field_names = field_names_of_value ~id:false t in
+    let field_names = field_names_of_value ~id:false ~name t in
     let id = match id with
       | None    -> process_row ?id n field_names (field_values ~nullforeign:true n t)
       | Some id -> id in
