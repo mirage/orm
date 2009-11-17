@@ -105,7 +105,7 @@ let gen tds =
     | Char       -> <:expr< T.Char >>
     | String     -> <:expr< T.String >>
     | Option t   -> <:expr< T.Option $aux t$ >>
-    | Tuple tl   -> <:expr< T.Tuple $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> tl$ >>
+    | Tuple tl   -> <:expr< T.Tuple $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> (List.rev tl)$ >>
     | Enum t     -> <:expr< T.Enum $aux t$ >>
     | Sum ts     -> 
       let rec fn accu = function
