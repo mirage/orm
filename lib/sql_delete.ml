@@ -20,10 +20,10 @@ open Sqlite3
 open Sql_backend
 open Value
 
-let delete_value ~env ~db (id : int64) v =
+let delete_value ~env ~db ~id v =
 
   let process table id =
-    let sql = "DELETE FROM %s WHERE __id__=?" in
+    let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
     debug env `Sql "delete" sql;
     let stmt = prepare db.db sql in
     debug env `Bind "delete" (Int64.to_string id);
@@ -32,12 +32,12 @@ let delete_value ~env ~db (id : int64) v =
 
   let rec aux ?name id v = match v, name with
     | Null, _ | Int _, _ | Bool _, _ | Float _, _ | String _, _ | Arrow _, _ | Enum _, None | Var _, _ -> ()
-    | Enum t    , Some n    -> process (Name.enum_table n) id
+    | Enum t    , Some n    -> process n id
     | Ext ((n,i),v), _
     | Rec ((n,i),v), _      -> process n id; aux ~name:n i v
-    | Sum (_,tl), Some name -> List.iter (aux ~name id) tl
-    | Dict tl   , Some name -> List.iter (fun (_,t) -> aux ~name id t) tl
-    | Tuple tl  , Some name -> List.iter (aux ~name id) tl
+    | Sum (r,tl), Some name -> list_iteri (fun i t -> aux ~name:(Name.sum_field name r i) id t) tl
+    | Dict tl   , Some name -> List.iter (fun (n,t) -> aux ~name:(Name.dict_field name n) id t) tl
+    | Tuple tl  , Some name -> list_iteri (fun i t -> aux ~name:(Name.tuple_field name i) id t) tl
     | _                     -> failwith "TODO:5" in
 
   aux id v

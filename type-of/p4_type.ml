@@ -105,19 +105,19 @@ let gen tds =
     | Char       -> <:expr< T.Char >>
     | String     -> <:expr< T.String >>
     | Option t   -> <:expr< T.Option $aux t$ >>
-    | Tuple tl   -> <:expr< T.Tuple $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> tl$ >>
+    | Tuple tl   -> <:expr< T.Tuple $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> (List.rev tl)$ >>
     | Enum t     -> <:expr< T.Enum $aux t$ >>
     | Sum ts     -> 
       let rec fn accu = function
       | []          -> accu
       | (n, t) :: l -> <:expr< [ ( $str:n$, $List.fold_left (fun accu x -> <:expr< [ $aux x$ :: $accu$ ] >>) <:expr< [] >> t$ ) :: $fn accu l$ ] >> in
-      <:expr< T.Sum $fn <:expr< [] >> ts$ >>
+      <:expr< T.Sum $fn <:expr< [] >> (List.rev ts)$ >>
     | Dict ts    ->
       let rec fn accu = function
       | []              -> accu
       | (n, `M, t) :: l -> <:expr< [ ($str:n$, `M, $aux t$) :: $fn accu l$ ] >>
       | (n, `I, t) :: l -> <:expr< [ ($str:n$, `I, $aux t$) :: $fn accu l$ ] >> in
-      <:expr< T.Dict $fn <:expr< [] >> ts$ >>
+      <:expr< T.Dict $fn <:expr< [] >> (List.rev ts)$ >>
     | Arrow(t, s) -> <:expr< T.Arrow( $aux t$, $aux s$ ) >>
     in
     <:binding< $lid:type_of name$ = let module T = Type in $aux t$ >>

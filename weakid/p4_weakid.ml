@@ -24,8 +24,11 @@ let weakid_of n     = "weakid_of_" ^ n
 let of_weakid n     = n ^ "_of_weakid"
 let has_weakid n    = n ^ "_has_weakid"
 let create_weakid n = n ^ "_create_weakid"
+let rm_weakid n     = n ^ "_rm_weakid"
 let set_weakid n    = n ^ "_set_weakid"
+
 let create_weakid_fns n    = n ^ "_create_weakid_fns"
+
 let list_of_ctyp_decl tds =
   let rec aux accu = function
   | Ast.TyAnd (loc, tyl, tyr)      -> aux (aux accu tyl) tyr
@@ -56,7 +59,8 @@ let gen_body envfn name ctyp =
       Wvalues.find wvalues,
       Wkeys.mem wkeys,
       (fun t -> let id = count.val in
-         do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t; count.val := Int64.add count.val 1L; id } ), 
+         do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t; count.val := Int64.add count.val 1L; id } ),
+      (fun t -> try let id = Wkeys.find wkeys t in do { Wkeys.remove wkeys t; Wvalues.remove wvalues id } with [ _ -> () ] ),
       (fun t id -> do { Wkeys.replace wkeys t id; Wvalues.replace wvalues id t } ) )
   >>
 
@@ -68,6 +72,7 @@ let gen_fn envfn (name, ctyp) =
             $lid:of_weakid name$,
             $lid:has_weakid name$,
             $lid:create_weakid name$,
+            $lid:rm_weakid name$,
             $lid:set_weakid name$ ) =
       $lid:create_weakid_fns name$ ()
   >>

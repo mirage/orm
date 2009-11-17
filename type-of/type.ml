@@ -29,6 +29,21 @@ type t =
   | Arrow of t * t
   | Ext of string * t
 
+(* Check whether a struct is mutable *)
+let is_mutable t =
+  let rec aux = function
+    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> false
+    | Enum t    -> aux t
+    | Tuple tl  -> List.exists aux tl
+    | Dict tl   -> List.exists (fun (_,m,t) -> m = `M || aux t) tl
+    | Sum tl    -> List.exists (fun (_,tl) -> List.exists aux tl) tl
+    | Option t  -> aux t
+    | Rec (n,t) -> aux t
+    | Var n     -> false
+    | Arrow _   -> false
+    | Ext (n,t) -> aux t in
+  aux t
+
 (* If there are still some `Var v, then the type is recursive for the type v *)
 let free_vars t =
   let rec aux accu = function
@@ -117,8 +132,9 @@ let is_subtype_of (t1:t) (t2:t) =
       | Option tt  , _          -> tt <: s
       | Tuple ts   , Tuple ss   -> List.for_all2 (<:) ts ss
       | Dict ts    , Dict ss    -> List.for_all (fun (x1,_,y1) -> List.exists (fun (x2,m,y2) -> m=m && x1=x2 && y1 <: y2) ss) ts
-      | Sum ts     , Sum ss     -> List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
-
+      | Sum ts     , Sum ss     ->
+        List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
+        && List.for_all (fun (x1,_) -> List.exists (fun (x2,_) -> x1=x2) ss) ts (* TODO: this can be improved later *)
       | Unit, Unit
       | Int, Int
       | Int32, Int32 | Int32, Int
@@ -234,3 +250,4 @@ let rec of_string s : t  = match s.[0] with
     | _ -> parse_error s
     end
   | _   -> parse_error s
+

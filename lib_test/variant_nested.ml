@@ -2,6 +2,9 @@ TYPE_CONV_PATH "Variant_nested"
 
 type n =
   | Nfour of x
+  | Non of int64
+  | NTwo
+  | Nthree of string
 and x =
   | XONE
   | Xtwo of n
@@ -35,18 +38,18 @@ let test_subtype () =
       | Nthree of string
       | Nfour of x
     and x = 
-      | Xone
+      | XONE
       | Xtwo of n
-      | Xthree of int
+      | Xthree of int32
     and t = {
       bar: n;
       xyz: int64;
     } with orm
   end in
-  let db = open_db ~rm:false A.t_init name in
+  let db = open_db ~rm:false A.t_init_read_only name in
   let ts = A.t_get db in
   "3 in db" @? (List.length ts = 3);
-  let t = List.hd (List.filter (fun t -> t.A.bar = A.Nfour A.Xone) ts) in
+  let t = List.hd (List.filter (fun t -> t.A.bar = A.Nfour A.XONE) ts) in
   "value match" @? (t.A.xyz = 88L)
 
 let suite = [
