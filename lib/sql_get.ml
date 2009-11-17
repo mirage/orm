@@ -58,18 +58,17 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
       List.fold_left (fun (accu, j) t ->
         let res, k = parse_row ~skip:(rn<>r) ~env ~db ~id t row i in (if rn<>r then accu else res :: accu), k
         ) (accu, i) tl)
-      ([], n) tl in
+      ([], n + 1) tl in
     V.Sum (r, List.rev row), n
   | T.Rec(r, s), Data.INT i  ->
-    begin match get_values ~env ~db ~id:i s with
-    | [_,v] when List.mem (r,id) (V.free_vars v) -> V.Rec ((r, i), v), n + 1
-    | [_,v]                                      -> V.Ext ((r, i), v), n + 1
-    | []                                         -> process_error t row.(n) "No value found"
-    | _                                          -> process_error t row.(n) "Too many values found"
+    begin match get_values ~env ~db ~id:i t with
+    | [_,v] -> v, n + 1
+    | []    -> process_error t row.(n) "No value found"
+    | _     -> process_error t row.(n) "Too many values found"
     end
   | T.Ext(e, s), Data.INT i  ->
-    begin match get_values ~env ~db ~id:i s with
-    | [_,v] -> V.Ext ((e, i), v), n + 1
+    begin match get_values ~env ~db ~id:i t with
+    | [_,v] -> v, n + 1
     | []    -> process_error t row.(n) "No value found"
     | _     -> process_error t row.(n) "Too many values found"
     end
@@ -78,13 +77,17 @@ let rec parse_row ~env ~db ?(skip=false) ~id t row n =
   | _                        -> process_error t row.(n) "unknown"
 
 and get_values ~env ~db ?id t =
-
   let process n t =
     let fields = field_names_of_type ~id:true t in
-    let sql = sprintf "SELECT %s FROM %s" (String.concat "," fields) n in
+    let where = match id with None -> "" | Some id -> " WHERE __id__=?" in
+    let sql = sprintf "SELECT %s FROM %s%s" (String.concat "," fields) n where in
     debug env `Sql "get" sql;
     let stmt = prepare db.db sql in
-    (* TODO: binds *)
+    (match id with 
+      | None    -> () 
+      | Some id ->
+        debug env `Bind "get" (Int64.to_string id);
+        db_must_bind db stmt 1 (Data.INT id));
     step_map db stmt (fun stmt ->
       let row = row_data stmt in
       let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
@@ -96,6 +99,7 @@ and get_values ~env ~db ?id t =
 
   in
   match t with
-  | T.Rec (n,t) | T.Ext (n,t) -> process n t
-  | _ -> failwith "TODO"  
+  | T.Rec (n,t)
+  | T.Ext (n,t) -> process n t
+  | _           -> failwith "TODO"  
   
