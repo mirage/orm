@@ -138,7 +138,7 @@ module Value_of = struct
 
 		| <:ctyp< option $t$ >> ->
 			let new_id, new_pid = new_id _loc in
-			<:expr< match $id$ with [ Some $new_pid$ -> $create names new_id t$ | None -> V.Null ] >> 
+			<:expr< match $id$ with [ Some $new_pid$ -> V.Value $create names new_id t$ | None -> V.Null ] >> 
 
 		| <:ctyp< $tup:tp$ >> ->
 			let ctyps = list_of_ctyp tp [] in
@@ -283,7 +283,7 @@ module Of_value = struct
 
 		| <:ctyp< option $t$ >> ->
 			let nid, npid = new_id _loc in
-			<:expr< match $id$ with [ V.Null -> None | $npid$ -> Some $create names nid t$ ] >>
+			<:expr< match $id$ with [ V.Null -> None | V.Value $npid$ -> Some $create names nid t$ | $runtime_error id "Null/Value"$ ] >>
 
 		| <:ctyp< $tup:tp$ >> ->
 			let ctyps = list_of_ctyp tp [] in

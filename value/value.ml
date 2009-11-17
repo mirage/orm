@@ -28,6 +28,7 @@ type t =
 	| Dict of (string * t) list
 	| Sum of string * t list
 	| Null
+	| Value of t
 	| Var of (string * int64)
 	| Rec of (string * int64) * t
 	| Arrow of string
@@ -40,6 +41,7 @@ let free_vars t =
 	| Rec (n,t)  -> aux (List.filter (fun m -> n <> m) accu) t
 	| Var n when List.mem n accu -> accu
 	| Var n      -> n :: accu
+	| Value t     -> aux accu t
 	| Enum tl
 	| Sum (_,tl)
 	| Tuple tl   -> List.fold_left aux accu tl
@@ -53,6 +55,7 @@ let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let rec to_string t = match t with                                                                    
 	| Null       -> "N"
+	| Value t    -> sprintf "?%s" (to_string t)
 	| Int i      -> sprintf "I(%Li)" i
 	| Bool b     -> sprintf "B(%b)" b
 	| Float f    -> sprintf "F(%f)" f
@@ -139,5 +142,6 @@ let rec of_string s =
 		| _ -> parse_error s
 	  end
 	| '#' -> Arrow (String.sub s 1 (String.length s - 1))
+	| '?' -> Value (of_string (String.sub s 1 (String.length s - 1)))
 	| _   -> parse_error s
 
