@@ -153,21 +153,29 @@ module Name = struct
   let dict_field n f = if n = "" then f else sprintf "%s__%s" n f
 end
 
-exception Not_valid_type of Type.t
-let not_valid_type t =
-  Printf.printf "ERROR: %s is not a well-formed type" (Type.to_string t);
-  raise (Not_valid_type t)
+exception Process_error of Type.t * string
+let process_error t s =
+  Printf.printf "ERROR(%s): %s\n%!" (Type.to_string t) s;
+  raise (Process_error (t, s))
 
 let with_valid_type fn t =
   let module T = Type in
   match t with
   | T.Ext (v, t) | T.Rec (v, t) -> fn v t
-  | _                           -> not_valid_type t
+  | _                           -> process_error t "This is not a well-formed type"
+
+let is_enum = function
+  | Type.Enum _ -> true
+  | _           -> false
+
+let get_enum_type = function
+  | Type.Enum t -> t
+  | t           -> process_error t "This is not a enum type"
 
 let get_internal_type = with_valid_type (fun name t -> t)
 
 (* Build up the list of fields from a Type.t *)
-let field_names_of_type ~id t =
+let field_names_of_type ~id ?(name="") t =
   let module T = Type in
   let rec aux name = function
     | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
@@ -179,7 +187,7 @@ let field_names_of_type ~id t =
       "__row__" :: List.fold_left (fun accu (r,tl) ->
         list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) accu tl
         ) [] tl in
-  if id then "__id__" :: aux "" t else aux "" t
+  if id then "__id__" :: aux name t else aux name t
 
 (* Build up the list of field types from a Type.t *)
 let field_types_of_type ~id t =
@@ -224,7 +232,7 @@ let subtables_of_type t =
   aux "" ([], []) t
 
 (* Build up the list of fields from a Value.t *)
-let field_names_of_value ~id v =
+let field_names_of_value ~id ?(name="") v =
   let module V = Value in
   let rec aux name = function
     | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
@@ -232,5 +240,5 @@ let field_names_of_value ~id v =
     | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
     | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) [] tl in
-  if id then "__id__" :: aux "" v else aux "" v
+  if id then "__id__" :: aux name v else aux name v
 
