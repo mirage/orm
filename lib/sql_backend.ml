@@ -24,7 +24,7 @@ let debug env ty n e =
   if (match ty with
 		  |`Sql -> in_env "sql" || in_env "all"
 		  |`Cache -> in_env "cache" || in_env "all"
-		  |`Bind -> in_env "binds" || in_env "all"
+		  |`Bind -> in_env "bind" || in_env "all"
 	 ) then d() else b()
 
 type transaction_mode = [
