@@ -53,6 +53,27 @@ let free_vars t =
 
 let map_strings sep fn l = String.concat sep (List.map fn l)
 
+let equal x y =
+	let rec aux ids x y = match x, y with
+	| Int i       , Int j       -> i=j
+	| Bool i      , Bool j      -> i=j
+	| Float i     , Float j     -> i=j
+	| String i    , String j    -> i=j
+	| Enum i      , Enum j
+	| Tuple i     , Tuple j     -> List.for_all (fun x -> x) (List.map2 (aux ids) i j)
+	| Dict i      , Dict j      ->
+		let fn a b = List.for_all (fun (n,i) -> List.exists (fun (m,j) -> n=m && (aux ids) i j) a) b in
+		fn i j && fn j i
+	| Sum (n,i)   , Sum (m,j)   -> n=m && List.for_all (fun x -> x) (List.map2 (aux ids) i j)
+	| Null        , Null        -> true
+	| Value i     , Value j     -> aux ids i j
+	| Var (n,i)   , Var (m,j)   -> n=m && i = List.assoc j ids
+	| Rec((n,i),v), Rec((m,j),w)-> n=m && aux ( (j,i) :: ids ) v w
+	| Arrow _     , Arrow _     -> true
+	| Ext((n,i),v), Ext((m,j),w)-> n=m && aux ids v w
+	| _                         -> false in
+	aux [] x y
+
 let rec to_string t = match t with                                                                    
 	| Null       -> "N"
 	| Value t    -> sprintf "?%s" (to_string t)
