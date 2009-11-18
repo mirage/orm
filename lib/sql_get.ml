@@ -40,12 +40,9 @@ let rec parse_row ~env ~db ?(skip=false) ~id ~name t row n =
   | T.Bool    , Data.INT 1L  -> V.Bool true, n + 1
   | T.Float   , Data.FLOAT f -> V.Float f, n + 1
   | T.String  , Data.TEXT t  -> V.String t, n + 1
-  | T.Enum t  , Data.INT idx ->
-    let values = get_values ~env ~db ~idx (T.Ext (name, T.Enum t)) in
-    let values = snd (List.split values) in
-    V.Enum values, n + 1
+  | T.Enum t  , Data.INT idx -> V.Enum (get_enum_values ~env ~db ~idx name t), n + 1
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
-  | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~id ~name t row (n + 1) in (if r=0L then V.Null else res), j
+  | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~id ~name t row (n + 1) in (if r=0L then V.Null else V.Value res), j
   | T.Tuple tl, _            ->
     let tuple, n = list_foldi (fun (accu, n1) i t ->
       let res, n2 = parse_row ~env ~db ~id ~name:(Name.tuple_field name i) t row n1 in res :: accu, n2
@@ -79,41 +76,44 @@ let rec parse_row ~env ~db ?(skip=false) ~id ~name t row n =
   | _ when skip              -> V.Null, n + 1
   | _                        -> process_error t row.(n) "unknown"
 
-and get_values ~env ~db ?id ?idx t =
-  let process (name, t) =
-    let t_internal = if is_enum t then get_enum_type t else t in
-    let t_name = if is_enum t then name else "" in
-    let field_names = field_names_of_type ~id:true ~name:t_name t_internal in
-    let where =
-      (match id with None -> "" | Some id -> " WHERE __id__=?") ^
-      (match idx with None -> "" | Some id -> " WHERE __idx__=?") in
-    let sql = sprintf "SELECT %s FROM %s%s" (String.concat "," field_names) name where in
-    debug env `Sql "get" sql;
-    let stmt = prepare db.db sql in
-    let bind = ref 0 in
-    (match id with 
-      | None    -> () 
-      | Some id ->
-        debug env `Bind "get" (Int64.to_string id);
-        db_must_bind db stmt (incr bind; !bind) (Data.INT id));
-    (match idx with
-      | None     -> ()
-      | Some id  ->
-        debug env `Bind "get" (Int64.to_string id);
-        db_must_bind db stmt (incr bind; !bind) (Data.INT id)); 
-    step_map db stmt (fun stmt ->
-      let row = row_data stmt in
-      let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
-      let r, _ = parse_row ~env ~db ~id ~name t row 1 in
-      if is_enum t then
-        id, r
-      else if List.mem (name, id) (V.free_vars r) then
-        id, V.Rec ((name,id),r)
-      else
-        id, V.Ext ((name,id),r))
+and process ?extra ~env ~db ~fn ~constraints name t =
+  let field_names = field_names_of_type ~id:true t in
+  let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
+  let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
+  let extra = match extra with None -> "" | Some e -> sprintf " %s" e in
+  let sql = sprintf "SELECT %s FROM %s%s%s" (String.concat "," field_names) name where extra in
+  debug env `Sql "get" sql;
+  let stmt = prepare db.db sql in
+  let bind = ref 0 in
+  List.iter (function 
+    | (_,_,None  ) -> ()
+    | (_,_,Some v) ->
+        debug env `Bind "get" (string_of_data v);
+        db_must_bind db stmt (incr bind; !bind) v;
+    ) constraints;
+  step_map db stmt fn 
 
-  in
+and get_values ~env ~db ?id t =
+  let aux name s stmt =
+    let row = row_data stmt in
+    let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
+    let r, _ = parse_row ~env ~db ~id ~name s row 1 in
+    if List.mem (name, id) (V.free_vars r) then
+      id, V.Rec ((name,id),r)
+    else
+      id, V.Ext ((name,id),r) in
+  let constraints = match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ] in
   match t with
-  | T.Rec (n, t)
-  | T.Ext (n, t) -> process (n, t)
+  | T.Rec (n, s)
+  | T.Ext (n, s) -> process ~fn:(aux n s) ~env ~db ~constraints n s
   | _            -> failwith "TODO"  
+
+and get_enum_values ~env ~db ~idx name t =
+  let aux stmt =
+    let row = row_data stmt in
+    let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
+    let v, _ = parse_row ~env ~db ~id ~name t row 1 in
+    id, v in
+  let extra = "ORDER BY __id__" in
+  let constraints = [ "__idx__", "=", Some (Data.INT idx) ] in
+  snd (List.split (process ~extra ~fn:aux ~env ~db ~constraints name t))

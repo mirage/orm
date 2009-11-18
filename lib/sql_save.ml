@@ -26,36 +26,34 @@ let process_error t s =
   Printf.printf "ERROR(%s): %s\n%!" s (to_string t);
   raise (Sql_process_error (t,s))
 
-let save_value ~env ~db ?id (t : Value.t) =
+let save_value ~env ~db (t : Value.t) =
 
   (* Insert/update a specific row in a specific table *)
-  let process_row ?id table_name field_names field_values =
-    let sql, binds = match id with
-    | None    ->
-      let qmarks = List.map (fun _ -> "?") field_names in
-      sprintf "INSERT INTO %s (%s) VALUES (%s)" table_name (String.concat "," field_names) (String.concat "," qmarks),
-      field_values
-    | Some id ->
-      let fields = List.map (fun n -> sprintf "%s=?" n) field_names in
-      sprintf "UPDATE %s SET %s WHERE __id__=?" table_name (String.concat "," fields),
-      ( field_values @ [ Data.INT id ] ) in
-    debug env `Sql "save" sql;
-    let stmt = prepare db.db sql in
-    list_iteri (fun i v ->
-      debug env `Bind "save" (string_of_data v);
-      db_must_bind db stmt (i+1) v
-      ) binds;
-    db_must_step db stmt;
-    match id with
-    | None    -> last_insert_rowid db.db 
-    | Some id -> id
-    in
+  let process_row table_name field_names field_values =
+    let aux sql fn = 
+      debug env `Sql "save" sql;
+      let stmt = prepare db.db sql in
+      list_iteri (fun i v ->
+        debug env `Bind "save" (string_of_data v);
+        db_must_bind db stmt (i+1) v
+      ) field_values;
+      fn stmt in
+
+    let qmarks = List.map (fun _ -> "?") field_names in
+    let constraints = List.map (fun f -> sprintf "%s=?" f) field_names in
+    let insert = sprintf "INSERT INTO %s (%s) VALUES (%s);" table_name (String.concat "," field_names) (String.concat "," qmarks) in
+    let select = sprintf "SELECT __id__ FROM %s WHERE %s;" table_name (String.concat " AND " constraints) in
+
+    match aux select (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
+    | [Data.INT i ] -> i
+    | []            -> aux insert (fun stmt -> db_must_step db stmt); last_insert_rowid db.db
+    | ds            -> process_error t (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
 
   (* Insert a collection of rows in a specific table *)
-  let process_enum_rows ?id table_name field_names field_values_enum =
+  let process_enum_rows table_name field_names field_values_enum =
 	let aux field_values others =
       let id = process_row table_name field_names field_values in
-      let sql = sprintf "UPDATE %s SET __idx__=%Ld WHERE __id__=%Ld" table_name id id in
+      let sql = sprintf "UPDATE %s SET __idx__=%Ld WHERE __id__=%Ld;" table_name id id in
       debug env `Sql "save" sql;
       db_must_ok db (fun () -> exec db.db sql);
       List.iter (fun field_values ->
@@ -63,10 +61,9 @@ let save_value ~env ~db ?id (t : Value.t) =
         ) others;
       id in
 
-    match id, field_values_enum with
-    | _      , []     -> failwith "TODO"
-    | None   , h :: t -> aux h t
-    | Some id, h :: t -> aux h t in (* TODO: need to be optimized later to reuse the elements which are equal *)
+    match field_values_enum with
+    | []     -> failwith "TODO"
+    | h :: t -> aux h t in
 
   (* Build up the list of values which are composing the row *)
   let ids = ref [] in
@@ -87,23 +84,22 @@ let save_value ~env ~db ?id (t : Value.t) =
   | Rec ((n,i),_) when nullforeign -> [ Data.INT 0L ]
   | Ext ((n,i),_) when nullforeign -> [ Data.INT 0L ]
   | Var (n,i)     -> [ Data.INT (List.assoc i !ids) ]
-  | Rec ((n,i),_) as t -> let id = save n t in ids := (i, id) :: !ids; [ Data.INT id ]
+  | Rec ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
   | Ext ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
 
   (* Recursively save all the sub-rows in the dabatabse *)
-  and save ?id name = function
+  and save name = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _  | Value _ as f
-                  -> process_row ?id name (field_names_of_value ~id:false ~name f) (field_values name f)
-  | Enum tl       -> process_enum_rows ?id name (field_names_of_value ~id:false ~name t) (List.map (field_values name) tl)
+                  -> process_row name (field_names_of_value ~id:false f) (field_values name f)
+  | Enum tl       -> process_enum_rows name (field_names_of_value ~id:false t) (List.map (field_values name) tl)
   | Rec ((n,i),t) ->
-    let field_names = field_names_of_value ~id:false ~name t in
-    let id = match id with
-      | None    -> process_row ?id n field_names (field_values ~nullforeign:true n t)
-      | Some id -> id in
-    process_row ~id n field_names (field_values n t)
-  | Ext ((n,i),t) -> process_row ?id n (field_names_of_value ~id:false t) (field_values n t)
+    let field_names = field_names_of_value ~id:false t in
+    let id = process_row n field_names (field_values ~nullforeign:true n t) in
+    ids := (i, id) :: !ids;
+    process_row n field_names (field_values n t)
+  | Ext ((n,i),t) -> process_row n (field_names_of_value ~id:false t) (field_values n t)
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
   in
-  save ?id "" t
+  save "" t
 

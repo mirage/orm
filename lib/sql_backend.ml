@@ -24,7 +24,7 @@ let debug env ty n e =
   if (match ty with
 		  |`Sql -> in_env "sql" || in_env "all"
 		  |`Cache -> in_env "cache" || in_env "all"
-		  |`Bind -> in_env "binds" || in_env "all"
+		  |`Bind -> in_env "bind" || in_env "all"
 	 ) then d() else b()
 
 type transaction_mode = [
@@ -175,11 +175,11 @@ let get_enum_type = function
 let get_internal_type = with_valid_type (fun name t -> t)
 
 (* Build up the list of fields from a Type.t *)
-let field_names_of_type ~id ?(name="") t =
+let field_names_of_type ~id t =
   let module T = Type in
   let rec aux name = function
     | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
-                 -> [ name ]
+                 -> [ if name = "" then "__x__" else name ]
     | T.Option t -> sprintf "%s_o" name :: aux name t
     | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict_field name n) t) [] tl
@@ -187,7 +187,7 @@ let field_names_of_type ~id ?(name="") t =
       "__row__" :: List.fold_left (fun accu (r,tl) ->
         list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) accu tl
         ) [] tl in
-  if id then "__id__" :: aux name t else aux name t
+  if id then "__id__" :: aux "" t else aux "" t
 
 (* Build up the list of field types from a Type.t *)
 let field_types_of_type ~id t =
@@ -232,14 +232,14 @@ let subtables_of_type t =
   aux "" ([], []) t
 
 (* Build up the list of fields from a Value.t *)
-let field_names_of_value ~id ?(name="") v =
+let field_names_of_value ~id v =
   let module V = Value in
   let rec aux name = function
     | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
-                   -> [ name ]
+                   -> [ if name = "" then "__x__" else name ]
     | V.Value v    -> sprintf "%s_o" name :: aux name v
     | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
     | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) [] tl in
-  if id then "__id__" :: aux name v else aux name v
+  if id then "__id__" :: aux "" v else aux "" v
 

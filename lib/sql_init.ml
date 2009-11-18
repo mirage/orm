@@ -101,8 +101,7 @@ let create_tables ~mode ~env ~db tables =
 
   let process (name, t) =
     let t_internal = if is_enum t then get_enum_type t else get_internal_type t in
-    let t_name = if is_enum t then name else "" in
-    let field_names = field_names_of_type ~id:false ~name:t_name t_internal in
+    let field_names = field_names_of_type ~id:false t_internal in
     let field_types = field_types_of_type ~id:false t_internal in
     let fields = List.map2 (sprintf "%s %s") field_names field_types in
     let extra = if is_enum t then "__idx__ INTEGER, " else "" in
@@ -134,7 +133,7 @@ let init_custom_indexes ~mode ~env ~db tables =
       | `Unique l -> List.iter (process `U) l
       | `Index l  -> List.iter (process `I) l
 	  | _         -> ()
-      ) env
+      ) env;
   end
 
 let init_tables ~mode ~env ~db t =
