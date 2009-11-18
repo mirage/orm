@@ -186,9 +186,9 @@ module Value_of = struct
 						let __id__ = __env__.Deps.__new_id__ () in
 						let __value__ = $lid:value_of_aux t$ $replace_env _loc names id t$ $id $ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
-							V.Rec (($str:t$, __id__), __value__ )
+							V.Rec (($str:t$, __id__), __value__)
 						else
-							__value__
+							V.Ext (($str:t$, __id__), __value__)
 					end >>
 
 		| _ -> raise (Type_not_supported ctyp)
@@ -197,10 +197,7 @@ module Value_of = struct
 		let _loc = loc_of_ctyp ctyp in
 		let id, pid = new_id _loc in
 		<:binding< $lid:value_of_aux name$ = fun __env__ -> fun $pid$ ->
-			let module V = Value in
-			match $create names id ctyp$ with [
-              V.Rec ((n,_),_) as x when n = $str:name$ -> x 
-            | x -> let __id__ = __env__.Deps.__new_id__ () in V.Ext (($str:name$, __id__), x) ]
+			let module V = Value in $create names id ctyp$
 		>>
 
 	let gen tds =
@@ -213,7 +210,12 @@ module Value_of = struct
 		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:value_of x$ : $lid:x$ -> Value.t) >>) ids)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< fun $lid:x$ -> $lid:value_of_aux x$ $empty_env _loc ids$ $lid:x$ >>) ids)
+		expr_tuple_of_list _loc (List.map (fun x -> <:expr<
+			fun $lid:x$ ->
+				let __env__ = $empty_env _loc ids$ in
+				match $lid:value_of_aux x$ __env__ $lid:x$ with [
+				  Value.Rec _ as x -> x 
+				| x -> Value.Ext (($str:x$, __env__.Deps.__new_id__ ()), x) ] >>) ids)
 
 end
 
@@ -377,12 +379,12 @@ module Of_value = struct
 				else
 					let __value0__ = $default_value _loc ctyp$ in
 					let __env__  = $replace_env _loc names name$ in
-					let __value1__ = $lid:of_value_aux name$ __env__ $nid2$ in
+					let __value1__ = $create names nid2 ctyp$ in 
 					let () = $set_value _loc ctyp$ in
 					__value0__
-                        | V.Ext (n, $npid2$) -> $create names nid2 ctyp$
-                        | $runtime_error nid "Var/Rec/Ext"$ ]
-		>> (* _ -> $create names nid ctyp$ ] *)
+			| V.Ext (n, $npid2$) -> $create names nid2 ctyp$
+			| $runtime_error nid "Var/Rec/Ext"$ ]
+		>>
 
 	let gen tds =
 		let _loc = loc_of_ctyp tds in
