@@ -133,7 +133,7 @@ let init_custom_indexes ~mode ~env ~db tables =
       | `Unique l -> List.iter (process `U) l
       | `Index l  -> List.iter (process `I) l
 	  | _         -> ()
-      ) env
+      ) env;
   end
 
 let init_tables ~mode ~env ~db t =

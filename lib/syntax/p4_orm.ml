@@ -105,13 +105,17 @@ let initRO_binding tds (_loc, n, t) =
 
 let save_binding (_loc, n, t) =
   <:binding< $lid:save n$ =
-    fun ~db -> fun $lid:n$ ->
-      let id = if db.OS.cache.Deps.$lid:P4_weakid.has_weakid n$ $lid:n$ then
-          Some (db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$)
-        else
-          None in
-      let id = Orm.Sql_save.save_value ~env:Deps.env ~db ?id (Deps.$lid:P4_value.value_of n$ $lid:n$) in
-      db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id
+    if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
+      fun ~db -> fun $lid:n$ ->
+        if not (db.OS.cache.Deps.$lid:P4_weakid.has_weakid n$ $lid:n$) then (
+          let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
+          db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id )
+        else ()
+    ) else (
+      fun ~db -> fun $lid:n$ ->
+        let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
+        db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id
+    )
   >> 
 
 (* TODO: find a generic way to build the args valid here *)
@@ -121,9 +125,14 @@ let get_binding (_loc, n, t) =
       fun ~db ->
         List.map
          (fun (id,v) ->
-           let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
-           do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } )
-         (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+           let aux () =
+             let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
+             do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } in
+           try
+             let t = db.OS.cache.Deps.$lid:P4_weakid.of_weakid n$ id in
+             if Value.equal (Deps.$lid:P4_value.value_of n$ t) v then t else aux ()
+           with [ Not_found -> aux () ]
+         ) (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
     ) else (
       fun ~db ->
         List.map
