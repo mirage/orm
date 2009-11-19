@@ -40,10 +40,12 @@ let save_value ~env ~db (v : Value.t) =
   (* Insert/update a specific row in a specific table *)
   let process_row table_name field_names field_values =
     let qmarks = List.map (fun _ -> "?") field_names in
-    let constraints = List.map (fun f -> sprintf "%s=?" f) field_names in
+    let constraints =
+      List.map2 (fun f v -> if v = Data.NULL then sprintf "%s ISNULL" f else sprintf "%s=?" f) field_names field_values in
     let insert = sprintf "INSERT INTO %s (%s) VALUES (%s);" table_name (String.concat "," field_names) (String.concat "," qmarks) in
     let select = sprintf "SELECT __id__ FROM %s WHERE %s;" table_name (String.concat " AND " constraints) in
-    match exec_sql select field_values (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
+    let fn stmt =  step_map db stmt (fun stmt -> column stmt 0) in
+    match exec_sql select (List.filter (fun v -> v <> Data.NULL) field_values) fn with
     | [Data.INT i ] -> i
     | []            -> exec_sql insert field_values (db_must_step db); last_insert_rowid db.db
     | ds            -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
@@ -55,18 +57,28 @@ let save_value ~env ~db (v : Value.t) =
 
   (* Insert a collection of rows in a specific table *)
   let process_enum_rows table_name field_names field_values_enum =
-	let aux field_values others =
-      let id = process_row table_name field_names field_values in
-      let sql = sprintf "UPDATE %s SET __idx__=%Ld WHERE __id__=%Ld;" table_name id id in
-      debug env `Sql "save" sql;
-      db_must_ok db (fun () -> exec db.db sql);
-      List.iter (fun field_values ->
-        let (_:int64) = process_row table_name ("__idx__" :: field_names) (Data.INT id :: field_values) in ()
-        ) others;
-      id in
-    match field_values_enum with
-    | []     -> failwith "TODO"
-    | h :: t -> aux h t in
+    let joints =
+      sprintf "%s as __t0__" table_name ::
+      list_mapi (fun i _ -> sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" table_name (i+1) i (i+1)) field_values_enum in
+    let constraints =
+      List.flatten (list_mapi (fun i _ -> List.map (fun f -> sprintf "__t%i__.%s=?" i f) field_names) field_values_enum) in
+    let select = sprintf "SELECT __t0__.__id__ FROM %s WHERE __t%i__.__next__ ISNULL AND %s;"
+      (String.concat " JOIN " joints)
+      (List.length field_values_enum)
+      (String.concat " AND " constraints) in
+    match exec_sql select [] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
+    | [Data.INT i ] -> i
+    | []            ->
+      let rec aux ?last i = function
+        | []                -> (match last with None -> process_error v "Empy enum" | Some id -> id)
+        | field_values :: t ->
+          let last = match last with None -> Data.NULL | Some id -> Data.INT id in
+          let id = process_row table_name
+            ("__next__" :: "__size__" :: field_names)
+            (last :: Data.INT (Int64.of_int i) :: field_values) in
+          aux ~last:id (i+1) t in
+      aux 0 (List.rev field_values_enum)
+    | ds           -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
 
   (* Build up the list of values which are composing the row *)
   let ids = ref [] in

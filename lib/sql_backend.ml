@@ -179,7 +179,7 @@ let field_names_of_type ~id t =
   let module T = Type in
   let rec aux name = function
     | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
-                 -> [ if name = "" then "__x__" else name ]
+                 -> [ if name = "" then "__contents__" else name ]
     | T.Option t -> sprintf "%s_o" name :: aux name t
     | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict_field name n) t) [] tl
@@ -236,7 +236,7 @@ let field_names_of_value ~id v =
   let module V = Value in
   let rec aux name = function
     | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
-                   -> [ if name = "" then "__x__" else name ]
+                   -> [ if name = "" then "__contents__" else name ]
     | V.Value v    -> sprintf "%s_o" name :: aux name v
     | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
     | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
