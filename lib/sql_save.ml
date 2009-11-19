@@ -27,28 +27,32 @@ let process_error t s =
   raise (Sql_process_error (t,s))
 
 let save_value ~env ~db (v : Value.t) =
+Printf.printf "Saving v=%s\n%!" (Value.to_string v);
+
+  let exec_sql sql binds fn = 
+    debug env `Sql "save" sql;
+    let stmt = prepare db.db sql in
+    list_iteri (fun i v ->
+      debug env `Bind "save" (string_of_data v);
+      db_must_bind db stmt (i+1) v
+    ) binds;
+    fn stmt in
 
   (* Insert/update a specific row in a specific table *)
   let process_row table_name field_names field_values =
-
-    let aux sql fn = 
-      debug env `Sql "save" sql;
-      let stmt = prepare db.db sql in
-      list_iteri (fun i v ->
-        debug env `Bind "save" (string_of_data v);
-        db_must_bind db stmt (i+1) v
-      ) field_values;
-      fn stmt in
-
     let qmarks = List.map (fun _ -> "?") field_names in
     let constraints = List.map (fun f -> sprintf "%s=?" f) field_names in
     let insert = sprintf "INSERT INTO %s (%s) VALUES (%s);" table_name (String.concat "," field_names) (String.concat "," qmarks) in
     let select = sprintf "SELECT __id__ FROM %s WHERE %s;" table_name (String.concat " AND " constraints) in
-
-    match aux select (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
+    match exec_sql select field_values (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
     | [Data.INT i ] -> i
-    | []            -> aux insert (fun stmt -> db_must_step db stmt); last_insert_rowid db.db
+    | []            -> exec_sql insert field_values (db_must_step db); last_insert_rowid db.db
     | ds            -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
+
+  let replace_row table_name id field_names field_values =
+    let field_names = List.map (fun f -> sprintf "%s=?" f) field_names in
+    let replace = sprintf "UPDATE %s SET %s WHERE __id__=%Ld;" table_name (String.concat "," field_names) id in
+    exec_sql replace field_values (db_must_step db) in
 
   (* Insert a collection of rows in a specific table *)
   let process_enum_rows table_name field_names field_values_enum =
@@ -61,7 +65,6 @@ let save_value ~env ~db (v : Value.t) =
         let (_:int64) = process_row table_name ("__idx__" :: field_names) (Data.INT id :: field_values) in ()
         ) others;
       id in
-
     match field_values_enum with
     | []     -> failwith "TODO"
     | h :: t -> aux h t in
@@ -81,9 +84,9 @@ let save_value ~env ~db (v : Value.t) =
   | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.tuple_field name i) t) [] tl
   | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values ~nullforeign (Name.dict_field name n) t) [] tl
   | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.sum_field name r i) t) [] tl
-  | Var (n,i)     when nullforeign -> [ Data.INT 0L ]
-  | Rec ((n,i),_) when nullforeign -> [ Data.INT 0L ]
-  | Ext ((n,i),_) when nullforeign -> [ Data.INT 0L ]
+  | Var (n,i)     when nullforeign -> [ Data.NULL ]
+  | Rec ((n,i),_) when nullforeign -> [ Data.NULL ]
+  | Ext ((n,i),_) when nullforeign -> [ Data.NULL ]
   | Var (n,i)          -> [ Data.INT (List.assoc i !ids) ]
   | Rec ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
   | Ext ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
@@ -97,7 +100,8 @@ let save_value ~env ~db (v : Value.t) =
     let field_names = field_names_of_value ~id:false s in
     let id = process_row n field_names (field_values ~nullforeign:true n s) in
     ids := (i, id) :: !ids;
-    process_row n field_names (field_values n s)
+    replace_row n id field_names (field_values n s);
+    id
   | Ext ((n,i),s) -> process_row n (field_names_of_value ~id:false s) (field_values n s)
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
