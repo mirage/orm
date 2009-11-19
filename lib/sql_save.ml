@@ -27,7 +27,6 @@ let process_error t s =
   raise (Sql_process_error (t,s))
 
 let save_value ~env ~db (v : Value.t) =
-Printf.printf "Saving v=%s\n%!" (Value.to_string v);
 
   let exec_sql sql binds fn = 
     debug env `Sql "save" sql;
