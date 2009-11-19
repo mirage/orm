@@ -104,13 +104,13 @@ let create_tables ~mode ~env ~db tables =
     let field_names = field_names_of_type ~id:false t_internal in
     let field_types = field_types_of_type ~id:false t_internal in
     let fields = List.map2 (sprintf "%s %s") field_names field_types in
-    let extra = if is_enum t then "__idx__ INTEGER, " else "" in
+    let extra = if is_enum t then "__next__ INTEGER,__size__ INTEGER," else "" in
     let sql =
       sprintf "CREATE TABLE IF NOT EXISTS %s (__id__ INTEGER PRIMARY KEY AUTOINCREMENT, %s%s);" name extra (String.concat "," fields) in
     debug env `Sql "init" sql;
 	db_must_ok db (fun () -> exec db.db sql);
     if is_enum t then begin
-      let sql = sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_enum ON %s (__id__,__idx__);" name name in
+      let sql = sprintf "CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_enum ON %s (__id__,__next__);" name name in
       debug env `Sql "init" sql;
       db_must_ok db (fun () -> exec db.db sql)
     end in

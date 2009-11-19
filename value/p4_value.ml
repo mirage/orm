@@ -110,10 +110,7 @@ module Value_of = struct
 			{ $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ ; __new_id__ = __new_id__ } >>
 
 	let replace_env _loc names id t =
-		if List.length names = 1 then
-			<:expr< { Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
-		else
-			<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+		<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
 
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
@@ -184,7 +181,7 @@ module Value_of = struct
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
 						let __id__ = __env__.Deps.__new_id__ () in
-						let __value__ = $lid:value_of_aux t$ $replace_env _loc names id t$ $id $ in
+						let __value__ = $lid:value_of_aux t$ $replace_env _loc names id t$ $id$ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__)
 						else
@@ -213,9 +210,13 @@ module Value_of = struct
 		expr_tuple_of_list _loc (List.map (fun x -> <:expr<
 			fun $lid:x$ ->
 				let __env__ = $empty_env _loc ids$ in
+				let __id__ = __env__.Deps.__new_id__ () in
+				let __env__ = $replace_env _loc ids <:expr< $lid:x$ >> x$ in
 				match $lid:value_of_aux x$ __env__ $lid:x$ with [
-				  Value.Rec _ as x -> x 
-				| x -> Value.Ext (($str:x$, __env__.Deps.__new_id__ ()), x) ] >>) ids)
+				  Value.Rec _ as x -> x
+				| x when ( List.mem ($str:x$, __id__) (Value.free_vars x) ) -> Value.Rec (($str:x$, __id__), x)
+				| x -> Value.Ext (($str:x$, __env__.Deps.__new_id__ ()), x) ] >>
+			) ids)
 
 end
 
