@@ -26,10 +26,11 @@ let process_error t s =
   Printf.printf "ERROR(%s): %s\n%!" s (to_string t);
   raise (Sql_process_error (t,s))
 
-let save_value ~env ~db (t : Value.t) =
+let save_value ~env ~db (v : Value.t) =
 
   (* Insert/update a specific row in a specific table *)
   let process_row table_name field_names field_values =
+
     let aux sql fn = 
       debug env `Sql "save" sql;
       let stmt = prepare db.db sql in
@@ -47,7 +48,7 @@ let save_value ~env ~db (t : Value.t) =
     match aux select (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) with
     | [Data.INT i ] -> i
     | []            -> aux insert (fun stmt -> db_must_step db stmt); last_insert_rowid db.db
-    | ds            -> process_error t (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
+    | ds            -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds))) in
 
   (* Insert a collection of rows in a specific table *)
   let process_enum_rows table_name field_names field_values_enum =
@@ -77,13 +78,13 @@ let save_value ~env ~db (t : Value.t) =
   | Arrow a       -> [ Data.BLOB a ]
   | Enum []       -> [ Data.NULL ]
   | Enum tl       -> let id = save name (Enum tl) in [ Data.INT id ]
-  | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values (Name.tuple_field name i) t) [] tl
-  | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values (Name.dict_field name n) t) [] tl
-  | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values (Name.sum_field name r i) t) [] tl
+  | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.tuple_field name i) t) [] tl
+  | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values ~nullforeign (Name.dict_field name n) t) [] tl
+  | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.sum_field name r i) t) [] tl
   | Var (n,i)     when nullforeign -> [ Data.INT 0L ]
   | Rec ((n,i),_) when nullforeign -> [ Data.INT 0L ]
   | Ext ((n,i),_) when nullforeign -> [ Data.INT 0L ]
-  | Var (n,i)     -> [ Data.INT (List.assoc i !ids) ]
+  | Var (n,i)          -> [ Data.INT (List.assoc i !ids) ]
   | Rec ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
   | Ext ((n,i),_) as t -> let id = save n t in [ Data.INT id ]
 
@@ -91,15 +92,15 @@ let save_value ~env ~db (t : Value.t) =
   and save name = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _  | Value _ as f
                   -> process_row name (field_names_of_value ~id:false f) (field_values name f)
-  | Enum tl       -> process_enum_rows name (field_names_of_value ~id:false t) (List.map (field_values name) tl)
-  | Rec ((n,i),t) ->
-    let field_names = field_names_of_value ~id:false t in
-    let id = process_row n field_names (field_values ~nullforeign:true n t) in
+  | Enum tl       -> process_enum_rows name (field_names_of_value ~id:false v) (List.map (field_values name) tl)
+  | Rec ((n,i),s) ->
+    let field_names = field_names_of_value ~id:false s in
+    let id = process_row n field_names (field_values ~nullforeign:true n s) in
     ids := (i, id) :: !ids;
-    process_row n field_names (field_values n t)
-  | Ext ((n,i),t) -> process_row n (field_names_of_value ~id:false t) (field_values n t)
+    process_row n field_names (field_values n s)
+  | Ext ((n,i),s) -> process_row n (field_names_of_value ~id:false s) (field_values n s)
   | Sum _ | Dict _ | Tuple _ as f
                   -> process_error f "save_value:1"
   in
-  save "" t
+  save "" v
 
