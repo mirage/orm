@@ -239,8 +239,9 @@ let subtables_of_type t =
 let field_names_of_value ~id v =
   let module V = Value in
   let rec aux name = function
-    | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
+    | V.Unit | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
                    -> [ if name = "" then "__contents__" else name ]
+    | V.Null       -> [ Name.option_is_set name ]
     | V.Value v    -> Name.option_is_set name :: aux (Name.option name) v
     | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
     | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict name n) t) [] tl

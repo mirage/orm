@@ -115,7 +115,7 @@ module Value_of = struct
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		match ctyp with
-		| <:ctyp< unit >>    -> <:expr< V.Null >>
+		| <:ctyp< unit >>    -> <:expr< V.Unit >>
 		| <:ctyp< int >>     -> <:expr< V.Int (Int64.of_int $id$) >>
 		| <:ctyp< int32 >>   -> <:expr< V.Int (Int64.of_int32 $id$) >>
 		| <:ctyp< int64 >>   -> <:expr< V.Int $id$ >>
@@ -260,7 +260,7 @@ module Of_value = struct
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
 		match ctyp with
-		| <:ctyp< unit >>   -> <:expr< match $id$ with [ V.Null -> () | $runtime_error id "Null"$ ] >>
+		| <:ctyp< unit >>   -> <:expr< match $id$ with [ V.Unit -> () | $runtime_error id "Unit"$ ] >>
 		| <:ctyp< int >>    -> <:expr< match $id$ with [ V.Int x -> Int64.to_int x | $runtime_error id "Int(int)"$ ] >>
 		| <:ctyp< int32 >>  -> <:expr< match $id$ with [ V.Int x -> Int64.to_int32 x | $runtime_error id "Int(int32)"$ ] >>
 		| <:ctyp< int64 >>  -> <:expr< match $id$ with [ V.Int x ->  x | $runtime_error id "Int(int64)"$ ] >>

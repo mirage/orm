@@ -46,7 +46,7 @@ let process ~env ~db ~constraints name field_names fn =
 (* Build up the list of fields actually needed to save the row *)
 let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   match t, row.(n) with
-  | T.Unit    , Data.INT 0L -> V.Null, n + 1
+  | T.Unit    , Data.INT 0L -> V.Unit, n + 1
   | T.Int     , Data.INT i
   | T.Int32   , Data.INT i
   | T.Int64   , Data.INT i
