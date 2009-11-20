@@ -56,23 +56,23 @@ let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   | T.Float   , Data.FLOAT f -> V.Float f, n + 1
   | T.String  , Data.TEXT t  -> V.String t, n + 1
   | T.Enum t  , Data.NULL    -> V.Enum [], n + 1
-  | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id name t), n + 1
+  | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id (Name.enum name) t), n + 1
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
-  | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~name t row (n + 1) in (if r=0L then V.Null else V.Value res), j
+  | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~name:(Name.option name) t row (n + 1) in (if r=0L then V.Null else V.Value res), j
   | T.Tuple tl, _            ->
     let tuple, n = list_foldi (fun (accu, n1) i t ->
-      let res, n2 = parse_row ~env ~db ~name:(Name.tuple_field name i) t row n1 in res :: accu, n2
+      let res, n2 = parse_row ~env ~db ~name:(Name.tuple name i) t row n1 in res :: accu, n2
       ) ([], n) tl in
     V.Tuple (List.rev tuple), n
   | T.Dict tl , _            ->
     let dict, n = List.fold_left (fun (accu, n1) (f,_,t) ->
-      let res, n2 = parse_row ~env ~db ~name:(Name.dict_field name f) t row n1 in (f, res) :: accu, n2
+      let res, n2 = parse_row ~env ~db ~name:(Name.dict name f) t row n1 in (f, res) :: accu, n2
       ) ([], n) tl in
     V.Dict (List.rev dict), n
   | T.Sum tl  , Data.TEXT r  ->
     let row, n = List.fold_left (fun (accu, n1) (rn, tl) ->
       list_foldi (fun (accu, n2) i t ->
-        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum_field name rn i) t row n2 in (if rn<>r then accu else res :: accu), n3
+        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum name rn i) t row n2 in (if rn<>r then accu else res :: accu), n3
         ) (accu, n1) tl)
       ([], n + 1) tl in
     V.Sum (r, List.rev row), n

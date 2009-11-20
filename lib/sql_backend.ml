@@ -148,9 +148,12 @@ let string_of_data = function
   | Data.BLOB _  -> "<blob>"
 
 module Name = struct
-  let tuple_field n i = sprintf "%s__%i" n i
-  let sum_field n r i = sprintf "%s__%s__%i" n r i
-  let dict_field n f = if n = "" then f else sprintf "%s__%s" n f
+  let tuple n i = sprintf "%s__%i" n i
+  let sum n r i = sprintf "%s__%s__%i" n r i
+  let dict n f = if n = "" then f else sprintf "%s__%s" n f
+  let option n = sprintf "%s_o" n
+  let option_is_set n = sprintf "%s_o_isset" n
+  let enum n = sprintf "%s_e" n
 end
 
 exception Process_error of Type.t * string
@@ -180,12 +183,12 @@ let field_names_of_type ~id t =
   let rec aux name = function
     | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
                  -> [ if name = "" then "__contents__" else name ]
-    | T.Option t -> sprintf "%s_o" name :: aux name t
-    | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
-    | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict_field name n) t) [] tl
+    | T.Option t -> Name.option_is_set name :: aux (Name.option name) t
+    | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
+    | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict name n) t) [] tl
     | T.Sum tl   -> 
       "__row__" :: List.fold_left (fun accu (r,tl) ->
-        list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) accu tl
+        list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) t) accu tl
         ) [] tl in
   if id then "__id__" :: aux "" t else aux "" t
 
@@ -213,13 +216,13 @@ let subtables_of_type t =
     | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
     | T.Float | T.String | T.Arrow _
                   -> accu
-    | T.Option t  -> aux ?parent name accu t
-    | T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent (Name.tuple_field name i) accu t) accu tl
+    | T.Option t  -> aux ?parent (Name.option name) accu t
+    | T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent (Name.tuple name i) accu t) accu tl
     | T.Dict tl   ->
-        List.fold_left (fun accu (n,_,t) -> aux ?parent (Name.dict_field name n) accu t) accu tl
+        List.fold_left (fun accu (n,_,t) -> aux ?parent (Name.dict name n) accu t) accu tl
     | T.Sum tl    ->
       List.fold_left (fun accu (r,tl) ->
-        list_foldi (fun accu i t -> aux ?parent (Name.sum_field name r i) accu t) accu tl
+        list_foldi (fun accu i t -> aux ?parent (Name.sum name r i) accu t) accu tl
         ) accu tl
     | T.Var v     -> ( [], [name, v] ) >> accu
     | T.Rec (v,s)
@@ -227,6 +230,7 @@ let subtables_of_type t =
       let res = ( [v, Type.unroll tables t], match parent with None -> [] | Some p -> [p, v] ) in
       if List.mem_assoc v tables then accu else aux ~parent:v v (res >> accu) s
     | T.Enum s    as t ->
+      let name = Name.enum name in
       let res = ( [name, Type.unroll tables t], match parent with None -> failwith "TODO:1" | Some p -> [p, name] ) in
       res >> (aux ~parent:name name accu s) in
   aux "" ([], []) t
@@ -237,9 +241,9 @@ let field_names_of_value ~id v =
   let rec aux name = function
     | V.Null | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
                    -> [ if name = "" then "__contents__" else name ]
-    | V.Value v    -> sprintf "%s_o" name :: aux name v
-    | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple_field name i) t) [] tl
-    | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict_field name n) t) [] tl
-    | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum_field name r i) t) [] tl in
+    | V.Value v    -> Name.option_is_set name :: aux (Name.option name) v
+    | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
+    | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict name n) t) [] tl
+    | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) t) [] tl in
   if id then "__id__" :: aux "" v else aux "" v
 

@@ -84,7 +84,7 @@ let save_value ~env ~db (v : Value.t) =
   let ids = ref [] in
   let rec field_values ?(nullforeign=false) name = function
   | Null          -> [ Data.INT 0L ]
-  | Value v       -> Data.INT 1L :: field_values ~nullforeign name v
+  | Value v       -> Data.INT 1L :: field_values ~nullforeign (Name.option name) v
   | Int i         -> [ Data.INT i ]
   | Bool b        -> if b then [ Data.INT 1L ] else [ Data.INT 0L ]
   | Float f       -> [ Data.FLOAT f ]
@@ -92,9 +92,9 @@ let save_value ~env ~db (v : Value.t) =
   | Arrow a       -> [ Data.BLOB a ]
   | Enum []       -> [ Data.NULL ]
   | Enum tl       -> let id = save name (Enum tl) in [ Data.INT id ]
-  | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.tuple_field name i) t) [] tl
-  | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values ~nullforeign (Name.dict_field name n) t) [] tl
-  | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.sum_field name r i) t) [] tl
+  | Tuple tl      -> list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.tuple name i) t) [] tl
+  | Dict tl       -> List.fold_left (fun accu (n,t) -> accu @ field_values ~nullforeign (Name.dict name n) t) [] tl
+  | Sum (r,tl)    -> Data.TEXT r :: list_foldi (fun accu i t -> accu @ field_values ~nullforeign (Name.sum name r i) t) [] tl
   | Var (n,i)     when nullforeign -> [ Data.NULL ]
   | Rec ((n,i),_) when nullforeign -> [ Data.NULL ]
   | Ext ((n,i),_) when nullforeign -> [ Data.NULL ]
@@ -106,7 +106,7 @@ let save_value ~env ~db (v : Value.t) =
   and save name = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _  | Value _ as f
                   -> process_row name (field_names_of_value ~id:false f) (field_values name f)
-  | Enum tl       -> process_enum_rows name (field_names_of_value ~id:false v) (List.map (field_values name) tl)
+  | Enum tl       -> let name = Name.enum name in process_enum_rows name (field_names_of_value ~id:false v) (List.map (field_values name) tl)
   | Rec ((n,i),s) ->
     let field_names = field_names_of_value ~id:false s in
     let id = process_row n field_names (field_values ~nullforeign:true n s) in
