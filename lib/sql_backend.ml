@@ -243,8 +243,21 @@ let field_names_of_value ~id v =
                    -> [ if name = "" then "__contents__" else name ]
     | V.Null       -> [ Name.option_is_set name ]
     | V.Value v    -> Name.option_is_set name :: aux (Name.option name) v
-    | V.Tuple tl   -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
-    | V.Dict tl    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict name n) t) [] tl
-    | V.Sum (r,tl) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) t) [] tl in
+    | V.Tuple vs   -> list_foldi (fun accu i v -> accu @ aux (Name.tuple name i) v) [] vs
+    | V.Dict vs    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict name n) v) [] vs
+    | V.Sum (r,vs) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) v) [] vs in
   if id then "__id__" :: aux "" v else aux "" v
 
+let subtables_of_value v =
+  let module V = Value in
+  let rec aux name accu = function
+    | V.Unit | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Arrow _ | V.Null | V.Var _
+                     -> accu
+    | V.Value v      -> aux (Name.option name) accu v
+    | V.Tuple vs     -> list_foldi (fun accu i v -> aux (Name.tuple name i) accu v) accu vs
+    | V.Dict vs      -> List.fold_left (fun accu (n,v) -> aux (Name.dict name n) accu v) accu vs
+    | V.Sum (r,vs)   -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) [] vs
+    | V.Ext((n,i),v)
+    | V.Rec((n,i),v) -> aux n ((n,[v]) :: accu) v
+    | V.Enum vs      -> let name = Name.enum name in List.fold_left (aux name) ((name,vs) :: accu) vs in
+  aux "" [] v
