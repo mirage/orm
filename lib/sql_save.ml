@@ -106,7 +106,8 @@ let save_value ~env ~db (v : Value.t) =
   and save name = function
   | Null | Int _ | String _ | Bool _ | Float _ | Var _ | Arrow _  | Value _ as f
                   -> process_row name (field_names_of_value ~id:false f) (field_values name f)
-  | Enum tl       -> let name = Name.enum name in process_enum_rows name (field_names_of_value ~id:false v) (List.map (field_values name) tl)
+  | Enum [] as v  -> process_error v "emtpy Enum"
+  | Enum (h::tl)  -> let name = Name.enum name in process_enum_rows name (field_names_of_value ~id:false h) (List.map (field_values name) (h::tl))
   | Rec ((n,i),s) ->
     let field_names = field_names_of_value ~id:false s in
     let id = process_row n field_names (field_values ~nullforeign:true n s) in
@@ -114,8 +115,8 @@ let save_value ~env ~db (v : Value.t) =
     replace_row n id field_names (field_values n s);
     id
   | Ext ((n,i),s) -> process_row n (field_names_of_value ~id:false s) (field_values n s)
-  | Sum _ | Dict _ | Tuple _ as f
-                  -> process_error f "save_value:1"
+  | Sum _ | Dict _ | Tuple _ as v
+                  -> process_error v "save_value:1"
   in
   save "" v
 
