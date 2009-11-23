@@ -105,7 +105,7 @@ let initRO_binding tds (_loc, n, t) =
 
 let save_binding (_loc, n, t) =
   <:binding< $lid:save n$ =
-    if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
+    if not (Type.is_mutable Deps.$lid:P4_type.type_of n$) then (
       fun ~db -> fun $lid:n$ ->
         if not (db.OS.cache.Deps.$lid:P4_weakid.has_weakid n$ $lid:n$) then (
           let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in

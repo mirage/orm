@@ -19,6 +19,7 @@
 open Printf
 
 type t =
+	| Unit
 	| Int of int64
 	| Bool of bool
 	| Float of float
@@ -46,7 +47,7 @@ let free_vars t =
 	| Sum (_,tl)
 	| Tuple tl   -> List.fold_left aux accu tl
 	| Dict tl    -> List.fold_left (fun accu (_,t) -> aux accu t) accu tl
-	| Int _ | Bool _ | Float _ | String _ | Null | Arrow _
+	| Int _ | Bool _ | Float _ | String _ | Null | Arrow _ | Unit
                      -> accu
 	| Ext (_,t)  -> aux accu t in
 	aux [] t
@@ -55,16 +56,17 @@ let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let equal x y =
 	let rec aux ids x y = match x, y with
+	| Unit        , Unit        -> true
 	| Int i       , Int j       -> i=j
 	| Bool i      , Bool j      -> i=j
 	| Float i     , Float j     -> i=j
 	| String i    , String j    -> i=j
 	| Enum i      , Enum j
-	| Tuple i     , Tuple j     -> List.for_all (fun x -> x) (List.map2 (aux ids) i j)
+	| Tuple i     , Tuple j     -> List.length i = List.length j && List.for_all (fun x -> x) (List.map2 (aux ids) i j)
 	| Dict i      , Dict j      ->
 		let fn a b = List.for_all (fun (n,i) -> List.exists (fun (m,j) -> n=m && (aux ids) i j) a) b in
 		fn i j && fn j i
-	| Sum (n,i)   , Sum (m,j)   -> n=m && List.for_all (fun x -> x) (List.map2 (aux ids) i j)
+	| Sum (n,i)   , Sum (m,j)   -> n=m && List.length i = List.length j && List.for_all (fun x -> x) (List.map2 (aux ids) i j)
 	| Null        , Null        -> true
 	| Value i     , Value j     -> aux ids i j
 	| Var (n,i)   , Var (m,j)   -> n=m && i = List.assoc j ids
@@ -74,7 +76,8 @@ let equal x y =
 	| _                         -> false in
 	aux [] x y
 
-let rec to_string t = match t with                                                                    
+let rec to_string t = match t with
+	| Unit       -> "U"                                                           
 	| Null       -> "N"
 	| Value t    -> sprintf "?%s" (to_string t)
 	| Int i      -> sprintf "I(%Li)" i
@@ -127,6 +130,7 @@ let parse_error s = raise (Parse_error s)
 
 let rec of_string s =
 	match s.[0] with
+	| 'U' -> Unit
 	| 'N' -> Null
 	| 'I' -> Int (Int64.of_string (String.sub s 2 (String.length s - 3)))
 	| 'B' -> Bool (bool_of_string (String.sub s 2 (String.length s - 3)))
