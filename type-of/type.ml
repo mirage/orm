@@ -18,7 +18,8 @@ open Printf
 
 (* mutable or immutable *)
 type t =
-  | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
+  | Unit | Bool | Float | Char | String
+  | Int of int option
   | Enum of t
   | Tuple of t list
   | Dict of (string * [`M|`I] * t) list
@@ -32,7 +33,7 @@ type t =
 (* Check whether a struct is mutable *)
 let is_mutable t =
   let rec aux = function
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String -> false
+    | Unit | Int _ | Bool | Float | Char | String -> false
     | Enum t    -> aux t
     | Tuple tl  -> List.exists aux tl
     | Dict tl   -> List.exists (fun (_,m,t) -> m = `M || aux t) tl
@@ -56,7 +57,7 @@ let free_vars t =
     | Tuple ts  -> List.fold_left aux accu ts
     | Dict ts   -> List.fold_left (fun accu (_,_,t) -> aux accu t) accu ts
     | Sum ts    -> List.fold_left (fun accu (_,t) -> List.fold_left aux accu t) accu ts
-    | Unit | Int | Int32 | Int64 | Bool | Float | Char | String
+    | Unit | Int _ | Bool | Float | Char | String
                  -> accu
     | Arrow(t,s) -> aux (aux accu t) s
     | Ext (n,t)  -> aux accu t in
@@ -71,7 +72,7 @@ let unroll env t =
     | Ext (m, s) -> let ss = aux name s in if List.mem m (free_vars ss) then Rec (m, ss) else Ext (m, ss)
     | Var n when List.mem_assoc n env
                  -> aux name (List.assoc n env)
-    | Var _ | Unit | Int | Int32 | Int64 | Bool | Float | Char | String as t
+    | Var _ | Unit | Int _ | Bool | Float | Char | String as t
                  -> t
     | Enum t     -> Enum (aux name t)
     | Tuple tl   -> Tuple (List.map (aux name) tl)
@@ -87,9 +88,7 @@ let map_strings sep fn l = String.concat sep (List.map fn l)
 
 let rec to_string t = match t with                                                                    
   | Unit       -> "U"
-  | Int        -> "I"
-  | Int32      -> "I32"
-  | Int64      -> "I64"
+  | Int x      -> "I" ^ (match x with None -> "" | Some n -> sprintf "%02d" n)
   | Bool       -> "B"
   | Float      -> "F"
   | Char       -> "C"
@@ -136,9 +135,9 @@ let is_subtype_of (t1:t) (t2:t) =
         List.for_all (fun (x2,y2) -> List.exists (fun (x1,y1) -> x1=x2 && List.for_all2 (<:) y1 y2) ts) ss
         && List.for_all (fun (x1,_) -> List.exists (fun (x2,_) -> x1=x2) ss) ts (* TODO: this can be improved later *)
       | Unit, Unit
-      | Int, Int
-      | Int32, Int32 | Int32, Int
-      | Int64, Int64 | Int64, Int32 | Int64, Int
+      | Int None, Int _ -> true
+      | Int (Some x), Int None -> false
+      | Int (Some x), Int (Some y) -> y <= x
       | Bool, Bool
       | Float, Float
       | Char, Char
@@ -195,9 +194,8 @@ let parse_error s = raise (Parse_error s)
 
 let rec of_string s : t  = match s.[0] with
   | 'U' -> Unit
-  | 'I' when s = "I32" -> Int32
-  | 'I' when s = "I64" -> Int64
-  | 'I' -> Int
+  | 'I' when String.length s = 1 -> Int None
+  | 'I' -> Int (Some (int_of_string (String.sub s 1 (String.length s - 1))))
   | 'B' -> Bool
   | 'F' -> Float
   | 'C' -> Char

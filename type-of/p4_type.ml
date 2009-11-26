@@ -46,9 +46,9 @@ let create tds : (loc * string * t) list =
   let rec aux bound_vars ctyp =
     match ctyp with
     | <:ctyp< unit >>         -> Unit
-    | <:ctyp< int >>          -> Int
-    | <:ctyp< int32 >>        -> Int32
-    | <:ctyp< int64 >>        -> Int64
+    | <:ctyp< int >>          -> Int (Some (Sys.word_size - 1))
+    | <:ctyp< int32 >>        -> Int (Some 32)
+    | <:ctyp< int64 >>        -> Int (Some 64)
     | <:ctyp< float >>        -> Float
     | <:ctyp< bool >>         -> Bool
     | <:ctyp< char >>         -> Char
@@ -97,9 +97,8 @@ let gen tds =
     | Rec (v, t) -> <:expr< T.Rec ($str:v$, $aux t$) >>
     | Ext (v, t) -> <:expr< T.Ext ($str:v$, $aux t$) >>
     | Unit       -> <:expr< T.Unit >>
-    | Int        -> <:expr< T.Int >>
-    | Int32      -> <:expr< T.Int32 >>
-    | Int64      -> <:expr< T.Int64 >>
+    | Int None   -> <:expr< T.Int None >>
+    | Int (Some n) -> <:expr< T.Int (Some $`int:n$) >>
     | Float      -> <:expr< T.Float >>
     | Bool       -> <:expr< T.Bool >>
     | Char       -> <:expr< T.Char >>

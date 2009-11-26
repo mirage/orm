@@ -181,7 +181,7 @@ let get_internal_type = with_valid_type (fun name t -> t)
 let field_names_of_type ~id t =
   let module T = Type in
   let rec aux name = function
-    | T.Unit | T.Int  | T.Int32 | T.Int64 | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
+    | T.Unit | T.Int _ | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
                  -> [ if name = "" then "__contents__" else name ]
     | T.Option t -> Name.option_is_set name :: aux (Name.option name) t
     | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
@@ -196,7 +196,7 @@ let field_names_of_type ~id t =
 let field_types_of_type ~id t =
   let module T = Type in
   let rec aux = function
-    | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
+    | T.Unit | T.Int _ | T.Char | T.Bool
     | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ 
                  -> [ "INTEGER" ]
     | T.Float    -> [ "FLOAT" ]
@@ -213,7 +213,7 @@ let subtables_of_type t =
   let module T = Type in
   let (>>) (l1, l2) (l3, l4) = ( l1 @ l3, l2 @ l4 ) in
   let rec aux ?parent name ((tables,_) as accu) = function
-    | T.Unit | T.Int | T.Int32 | T.Int64 | T.Char | T.Bool
+    | T.Unit | T.Int _ | T.Char | T.Bool
     | T.Float | T.String | T.Arrow _
                   -> accu
     | T.Option t  -> aux ?parent (Name.option name) accu t

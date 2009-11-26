@@ -47,9 +47,7 @@ let process ~env ~db ~constraints name field_names fn =
 let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   match t, row.(n) with
   | T.Unit    , Data.INT 0L -> V.Unit, n + 1
-  | T.Int     , Data.INT i
-  | T.Int32   , Data.INT i
-  | T.Int64   , Data.INT i
+  | T.Int _   , Data.INT i
   | T.Char    , Data.INT i   -> V.Int i, n + 1
   | T.Bool    , Data.INT 0L  -> V.Bool false, n + 1
   | T.Bool    , Data.INT 1L  -> V.Bool true, n + 1

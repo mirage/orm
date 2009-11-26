@@ -30,7 +30,7 @@ module Key = struct
 
   (* Extend grammar with options for SQL tables *)
   type t = [
-	  `Debug of string list
+      `Debug of string list
     | `Dot of string
     | `Index of (string * string list) list
     | `Unique of (string * string list) list ]
