@@ -244,8 +244,8 @@ let field_names_of_value ~id v =
     | V.Null       -> [ Name.option_is_set name ]
     | V.Value v    -> Name.option_is_set name :: aux (Name.option name) v
     | V.Tuple vs   -> list_foldi (fun accu i v -> accu @ aux (Name.tuple name i) v) [] vs
-    | V.Dict vs    -> List.fold_left (fun accu (n,t) -> accu @ aux (Name.dict name n) v) [] vs
-    | V.Sum (r,vs) -> "__row__" :: list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) v) [] vs in
+    | V.Dict vs    -> List.fold_left (fun accu (n,v) -> accu @ aux (Name.dict name n) v) [] vs
+    | V.Sum (r,vs) -> "__row__" :: list_foldi (fun accu i v -> accu @ aux (Name.sum name r i) v) [] vs in
   if id then "__id__" :: aux "" v else aux "" v
 
 let subtables_of_value v =
