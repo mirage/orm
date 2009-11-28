@@ -21,6 +21,7 @@ let suites = [
   Record_mutate.suite;
   List_mutate.suite;
   Recursive_mutate.suite;
+  Photo.suite;
 ]
 
 let slow_suites = [
