@@ -4,6 +4,8 @@ type s =
   |Foo
   |Bar of int
   |Xyz of string
+  |Blah of int * char
+  |Blah2 of (int * char)
 and x = {
   foo: s;
   bar: s;
@@ -16,6 +18,7 @@ let string_of_s = function
   |Foo -> "Foo" 
   |Bar i -> "Bar " ^ (string_of_int i) 
   |Xyz z -> "Xyz " ^ z
+  |_ -> "??"
 
 let name = "variant.db"
 

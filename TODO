@@ -74,9 +74,6 @@ Nice to have:
 - Generate smart ocamldoc; not sure if this is possible with camlp4
   extensions without a custom doc generator.
 
-- type v = One of int*int fails, unless it is written as (int * int)
-  for some rason.
-
 - Given a type t that has been generated externally, create a
   function that can look it up from the database and return the
   DB version of that value. This would require a unique index to 
