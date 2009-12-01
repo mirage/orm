@@ -32,16 +32,7 @@ Interface changes:
 Optimization:
 ------------
 
-- Since we enforce that recursion is only allowed through lists
-  and options now, the ORM should be able to do JOINs via a 
-  fixed-point function for everything except option/lists.
-
-- When updating a record, only update non-mutable fields instead
-  of all of them.
-
 - Bind sqlite3_profile to make that information available.
-
-- Weave in read/write barriers to facilitate a distributed version.
 
 Nice to have:
 ------------
