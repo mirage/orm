@@ -12,18 +12,7 @@ Blocker:
   via list/option types, check that foreign references to types are
   already present, ensure that list/option types are mutable.
 
-- Add support for object signatures (only records work atm)
-
-- Wrap all the writes in Sql_access.tranaaction.  Need to think
-  about the desired rollback semantics since we currently use 
-  mutable hashtables which may get out of sync in the event of 
-  a rollback.
-
 - Interface file for Sql_access to hide internals.
-
-- Toplevel types which aren't records cause an error; if we
-  know what they are (e.g. type x = int * int) appropriate functions
-  should be generated for them as well.
 
 - A field name of "id" in a record will cause an error; type
   checker should reject these or rewrite them into something different.
