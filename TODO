@@ -54,8 +54,6 @@ Optimization:
 
 - Weave in read/write barriers to facilitate a distributed version.
 
-- Permit in-memory SQL databases to be opened.
-
 Nice to have:
 ------------
 
