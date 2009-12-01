@@ -118,9 +118,83 @@ let save_binding (_loc, n, t) =
     )
   >> 
 
-(* TODO: find a generic way to build the args valid here *)
-let get_binding (_loc, n, t) =
-  <:binding< $lid:get n$ =
+module Get = struct
+  (* This type is computed at preprocessing time, so no information is available on external types *)
+  let pp_type_of _loc tds name =
+    let tys = P4_type.create tds in
+    let _, _, t = List.find (fun (_, n, _) -> n = name) tys in
+    t
+
+  let map_type fn t =
+    let module T = Type in
+    let rec aux name accu t =
+      let res = if name = "" then
+        fn "val" t
+      else
+        fn name t in
+    (match res with None -> [] | Some r -> [r]) @ match t with
+      | T.Unit | T.Sum _ | T.Var _ | T.Arrow _
+      | T.Bool | T.Float | T.Char | T.String | T.Int _ | T.Option _ | T.Enum _
+                  -> accu
+      | T.Dict d when name = ""
+                  -> List.fold_left (fun accu (n,_,t) -> aux n accu t) accu d
+      | T.Dict _  -> accu
+      | T.Tuple t when name = ""
+                  -> fst (List.fold_left (fun (accu, i) t -> aux (Printf.sprintf "val_%i" i) accu t, i+1) (accu, 1) t)
+      | T.Tuple t -> fst (List.fold_left (fun (accu, i) t -> aux (Printf.sprintf "%s_%i" name i) accu t, i+1) (accu, 1) t)
+      | T.Rec (n,t) | T.Ext (n,t) when name = ""
+                  -> aux "" accu t
+      | T.Rec (n,t) | T.Ext (n,t)
+                  -> accu in
+    aux "" [] t
+
+  let arg_names_of_type t =
+    let module T = Type in
+    let fn name = function
+      | T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some name
+      | _ -> None in
+    map_type fn t
+
+  let fun_of_type _loc t body =
+    List.fold_left (fun accu n -> <:expr< fun ? $lid:n$ -> $accu$ >>) body (arg_names_of_type t)
+
+  let ctyp_of_arg _loc t =
+    let module T = Type in
+    let int_like t =
+      <:ctyp< [= `Eq of $lid:t$ | `Neq of $lid:t$ | `Le of $lid:t$ | `Ge of $lid:t$ | `Leq of $lid:t$ | `Geq of $lid:t$ ] >> in
+    let fn _ = function
+    | T.Bool     -> Some (<:ctyp< [= `True | `False ] >>)
+    | T.Float    -> Some (int_like "float")
+    | T.Char     -> Some (int_like "char")
+    | T.String   -> Some (<:ctyp< [=`Eq of string | `Contains of string ] >>)
+    | T.Int (Some i) when i + 1 = Sys.word_size
+                 -> Some (int_like "int")
+    | T.Int (Some i) when i <= 32
+                 -> Some (int_like "int32")
+    | T.Int (Some i) when i <= 64
+                 -> Some (int_like "int64")
+    | T.Int _    -> Some (int_like "Big_int.big_int")
+    | _          -> None in
+    map_type fn t
+
+  let sig_of_type _loc t body =
+    List.fold_left2
+      (fun accu n ctyp -> <:ctyp< ? $lid:n$ : $ctyp$ -> $accu$ >> )
+      body
+      (arg_names_of_type t)
+      (ctyp_of_arg _loc t)
+
+  let fun_of_name _loc tds n body =
+    let t = pp_type_of _loc tds n in
+    fun_of_type _loc t body
+
+  let sig_of_name _loc tds n body =
+    let t = pp_type_of _loc tds n in
+    sig_of_type _loc t body
+end
+
+let get_binding tds (_loc, n, t) =
+  <:binding< $lid:get n$ = $Get.fun_of_name _loc tds n <:expr<
     if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
       fun ~db ->
         List.map
@@ -142,7 +216,7 @@ let get_binding (_loc, n, t) =
               let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
               do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } ])
           (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
-    )
+    ) >>$
   >>
 
 let delete_binding (_loc, n, t) =
@@ -166,7 +240,7 @@ let gen env tds =
   let init_bindings = List.map (init_binding tds) ts in
   let initRO_bindings = List.map (initRO_binding tds) ts in
   let save_bindings = List.map save_binding ts in
-  let get_bindings = List.map get_binding ts in
+  let get_bindings = List.map (get_binding tds) ts in
   let delete_bindings = List.map delete_binding ts in
   let id_bindings = List.map id_binding ts in
 
@@ -174,7 +248,8 @@ let gen env tds =
     List.map (fun (_,n,_) -> <:sig_item< value $lid:init n$ : string -> db $lid:n$ [=`RW] >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:initRO n$ : string -> db $lid:n$ [=`RO] >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:save n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
-    List.map (fun (_,n,_) -> <:sig_item< value $lid:get n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>) ts @
+    List.map (fun (_,n,_) -> <:sig_item< value $lid:get n$ :
+      $Get.sig_of_name _loc tds n <:ctyp< ~db:(db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:delete n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 >>) ts in
 

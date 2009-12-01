@@ -22,6 +22,7 @@ Issues:
    * type t = ... with orm;; type x = ... with orm should work
    * handle type t = { x : M.t }
    * handle type 'a t = { x : 'a }
+   * use only tail-recursive functions
 
 Interface changes:
 -----------------
