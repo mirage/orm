@@ -3,6 +3,7 @@ open Printf
 
 let suites = [
   Simple.suite;
+  Object_simple.suite;
   Tuple.suite;
   Variant.suite;
   Variant_nested.suite;
