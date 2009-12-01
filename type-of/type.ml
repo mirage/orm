@@ -22,7 +22,7 @@ type t =
   | Int of int option
   | Enum of t
   | Tuple of t list
-  | Dict of (string * [`M|`I] * t) list
+  | Dict of (string * [`RW|`RO] * t) list
   | Sum of (string * t list) list
   | Option of t
   | Rec of string * t
@@ -36,7 +36,7 @@ let is_mutable t =
     | Unit | Int _ | Bool | Float | Char | String -> false
     | Enum t    -> aux t
     | Tuple tl  -> List.exists aux tl
-    | Dict tl   -> List.exists (fun (_,m,t) -> m = `M || aux t) tl
+    | Dict tl   -> List.exists (fun (_,m,t) -> m = `RW || aux t) tl
     | Sum tl    -> List.exists (fun (_,tl) -> List.exists aux tl) tl
     | Option t  -> aux t
     | Rec (n,t) -> aux t
@@ -95,7 +95,7 @@ let rec to_string t = match t with
   | String     -> "S"
   | Enum t     -> sprintf "[%s]" (to_string t)
   | Tuple ts   -> sprintf "(%s)" (map_strings "*" to_string ts)
-  | Dict ts    -> sprintf "{%s}" (map_strings "*" (fun (s,m,t) -> sprintf "%s:%s:%s" s (if m = `I then "I" else "M") (to_string t)) ts)
+  | Dict ts    -> sprintf "{%s}" (map_strings "*" (fun (s,m,t) -> sprintf "%s:%s:%s" s (if m = `RO then "I" else "M") (to_string t)) ts)
   | Sum ts     -> sprintf "<%s>" (map_strings "*" (fun (s,t) -> sprintf "%s:(%s)" s (map_strings "*" to_string t)) ts)
   | Option t   -> sprintf "?%s" (to_string t)
   | Rec (n,t)  -> sprintf "R@%s@%s" n (to_string t)
@@ -212,8 +212,8 @@ let rec of_string s : t  = match s.[0] with
     let ss = split_par '*' s in
     let ss = List.map (split_par ~limit:3 ':') ss in
     let ss = List.map (fun x -> match x with 
-      | [s;"I";t] -> (s, `I, of_string t) 
-      | [s;"M";t] -> (s, `M, of_string t) 
+      | [s;"I";t] -> (s, `RO, of_string t) 
+      | [s;"M";t] -> (s, `RW, of_string t) 
       | _ -> parse_error s) ss in
     Dict ss
   | '<' ->

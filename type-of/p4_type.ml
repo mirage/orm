@@ -72,8 +72,8 @@ let create tds : (loc * string * t) list =
     | <:ctyp< { $fields$ } >> | <:ctyp< < $fields$ > >> ->
 	let rec fn accu = function
           | <:ctyp< $t1$; $t2$ >>             -> fn (fn accu t1) t2
-          | <:ctyp< $lid:id$ : mutable $t$ >> -> (id, `M, aux bound_vars t) :: accu
-          | <:ctyp< $lid:id$ : $t$ >>         -> (id, `I, aux bound_vars t) :: accu
+          | <:ctyp< $lid:id$ : mutable $t$ >> -> (id, `RW, aux bound_vars t) :: accu
+          | <:ctyp< $lid:id$ : $t$ >>         -> (id, `RO, aux bound_vars t) :: accu
           | _                                 -> failwith "unexpected AST" in
         Dict (fn []  fields)
 	| <:ctyp< $t$ -> $u$ >>   -> Arrow ( (aux bound_vars t), (aux bound_vars u) )
@@ -114,8 +114,8 @@ let gen tds =
     | Dict ts    ->
       let rec fn accu = function
       | []              -> accu
-      | (n, `M, t) :: l -> <:expr< [ ($str:n$, `M, $aux t$) :: $fn accu l$ ] >>
-      | (n, `I, t) :: l -> <:expr< [ ($str:n$, `I, $aux t$) :: $fn accu l$ ] >> in
+      | (n, `RW, t) :: l -> <:expr< [ ($str:n$, `RW, $aux t$) :: $fn accu l$ ] >>
+      | (n, `RO, t) :: l -> <:expr< [ ($str:n$, `RO, $aux t$) :: $fn accu l$ ] >> in
       <:expr< T.Dict $fn <:expr< [] >> (List.rev ts)$ >>
     | Arrow(t, s) -> <:expr< T.Arrow( $aux t$, $aux s$ ) >>
     in

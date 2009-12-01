@@ -19,7 +19,8 @@ type x = {
   eleven: string list;
   twelve: (char * int32 * unit) option;
   thirteen: (char * (string * int64) option);
-} with orm
+}
+and y=int with orm
 
 let name = "alltypes.db"
 let x = { one='a'; two="foo"; three=1; four=2l; 

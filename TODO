@@ -1,40 +1,32 @@
 Known issues and TODO list before a 1.0 release. Until then, the 
 ORM is a work-in-progress and anything is subject to change dramatically!
 
-Blocker:
+Issues:
 -------
 
-- Delete is broken at the moment for recursive types; we need
-  something smarter than the existing TRIGGER functions to
-  null out options and remove the value from lists.
+- Type-of/Value:
+   * handle type x = { x : M.t }
+   * handle type 'a x = {x : 'a }
+   * for Value, handle Bigint.t (and integers of range > 64)
 
-- Type checking of ORM: enforce the recursion constrain of only going
-  via list/option types, check that foreign references to types are
-  already present, ensure that list/option types are mutable.
+- Hash: fix the computation of hashed value for Foo of int * int * 
+  int (currently only consider the 1st argument), best to rewrite 
+  using type-of.
 
-- Add support for object signatures (only records work atm)
-
-- Wrap all the writes in Sql_access.tranaaction.  Need to think
-  about the desired rollback semantics since we currently use 
-  mutable hashtables which may get out of sync in the event of 
-  a rollback.
-
-- Interface file for Sql_access to hide internals.
-
-- Toplevel types which aren't records cause an error; if we
-  know what they are (e.g. type x = int * int) appropriate functions
-  should be generated for them as well.
-
-- A field name of "id" in a record will cause an error; type
-  checker should reject these or rewrite them into something different.
+- ORM:
+   * signature generator
+   * type-check for recursion going through list/option fields.
+   * labelled args for the get function
+   * save of recursive value should create a new value only if it is
+     not already existing
+   * type t = ... with orm;; type x = ... with orm should work
+   * handle type t = { x : M.t }
+   * handle type 'a t = { x : 'a }
 
 Interface changes:
 -----------------
 
 - Add a x_fold function to match the x_get function
-
-- Signature generator to hide all the messy internals and make the
-  db handle an abstract type.
 
 - Sqlite CONSTRAINT errors for uniqueness violations (e.g. on a unique
   indexed field) need to be exposed better than just throwing up the 
@@ -43,21 +35,13 @@ Interface changes:
 Optimization:
 ------------
 
-- Since we enforce that recursion is only allowed through lists
-  and options now, the ORM should be able to do JOINs via a 
-  fixed-point function for everything except option/lists.
-
-- When updating a record, only update non-mutable fields instead
-  of all of them.
-
 - Bind sqlite3_profile to make that information available.
-
-- Weave in read/write barriers to facilitate a distributed version.
-
-- Permit in-memory SQL databases to be opened.
 
 Nice to have:
 ------------
+
+- A field name of "id" in a record will cause an error; type
+  checker should reject these or rewrite them into something different.
 
 - Warn on reserved keywords in types (id, from) which are not
   valid SQL field names (or transform them to be safe).
@@ -67,20 +51,5 @@ Nice to have:
 - Add foreign key constraints for sanity checking in debug mode.
   Not strictly needed, but an additional integrity check
 
-- Be able to register custom triggers to OCaml functions when an 
-  object is modified.  Unsure if this should be exposed or just
-  used internally (e.g. by the delete function to sync the id cache)
-
 - Generate smart ocamldoc; not sure if this is possible with camlp4
   extensions without a custom doc generator.
-
-- type v = One of int*int fails, unless it is written as (int * int)
-  for some rason.
-
-- Given a type t that has been generated externally, create a
-  function that can look it up from the database and return the
-  DB version of that value. This would require a unique index to 
-  be declared to know how to query the DB, but its a very common
-  pattern in a AJAX webserver (JSON -> DB).  Also refer to 
-  Fieldslib to see if it can be extended to do this (possibly if
-  it has a mutable-only iterator rather than all fields).

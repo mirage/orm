@@ -3,6 +3,7 @@ open Printf
 
 let suites = [
   Simple.suite;
+  Object_simple.suite;
   Tuple.suite;
   Variant.suite;
   Variant_nested.suite;
@@ -21,6 +22,7 @@ let suites = [
   Record_mutate.suite;
   List_mutate.suite;
   Recursive_mutate.suite;
+  Photo.suite;
 ]
 
 let slow_suites = [
