@@ -12,7 +12,7 @@ Issues:
 - ORM:
    * signature generator
    * type-check for recursion going through list/option fields.
-   * labelled args for the get function
+   * custom function of type (#t -> bool) for get functions.
    * save of recursive value should create a new value only if it is
      not already existing
    * type t = ... with orm;; type x = ... with orm should work
