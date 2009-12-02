@@ -53,10 +53,10 @@ let test_get () =
   "values match" @? (i#foo = x1#foo && (i#bar = x1#bar))
 
 let suite = [
-  "simple_init" >:: test_init;
-  "simple_id" >:: test_id;
-  "simple_save" >:: test_save;
-  "simple_update" >:: test_update;
-  "simple_get" >:: test_get;
+  "object_simple_init" >:: test_init;
+  "object_simple_id" >:: test_id;
+  "object_simple_save" >:: test_save;
+  "object_simple_update" >:: test_update;
+  "object_simple_get" >:: test_get;
 ]
 
