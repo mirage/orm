@@ -191,10 +191,30 @@ module Get = struct
   let sig_of_name _loc tds n body =
     let t = pp_type_of _loc tds n in
     sig_of_type _loc t body
+
+  let constraints_of_args _loc tds n =
+    let t = pp_type_of _loc tds n in
+    let make name str = <:expr< match $lid:name$ with [ None -> [] | Some x -> [ ` $uid:str$ x ] ] >> in
+    let module T = Type in
+    let fn name = function
+      | T.Bool     -> Some (make name "Bool")
+      | T.Float    -> Some (make name "Float")
+      | T.Char     -> Some (make name "Char")
+      | T.Int (Some i) when i + 1 = Sys.word_size
+                   -> Some (make name "Int")
+      | T.Int (Some i) when i <= 32
+                   -> Some (make name "Int32")
+      | T.Int (Some i) when i <= 64
+                   -> Some (make name "Int64")
+      | T.Int _    -> Some (make name "Big_int")
+      | _          -> None in
+    List.fold_left (fun accu expr -> <:expr< $expr$ @ $accu$ >>) <:expr< [] >> (map_type fn t)
+  
 end
 
 let get_binding tds (_loc, n, t) =
   <:binding< $lid:get n$ = $Get.fun_of_name _loc tds n <:expr<
+    let constraints = $Get.constraints_of_args _loc tds n$ in
     if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
       fun ~db ->
         List.map
@@ -215,7 +235,7 @@ let get_binding tds (_loc, n, t) =
             with [ Not_found ->
               let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
               do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } ])
-          (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+          (Orm.Sql_get.get_values ~env:Deps.env ~db ~constraints Deps.$lid:P4_type.type_of n$)
     ) >>$
   >>
 
