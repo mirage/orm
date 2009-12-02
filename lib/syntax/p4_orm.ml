@@ -215,7 +215,7 @@ let get_binding tds (_loc, n, t) =
   <:binding< $lid:get n$ = $Get.fun_of_name _loc tds n <:expr<
     let constraints = $Get.constraints_of_args _loc tds n$ in
     if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
-      fun ~db ->
+      fun db ->
         List.map
          (fun (id,v) ->
            let aux () =
@@ -227,7 +227,7 @@ let get_binding tds (_loc, n, t) =
            with [ Not_found -> aux () ]
          ) (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
     ) else (
-      fun ~db ->
+      fun db ->
         List.map
           (fun (id,v) ->
             try db.OS.cache.Deps.$lid:P4_weakid.of_weakid n$ id
@@ -268,7 +268,7 @@ let gen env tds =
     List.map (fun (_,n,_) -> <:sig_item< value $lid:initRO n$ : string -> db $lid:n$ [=`RO] >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:save n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:get n$ :
-      $Get.sig_of_name _loc tds n <:ctyp< ~db:(db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ >>) ts @
+      $Get.sig_of_name _loc tds n <:ctyp< (db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:delete n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts @
     List.map (fun (_,n,_) -> <:sig_item< value $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 >>) ts in
 

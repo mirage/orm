@@ -148,12 +148,13 @@ let string_of_data = function
   | Data.BLOB _  -> "<blob>"
 
 module Name = struct
-  let tuple n i = sprintf "%s__%i" n i
-  let sum n r i = sprintf "%s__%s__%i" n r i
+  let default = "val"
+  let tuple n i = sprintf "%s__%i" n (i+1)
+  let sum n r i = sprintf "%s__%s__%i" n r (i+1)
   let dict n f = if n = "" then f else sprintf "%s__%s" n f
-  let option n = sprintf "%s_o" n
-  let option_is_set n = sprintf "%s_o_isset" n
-  let enum n = sprintf "%s_e" n
+  let option n = sprintf "%s__0" n
+  let option_is_set n = sprintf "%s__0__isset" n
+  let enum n = sprintf "%s__0" n
 end
 
 exception Process_error of Type.t * string
@@ -182,7 +183,7 @@ let field_names_of_type ~id t =
   let module T = Type in
   let rec aux name = function
     | T.Unit | T.Int _ | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _
-                 -> [ if name = "" then "__contents__" else name ]
+                 -> [ if name = "" then Name.default else name ]
     | T.Option t -> Name.option_is_set name :: aux (Name.option name) t
     | T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
     | T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict name n) t) [] tl
@@ -240,7 +241,7 @@ let field_names_of_value ~id v =
   let module V = Value in
   let rec aux name = function
     | V.Unit | V.Int _ | V.String _ | V.Bool _ | V.Float _ | V.Var _ | V.Rec _ | V.Ext _ | V.Enum _ | V.Arrow _
-                   -> [ if name = "" then "__contents__" else name ]
+                   -> [ if name = "" then Name.default else name ]
     | V.Null       -> [ Name.option_is_set name ]
     | V.Value v    -> Name.option_is_set name :: aux (Name.option name) v
     | V.Tuple vs   -> list_foldi (fun accu i v -> accu @ aux (Name.tuple name i) v) [] vs

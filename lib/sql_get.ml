@@ -43,6 +43,31 @@ let process ~env ~db ~constraints name field_names fn =
     ) constraints;
   step_map db stmt fn 
 
+let string_of_constraint (name, c) =
+	let make name = String.concat "__" name in
+	let bool name = function
+		| `True  -> make name, "=", Some (Data.INT 1L)
+		| `False -> make name, "=", Some (Data.INT 0L)
+	and int_like name conv = function
+		| `Eq i  -> make name, "=", Some (conv i)
+		| `Neq i -> make name, "!=", Some (conv i)
+		| `Le i  -> make name, "<", Some (conv i)
+		| `Ge i  -> make name, ">", Some (conv i)
+		| `Leq i -> make name, "<=", Some (conv i)
+		| `Geq i -> make name, ">=", Some (conv i)
+	and string name = function
+		| `Eq s       -> make name, "IS", Some (Data.TEXT s)
+		| `Contains s -> make name, "IS", Some (Data.TEXT (sprintf "*%s*" s)) in
+	match c with
+		| `Bool b    -> bool name b
+		| `String s  -> string name s
+		| `Float f   -> int_like name (fun f -> Data.FLOAT f) f
+		| `Char c    -> int_like name (fun c -> Data.INT (Int64.of_int (Char.code c))) c
+		| `Int i     -> int_like name (fun i -> Data.INT (Int64.of_int i)) i
+		| `Int32 i   -> int_like name (fun i -> Data.INT (Int64.of_int32 i)) i
+		| `Int64 i   -> int_like name (fun i -> Data.INT i) i
+		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
+
 (* Build up the list of fields actually needed to save the row *)
 let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   match t, row.(n) with
@@ -99,7 +124,9 @@ and get_values ~env ~db ?id ?(constraints=[]) t =
       id, V.Rec ((name,id),r)
     else
       id, V.Ext ((name,id),r) in
-  let constraints = match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ] in
+  let constraints =
+    match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ] @
+    List.map string_of_constraint constraints in
   match t with
   | T.Rec (n, s)
   | T.Ext (n, s) -> process ~env ~db ~constraints n (field_names_of_type ~id:true s) (aux n s)
