@@ -194,7 +194,7 @@ module Get = struct
 
   let constraints_of_args _loc tds n =
     let t = pp_type_of _loc tds n in
-    let make name str = <:expr< match $lid:name$ with [ None -> [] | Some x -> [ ` $uid:str$ x ] ] >> in
+    let make name str = <:expr< match $lid:name$ with [ None -> [] | Some x -> [ ( $str:name$,` $uid:str$ x) ] ] >> in
     let module T = Type in
     let fn name = function
       | T.Bool     -> Some (make name "Bool")
