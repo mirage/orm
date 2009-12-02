@@ -58,7 +58,7 @@ let test_subtype () =
 
 let test_get () =
   let db = open_db ~rm:false x_init name in
-  let i = x_get db in
+  let i = x_get ~bar:(`Eq "hello world") db in
   "2 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
