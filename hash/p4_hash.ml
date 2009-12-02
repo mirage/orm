@@ -19,6 +19,7 @@ open Camlp4
 open PreCast
 open Ast
 open Syntax
+open Printf
 
 let hash_variant s =
   let accu = ref 0 in
@@ -32,10 +33,16 @@ let hash_variant s =
 
 exception Type_not_supported of ctyp
 
+let list_foldi fn accu l =
+  let accu, _ = List.fold_left (fun (accu, i) x -> fn accu i x, i + 1) (accu, 0) l in accu
+
+let list_mapi fn l = list_foldi (fun accu i x -> fn i x :: accu) [] l
+
+(* generate tuple and avoid singleton tuples *)
 let patt_tuple_of_list _loc = function
-	| []   -> <:patt< >>
-	| [x]  -> x
-	| h::t -> PaTup(_loc, List.fold_left (fun accu p -> <:patt< $accu$, $p$ >>) h t)
+  | []   -> <:patt< >>
+  | [x]  -> x
+  | h::t -> PaTup( _loc, List.fold_left (fun accu p -> <:patt< $accu$, $p$ >>) h t)
 
 let rec t ~envfn depth ctyp =
   let _loc = loc_of_ctyp ctyp in
@@ -45,15 +52,42 @@ let rec t ~envfn depth ctyp =
     else 
       t ~envfn (depth+1) y in
 
+  let combine_tuple tds =
+    let tys = list_of_ctyp tds [] in
+    let pos = ref 0 in
+    let vn p = sprintf "c%d" p in
+    let mcp = patt_tuple_of_list _loc (
+      List.rev (
+        List.fold_left 
+          (fun a t -> 
+            incr pos; 
+            <:patt< $lid:vn !pos$ >> :: a
+          ) [] tys
+       )
+      ) in
+    let ext p t = 
+      <:expr< 
+        (let x = $lid:vn p$ in $again t$) 
+      >> in
+    let ex = match tys with 
+      | hd :: tl -> 
+         let pos = ref 1 in
+         List.fold_left (fun a t ->
+           incr pos;
+           <:expr< _combine $a$ $ext !pos t$ >> ) (ext 1 hd) tl
+      | _ -> assert false in
+    (mcp, ex) in
+
   match ctyp with
-    <:ctyp< unit >> | <:ctyp< int >> 
+    <:ctyp< unit >>  | <:ctyp< int >> 
   | <:ctyp< int32 >> | <:ctyp< int64 >>
   | <:ctyp< float >> | <:ctyp< bool >> 
-  | <:ctyp< char >> | <:ctyp< string >> -> default
+  | <:ctyp< char >>  | <:ctyp< string >> -> default
 
   | <:ctyp< option $t$ >> ->
       <:expr< match x with [ None -> 0 | Some x -> $again t$ ] >>
 
+  (* records *)
   | <:ctyp< { $fs$ } >> ->
       let rec fn acc = function
         | <:ctyp< $t1$; $t2$ >> -> fn (fn acc t1) t2
@@ -70,49 +104,32 @@ let rec t ~envfn depth ctyp =
            ) (ext fid t) tl
       )
 
+  (* variants *)
   | <:ctyp< [< $rf$ ] >> | <:ctyp< [> $rf$ ] >>
   | <:ctyp< [= $rf$ ] >> | <:ctyp< [ $rf$ ] >> ->
-    let rec fn acc = function
-        <:ctyp< $t1$ | $t2$ >> -> fn (fn acc t1) t2
-      | <:ctyp< $uid:id$ of $t$ >> ->
-          let ts = list_of_ctyp t [] in
-          let patts = List.map (fun _ -> <:patt< _ >>) ts in
-          let patt = <:patt< $uid:id$ $patt_tuple_of_list _loc (<:patt< x >> :: (List.tl patts))$ >> in
-          <:match_case< $patt$ ->
-             _combine $`int:hash_variant id$ $again (List.hd ts)$ >> :: acc
-      | <:ctyp< $uid:id$ >> ->
-          <:match_case< $uid:id$ -> $`int:hash_variant id$ >> :: acc
-      | <:ctyp< ` $uid:id$ >> ->
-          <:match_case< `$uid:id$ -> $`int:hash_variant id$ >> :: acc
-      | <:ctyp< `$uid:id$ of $t$ >> ->
-          let ts = list_of_ctyp t [] in
-          let patts = List.map (fun _ -> <:patt< _ >>) ts in
-          let patt = <:patt< `$uid:id$ $patt_tuple_of_list _loc (<:patt< x >> :: (List.tl patts))$ >> in
-          <:match_case< $patt$ -> 
-             _combine $`int:hash_variant id$ $again (List.hd ts)$ >> :: acc
-      | _ -> assert false in
-    <:expr< match x with [ $mcOr_of_list (fn [] rf)$ ] >>
 
+    let mcs = List.map (function
+      | <:ctyp< $uid:id$ of $t$ >> ->
+          let patt, ex = combine_tuple t in
+          <:match_case< $uid:id$ $patt$ -> $ex$ >>
+      | <:ctyp< ` $uid:id$ of $t$ >> ->
+          let patt, ex = combine_tuple t in
+          <:match_case< ` $uid:id$ $patt$ -> $ex$ >>
+      | <:ctyp< $uid:id$ >> -> <:match_case< $uid:id$ -> $`int:hash_variant id$ >>
+      | <:ctyp< ` $uid:id$ >> -> <:match_case< ` $uid:id$ -> $`int:hash_variant id$ >>
+      | _ -> assert false
+    ) (list_of_ctyp rf []) in
+    <:expr< match x with [ $mcOr_of_list mcs$ ] >>
+
+  (* objects have a reliable hash function *)
   | <:ctyp< < $_$ > >> -> default
 
+  (* tuples *)
   | <:ctyp< ( $tup:tp$ ) >> ->
-     let tys = list_of_ctyp tp [] in
-     let pos = ref 0 in
-     let vn p = "c" ^ (string_of_int p) in
-     let mcp = paCom_of_list (List.rev (List.fold_left (fun a t ->
-       incr pos;
-       <:patt< $lid:vn !pos$ >> :: a
-     ) [] tys)) in
-     let ext p t = <:expr< (let x = $lid:vn p$ in $again t$) >> in
-     let tubis = match tys with 
-       | hd :: tl -> 
-           let pos = ref 1 in
-           List.fold_left (fun a t ->
-             incr pos;
-             <:expr< _combine $a$ $ext !pos t$ >> ) (ext 1 hd) tl
-       | _ -> assert false in
-     <:expr< match x with [ $tup:mcp$ -> $tubis$ ] >>
+     let patt, ex = combine_tuple tp in
+     <:expr< match x with [ $patt$ -> $ex$ ] >>
 
+  (* enums *)
   | <:ctyp< list $t$ >> ->
      <:expr< List.fold_left (fun a x -> _combine a $again t$) 0 x >>
 

@@ -9,10 +9,6 @@ Issues:
    * handle type 'a x = {x : 'a }
    * for Value, handle Bigint.t (and integers of range > 64)
 
-- Hash: fix the computation of hashed value for Foo of int * int * 
-  int (currently only consider the 1st argument), best to rewrite 
-  using type-of.
-
 - ORM:
    * signature generator
    * type-check for recursion going through list/option fields.
