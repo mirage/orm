@@ -8,8 +8,8 @@ run: dnc
 slow: dnc
 	env SLOW=1 ./$(RESULT) -verbose
 
-export INCDIRS = ../hash
-export LIBDIRS = ../hash
+export INCDIRS = ..
+export LIBDIRS = ..
 export PACKS = unix oUnit type-conv.syntax
 export DEPS = camlp4o
 

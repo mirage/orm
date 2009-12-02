@@ -1,9 +1,9 @@
 # Makefile to build and run the test files in a variety of ways
 
-P4INC := -I$(shell ocamlfind query type-conv) -I ../hash
+P4INC := -I$(shell ocamlfind query type-conv) -I ..
 PA    := pa_hash.cma
-BINC := -I ../hash 
-NINC := -I ../hash 
+BINC := -I ..
+NINC := -I ..
 
 PACKS= -package unix,oUnit
 

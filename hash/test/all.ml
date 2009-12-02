@@ -4,7 +4,7 @@ TYPE_CONV_PATH "All"
 
 type p =
  |One of int array * string * float * bool * (char list)
- |Two
+ |Two of (int * int * int)
  |Three of x option list
 
 and pp = [ `Poly1 | `Poly2 | `Poly3 of int ]
