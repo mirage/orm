@@ -13,8 +13,9 @@ open Test_utils
 
 let name = "object_simple.db"
 
+let r = Random.int 100
 let x b = object
-  method foo = (Random.int 100)
+  method foo = r
   method bar="hello "^b
 end
 
@@ -48,7 +49,7 @@ let test_update () =
 let test_get () =
   let db = open_db ~rm:false x_init name in
   let i = x_get db in
-  "2 in db" @? (List.length i = 1);
+  "1 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i#foo = x1#foo && (i#bar = x1#bar))
 
