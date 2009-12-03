@@ -1,4 +1,5 @@
 ._d/
+._bcdi/
 ._ncdi/
 *.annot
 *.cmo
@@ -22,3 +23,4 @@ lib_test/run_test
 lib/p4_hash.ml
 lib/p4_hash.mli
 /Makefile.config
+run_test
