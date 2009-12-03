@@ -69,7 +69,7 @@ let string_of_constraint (name, c) =
 		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
 
 (* Build up the list of fields actually needed to save the row *)
-let rec parse_row ~env ~db ?(skip=false) ~name t row n =
+let rec parse_row ~env ~db ~skip ~name t row n =
   match t, row.(n) with
   | T.Unit    , Data.INT 0L -> V.Unit, n + 1
   | T.Int _   , Data.INT i
@@ -84,12 +84,12 @@ let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~name:(Name.option name) t row (n + 1) in (if r=0L then V.Null else V.Value res), j
   | T.Tuple tl, _            ->
     let tuple, n = list_foldi (fun (accu, n1) i t ->
-      let res, n2 = parse_row ~env ~db ~name:(Name.tuple name i) t row n1 in res :: accu, n2
+      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.tuple name i) t row n1 in res :: accu, n2
       ) ([], n) tl in
     V.Tuple (List.rev tuple), n
   | T.Dict tl , _            ->
     let dict, n = List.fold_left (fun (accu, n1) (f,_,t) ->
-      let res, n2 = parse_row ~env ~db ~name:(Name.dict name f) t row n1 in (f, res) :: accu, n2
+      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.dict name f) t row n1 in (f, res) :: accu, n2
       ) ([], n) tl in
     V.Dict (List.rev dict), n
   | T.Sum tl  , Data.TEXT r  ->
@@ -119,7 +119,7 @@ and get_values ~env ~db ?id ?(constraints=[]) t =
   let aux name s = function stmt ->
     let row = row_data stmt in
     let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
-    let r, _ = parse_row ~env ~db ~name s row 1 in
+    let r, _ = parse_row ~env ~db ~skip:false ~name s row 1 in
     if List.mem (name, id) (V.free_vars r) then
       id, V.Rec ((name,id),r)
     else
@@ -138,7 +138,7 @@ and get_enum_values ~env ~db ~id name t =
     let id = match row.(0) with Data.INT i -> i | s -> process_error t s "__id__" in
     let next = match row.(1) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next__" in
     let size = match row.(2) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size" in
-    let v, _ = parse_row ~env ~db ~name t row 3 in
+    let v, _ = parse_row ~env ~db ~skip:false ~name t row 3 in
     id, next, size, v in
   let constraints = [ "__id__", "=", Some (Data.INT id) ] in
   let field_names = "__id__" :: "__next__" :: "__size__" :: field_names_of_type ~id:false t in
@@ -164,7 +164,7 @@ and get_enum_values ~env ~db ~id name t =
         if n >= Array.length row
         then []
         else
-          let v, m = parse_row ~env ~db ~name t row n in
+          let v, m = parse_row ~env ~db ~skip:false ~name t row n in
           v :: aux m in
       aux 0 in
     begin match process ~env ~db ~constraints table_name (field_names size) fn with
