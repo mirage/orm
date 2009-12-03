@@ -1,10 +1,10 @@
 TYPE_CONV_PATH "Variant_nested"
 
 type n =
-  | Nfour of x
   | Non of int64
   | NTwo
   | Nthree of string
+  | Nfour of x
 and x =
   | XONE
   | Xtwo of n
@@ -12,15 +12,15 @@ and x =
 and t = {
   foo: x;
   bar: n;
-  xyz: int;
+  xyz: char;
 } with orm
 
 open OUnit
 open Test_utils
 
-let t1 = {foo = XONE; bar = Nfour (Xthree 34); xyz = 12 }
-let t2 = {foo = Xtwo (Nfour XONE) ; bar = Nfour (Xthree 12) ;xyz = 66 }
-let t3 = {foo = Xtwo (Nfour (Xthree 32)) ; bar = Nfour XONE ; xyz = 88 }
+let t1 = {foo = XONE; bar = Nfour (Xthree 34); xyz = 'a' }
+let t2 = {foo = Xtwo (Nfour XONE) ; bar = Nfour (Xthree 12) ;xyz = 'b' }
+let t3 = {foo = Xtwo (Nfour (Xthree 32)) ; bar = Nfour XONE ; xyz = 'X' }
 
 let name = "variant_nested.db"
 
@@ -40,7 +40,7 @@ let test_subtype () =
     and x = 
       | XONE
       | Xtwo of n
-      | Xthree of int32
+      | Xthree of int64
     and t = {
       bar: n;
       xyz: int64;
