@@ -9,6 +9,6 @@ package "syntax" (
   name = "value"
   version = "0.1"
   description = "Syntax extension for value introspection in OCaml"
-  requires = "type-conv.syntax, camlp4, value, weakid.syntax"
+  requires = "type-conv.syntax, camlp4, value"
   archive(syntax, preprocessor) = "pa_value.cma"
 )

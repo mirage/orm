@@ -40,13 +40,7 @@ module Env = struct
       <:ctyp< $lid:P4_weakid.set_weakid n$ : $lid:n$ -> int64 -> unit >> ]
       ) (list_of_ctyp_decl tds)) in
     let _loc = loc_of_ctyp tds in
-    <:ctyp< {
-      $tySem_of_list bindings$;
-      $lid:P4_weakid.weakid_of value$ : Value.t -> int64;
-      $lid:P4_weakid.of_weakid value$ : int64 -> Value.t;
-      $lid:P4_weakid.has_weakid value$ : Value.t -> bool;
-      $lid:P4_weakid.set_weakid value$ : Value.t -> int64 -> unit;
-     } >>
+    <:ctyp< { $tySem_of_list bindings$ } >>
 
   let create tds =
     let bindings = List.flatten (List.map (fun (_loc, n, _) -> [
@@ -59,22 +53,7 @@ module Env = struct
     let _loc = loc_of_ctyp tds in
     <:expr<
       let module W = struct $P4_weakid.gen tds$ end in
-      let module WV = struct
-        value ( $lid:P4_weakid.weakid_of value$,
-                $lid:P4_weakid.of_weakid value$,
-                $lid:P4_weakid.has_weakid value$,
-                _,
-                _,
-                $lid:P4_weakid.set_weakid value$ ) =
-          Value.$lid:P4_weakid.create_weakid_fns "t"$ ();
-      end in
-      { 
-        $rbSem_of_list bindings$;
-        Deps.$lid:P4_weakid.weakid_of value$ = WV.$lid:P4_weakid.weakid_of value$;
-        Deps.$lid:P4_weakid.of_weakid value$ = WV.$lid:P4_weakid.of_weakid value$;
-        Deps.$lid:P4_weakid.has_weakid value$ = WV.$lid:P4_weakid.has_weakid value$;
-        Deps.$lid:P4_weakid.set_weakid value$ = WV.$lid:P4_weakid.set_weakid value$;
-      } >>
+      { $rbSem_of_list bindings$ } >>
 end
 
 let env_to_env _loc env =
