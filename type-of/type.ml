@@ -138,6 +138,7 @@ let is_subtype_of (t1:t) (t2:t) =
       | Int None, Int _ -> true
       | Int (Some x), Int None -> false
       | Int (Some x), Int (Some y) -> y <= x
+      | Int (Some x), Char -> x >= 8
       | Bool, Bool
       | Float, Float
       | Char, Char
