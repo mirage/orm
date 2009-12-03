@@ -4,8 +4,7 @@ type s =
   |Foo
   |Bar of int
   |Xyz of string
-  |Blah of int * char
-  |Blah2 of (int * char)
+  |Blah of (int * char)
 and x = {
   foo: s;
   bar: s;
