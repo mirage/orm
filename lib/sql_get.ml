@@ -95,7 +95,7 @@ let rec parse_row ~env ~db ?(skip=false) ~name t row n =
   | T.Sum tl  , Data.TEXT r  ->
     let row, n = List.fold_left (fun (accu, n1) (rn, tl) ->
       list_foldi (fun (accu, n2) i t ->
-        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum name rn i) t row n2 in (if rn<>r then accu else res :: accu), n3
+        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum "" rn i) t row n2 in (if rn<>r then accu else res :: accu), n3
         ) (accu, n1) tl)
       ([], n + 1) tl in
     V.Sum (r, List.rev row), n
@@ -113,7 +113,7 @@ let rec parse_row ~env ~db ?(skip=false) ~name t row n =
     end
   | T.Var v   , Data.INT i   -> V.Var (v, i), n + 1
   | _ when skip              -> V.Null, n + 1
-  | _                        -> process_error t row.(n) "unknown"
+  | _                        -> process_error t row.(n) (sprintf "%s: unknown" name)
 
 and get_values ~env ~db ?id ?(constraints=[]) t =
   let aux name s = function stmt ->

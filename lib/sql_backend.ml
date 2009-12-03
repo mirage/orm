@@ -150,7 +150,7 @@ let string_of_data = function
 module Name = struct
   let default = "val"
   let tuple n i = sprintf "%s__%i" n (i+1)
-  let sum n r i = sprintf "%s__%s__%i" n r (i+1)
+  let sum n r i = if n = "" then sprintf "%s__%i" r (i+1) else sprintf "%s__%s__%i" n r (i+1)
   let dict n f = if n = "" then f else sprintf "%s__%s" n f
   let option n = sprintf "%s__0" n
   let option_is_set n = sprintf "%s__0__isset" n
