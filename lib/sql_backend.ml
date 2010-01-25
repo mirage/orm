@@ -223,7 +223,7 @@ let subtables_of_type t =
         List.fold_left (fun accu (n,_,t) -> aux ?parent (Name.dict name n) accu t) accu tl
     | T.Sum tl    ->
       List.fold_left (fun accu (r,tl) ->
-        list_foldi (fun accu i t -> aux ?parent (Name.sum name r i) accu t) accu tl
+        list_foldi (fun accu i t -> aux ?parent (Name.sum name r i) accu t) accu (List.rev tl)
         ) accu tl
     | T.Var v     -> ( [], [name, v] ) >> accu
     | T.Rec (v,s)
