@@ -115,7 +115,7 @@ module Get = struct
                   -> List.fold_left (fun accu (n,_,t) -> aux [n] accu t) accu d
       | T.Dict _  -> accu
       | T.Tuple t when name = []
-                  -> fst (List.fold_left (fun (accu, i) t -> aux ["val"; string_of_int i] accu t, i+1) (accu, 1) t)
+                  -> fst (List.fold_left (fun (accu, i) t -> aux ["value"; string_of_int i] accu t, i+1) (accu, 1) t)
       | T.Tuple t -> fst (List.fold_left (fun (accu, i) t -> aux (name @ [string_of_int i]) accu t, i+1) (accu, 1) t)
       | T.Rec (n,t) | T.Ext (n,t) when name = []
                   -> aux [] accu t
@@ -126,7 +126,7 @@ module Get = struct
   let arg_names_of_type t =
     let module T = Type in
     let fn name = function
-      | T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some (if name = [] then "val" else String.concat "_" name)
+      | T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some (if name = [] then "value" else String.concat "_" name)
       | _ -> None in
     map_type fn t
 
@@ -170,7 +170,7 @@ module Get = struct
   let constraints_of_args _loc tds n =
     let t = pp_type_of _loc tds n in
     let make name str =
-		let name_str = match name with [] -> "val" | l -> String.concat "_" l in
+		let name_str = match name with [] -> "value" | l -> String.concat "_" l in
 		let name_lst = expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) name) in
 		<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, ` $uid:str$ x) ] ] >> in
     let module T = Type in
