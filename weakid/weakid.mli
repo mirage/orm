@@ -39,6 +39,7 @@ module Weak_values : functor (H : Hashtbl.HashedType) -> S with type key = H.t
 
 module Make : functor (H : Hashtbl.HashedType) -> sig
 	type t
+	val length : t -> int
 	val create : int -> t
 	val to_weakid : t -> H.t -> int64
 	val of_weakid : t -> int64 -> H.t

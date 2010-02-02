@@ -246,6 +246,8 @@ module Make (H : Hashtbl.HashedType) = struct
 		elt_id = K.create i;
 		count = 0L;
 	}
+
+	let length t = K.count t.elt_id
 		
 	let to_weakid t (elt : H.t) : int64 =
 		K.find t.elt_id elt
