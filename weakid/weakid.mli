@@ -14,6 +14,29 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+(** Weak hash tables *)
+
+module type S = sig
+	type key
+	type 'a t
+	val create : int -> 'a t
+	val clear : 'a t -> unit
+	val add : 'a t -> key -> 'a -> unit
+	val replace : 'a t -> key -> 'a -> unit
+	val remove : 'a t -> key -> unit
+	val merge : 'a t -> key -> 'a -> 'a
+	val find : 'a t -> key -> 'a
+	val find_all : 'a t -> key -> 'a list
+	val mem : 'a t -> key -> bool
+	val iter : (key -> 'a -> unit) -> 'a t -> unit
+	val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+	val count : 'a t -> int
+	val stats : 'a t -> int * int * int * int * int * int
+end
+
+module Weak_keys : functor (H : Hashtbl.HashedType) -> S with type key = H.t
+module Weak_values : functor (H : Hashtbl.HashedType) -> S with type key = H.t
+
 module Make : functor (H : Hashtbl.HashedType) -> sig
 	type t
 	val create : int -> t

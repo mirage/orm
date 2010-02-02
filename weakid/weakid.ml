@@ -19,10 +19,6 @@
 (***********************************************************************)
 (* 10/2009: modified by Thomas Gazagnaire <thomas@gazganaire.com>      *)
 
-(** Weak array operations *)
-
-(** Weak hash tables *)
-
 module type S = sig
 	type key
 	type 'a t
@@ -233,12 +229,12 @@ module A = struct
 	let create n = create n None
 end
 
-module MakeWeakKeys = MakeOne(W)(A)
-module MakeWeakValues = MakeOne(A)(W)
+module Weak_keys = MakeOne(W)(A)
+module Weak_values = MakeOne(A)(W)
 
 module Make (H : Hashtbl.HashedType) = struct
-	module K = MakeWeakKeys(H)
-	module V = MakeWeakValues(struct type t = int64 let equal = (=) let hash = Hashtbl.hash end)
+	module K = Weak_keys(H)
+	module V = Weak_values(struct type t = int64 let equal = (=) let hash = Hashtbl.hash end)
 
 	type t = {
 		id_elt : H.t V.t;
