@@ -1,4 +1,4 @@
-(*pp camlp4o -I .. -I ../../hash -I ../../weakid -I `ocamlfind query type-conv` pa_type_conv.cmo pa_hash.cma pa_weakid.cma pa_value.cma *)
+(*pp camlp4o -I .. -I `ocamlfind query type-conv` pa_type_conv.cmo pa_value.cma *)
 
 TYPE_CONV_PATH "All"
 

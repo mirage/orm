@@ -1,6 +1,6 @@
 # Makefile to build and run the test files in a variety of ways
 
-P4INC := `ocamlfind query value.syntax -r -format "-I %d %a" -predicates syntax,preprocessor`
+P4INC := -I `ocamlfind query type-conv` -I .. pa_type_conv.cmo pa_value.cma
 BINC := -I .. pa_value.cma
 NINC := -I .. pa_value.cmx
 
