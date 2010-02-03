@@ -28,6 +28,10 @@ let of_value n = n ^ "_of_value"
 let of_value_aux n = n ^ "_of_value_aux"
 let value_of_aux n = "value_of_" ^ n ^ "_aux"
 
+let new_id_ref n = n ^ "__new_id__"
+let set_new_id n = "set_new_id_of" ^ n
+let get_new_id n = n ^ "_new_id"
+
 (* Utils *)
 
 let debug_ctyp ctyp =
@@ -103,14 +107,37 @@ exception Type_not_supported of ctyp
 module Value_of = struct
 	
 	let env_type _loc names =
-		<:ctyp< { $List.fold_left (fun accu n -> <:ctyp< $lid:n$ : list ( $lid:n$ * int64 ); $accu$ >>) <:ctyp< __new_id__ : unit -> int64 >> names$  } >>
+		let aux accu n = <:ctyp< $lid:n$ : list ( $lid:n$ * int64 ); $accu$ >> in
+		<:ctyp< { $List.fold_left aux <:ctyp< >>  names$ } >>
 
 	let empty_env _loc names =
-		<:expr< let __new_id__ = let count = ref 0L in let x () = do { count.val := Int64.add count.val 1L; count.val } in x in
-			{ $rbSem_of_list (List.map (fun n -> <:rec_binding< Deps.$lid:n$ = [] >>) names)$ ; __new_id__ = __new_id__ } >>
+		let aux n = <:rec_binding< Deps.$lid:n$ = [] >> in
+		<:expr< { $rbSem_of_list (List.map aux names)$ } >>
 
 	let replace_env _loc names id t =
-		<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+		if List.length names = 1 then
+			<:expr< { Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+		else
+			<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
+
+	let new_id_fns _loc names =
+		let binding_ref n = <:binding< $lid:new_id_ref n$ : ref (option ($lid:n$ -> int64)) = ref None >> in
+		let binding_set n = <:binding< $lid:set_new_id n$ fn = $lid:new_id_ref n$.val := Some fn >> in
+		let binding n =
+			<:binding< $lid:get_new_id n$ = match $lid:new_id_ref n$.val with [ None -> __fresh__id__ | Some fn -> fn ] >> in
+		let set_exprs = List.map (fun n -> <:expr< $lid:set_new_id n$ >>) names in
+		let set_patts = List.map (fun n -> <:patt< $lid:set_new_id n$ >>) names in
+		let new_id_exprs = List.map (fun n -> <:expr< $lid:get_new_id n$ >>) names in
+		let new_id_patts = List.map (fun n -> <:patt< $lid:get_new_id n$ >>) names in
+		<:binding< $patt_tuple_of_list _loc (set_patts @ new_id_patts)$ =
+			let $biAnd_of_list (List.map binding_ref names)$ in
+			let $biAnd_of_list (List.map binding_set names)$ in
+			let count = ref 0L in
+			let __fresh__id__ _ =
+				do { count.val := Int64.add count.val 1L; count.val } in
+			let $biAnd_of_list (List.map binding names)$ in
+			$expr_tuple_of_list _loc (set_exprs @ new_id_exprs)$
+		>> 
 
 	let rec create names id ctyp =
 		let _loc = loc_of_ctyp ctyp in
@@ -180,7 +207,7 @@ module Value_of = struct
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
 					then V.Var ($str:t$, List.assq $id$ __env__.Deps.$lid:t$)
 					else begin
-						let __id__ = __env__.Deps.__new_id__ () in
+						let __id__ = $lid:get_new_id t$ $id$ in
 						let __value__ = $lid:value_of_aux t$ $replace_env _loc names id t$ $id$ in
 						if List.mem ($str:t$, __id__) (V.free_vars __value__) then
 							V.Rec (($str:t$, __id__), __value__)
@@ -204,19 +231,26 @@ module Value_of = struct
 		biAnd_of_list bindings
 
 	let inputs _loc ids =
-		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:value_of x$ : $lid:x$ -> Value.t) >>) ids)
+		let value_of_fns = List.map (fun x -> <:patt< ($lid:value_of x$ : $lid:x$ -> Value.t) >>) ids in
+		let set_new_id_fns = List.map (fun x -> <:patt< ($lid:set_new_id x$ : ($lid:x$ -> int64) -> unit) >>) ids in
+		patt_tuple_of_list _loc (value_of_fns @ set_new_id_fns)
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr<
-			fun $lid:x$ ->
-				let __env__ = $empty_env _loc ids$ in
-				let __id__ = __env__.Deps.__new_id__ () in
-				let __env__ = $replace_env _loc ids <:expr< $lid:x$ >> x$ in
-				match $lid:value_of_aux x$ __env__ $lid:x$ with [
-				  Value.Rec _ as x -> x
-				| x when ( List.mem ($str:x$, __id__) (Value.free_vars x) ) -> Value.Rec (($str:x$, __id__), x)
-				| x -> Value.Ext (($str:x$, __env__.Deps.__new_id__ ()), x) ] >>
-			) ids)
+		let nid, pid = new_id _loc in
+		let set_new_id_fns = List.map (fun x -> <:expr< $lid:set_new_id x$ >>) ids in
+		let value_of_fn x =
+			<:expr<
+				fun $lid:x$ ->
+					let __env__ = $empty_env _loc ids$ in
+					let __id__ = $lid:get_new_id x$ $lid:x$ in
+					let __env__ = $replace_env _loc ids <:expr< $lid:x$ >> x$ in
+					match $lid:value_of_aux x$ __env__ $lid:x$ with [
+					  Value.Rec _ as x -> x
+					| $pid$ when ( List.mem ($str:x$, __id__) (Value.free_vars $nid$) ) -> Value.Rec (($str:x$, __id__), $nid$)
+					| $pid$ -> Value.Ext (($str:x$, $lid:get_new_id x$ $lid:x$), $nid$) ]
+			>> in
+		let value_of_fns = List.map value_of_fn ids in
+		expr_tuple_of_list _loc (value_of_fns @ set_new_id_fns)
 
 end
 
@@ -394,10 +428,12 @@ module Of_value = struct
 		biAnd_of_list bindings
 
 	let inputs _loc ids =
-		patt_tuple_of_list _loc (List.map (fun x -> <:patt< ($lid:of_value x$ : Value.t -> $lid:x$) >>) ids)
+		let of_value_fns = List.map (fun x -> <:patt< ($lid:of_value x$ : Value.t -> $lid:x$) >>) ids in
+		patt_tuple_of_list _loc of_value_fns
 
 	let outputs _loc ids =
-		expr_tuple_of_list _loc (List.map (fun x -> <:expr< $lid:of_value_aux x$ $empty_env _loc ids$ >>) ids)
+		let of_value_fns = List.map (fun x -> <:expr< $lid:of_value_aux x$ $empty_env _loc ids$ >>) ids in
+		expr_tuple_of_list _loc of_value_fns
 end
 
 
@@ -409,6 +445,7 @@ let gen tds =
 			let module Deps = struct
 				type env = $Value_of.env_type _loc ids$;
 			end in
+			let $Value_of.new_id_fns _loc ids$ in
 			let rec $Value_of.gen tds$ in
 			$Value_of.outputs _loc ids$;
 		value $Of_value.inputs _loc ids$ =
