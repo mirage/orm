@@ -1,7 +1,5 @@
-(*pp camlp4orf *)
 (*
- * Copyright (c) 2009 Anil Madhavapeddy <anil@recoil.org>
- * Copyright (c) 2009 Thomas Gazagnaire <thomas@gazagnaire.com>
+ * Copyright (c) 2010 Thomas Gazagnaire <thomas@gazagnaire.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,16 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Camlp4
-open PreCast
-open Ast
-open Syntax
-
-open Pa_type_conv
-
-let _ = 
-  add_generator "weakid"
-    (fun tds ->
-      let _loc = loc_of_ctyp tds in
-      <:str_item< $P4_weakid.gen tds$ >>
-    )
+module Make : functor (H : Hashtbl.HashedType) -> sig
+	type t
+	val create : int -> t
+	val to_weakid : t -> H.t -> int64
+	val of_weakid : t -> int64 -> H.t
+	val mem : t -> H.t -> bool
+	val mem_weakid : t -> int64 -> bool
+	val add : t -> H.t -> int64
+	val remove : t -> H.t -> unit
+	val replace : t -> H.t -> int64 -> unit
+end

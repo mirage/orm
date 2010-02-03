@@ -29,33 +29,6 @@ let get n    = n ^ "_get"
 let id n     = n ^ "_id"
 let delete n = n ^ "_delete"
 
-module Env = struct
-  let value = "__value__"
-  let create_sig tds =
-    let bindings = List.flatten (List.map (fun (_loc, n, _) -> [
-      <:ctyp< $lid:P4_weakid.weakid_of n$ : $lid:n$ -> int64 >> ;
-      <:ctyp< $lid:P4_weakid.of_weakid n$ : int64 -> $lid:n$ >> ;
-      <:ctyp< $lid:P4_weakid.has_weakid n$ : $lid:n$ -> bool >> ;
-      <:ctyp< $lid:P4_weakid.rm_weakid n$ : $lid:n$ -> unit >> ;
-      <:ctyp< $lid:P4_weakid.set_weakid n$ : $lid:n$ -> int64 -> unit >> ]
-      ) (list_of_ctyp_decl tds)) in
-    let _loc = loc_of_ctyp tds in
-    <:ctyp< { $tySem_of_list bindings$ } >>
-
-  let create tds =
-    let bindings = List.flatten (List.map (fun (_loc, n, _) -> [
-      <:rec_binding< Deps.$lid:P4_weakid.weakid_of n$ = W.$lid:P4_weakid.weakid_of n$ >> ;
-      <:rec_binding< Deps.$lid:P4_weakid.of_weakid n$ = W.$lid:P4_weakid.of_weakid n$ >> ;
-      <:rec_binding< Deps.$lid:P4_weakid.has_weakid n$ = W.$lid:P4_weakid.has_weakid n$ >> ;
-      <:rec_binding< Deps.$lid:P4_weakid.rm_weakid n$ = W.$lid:P4_weakid.rm_weakid n$ >> ;
-      <:rec_binding< Deps.$lid:P4_weakid.set_weakid n$ = W.$lid:P4_weakid.set_weakid n$ >> ]
-      ) (list_of_ctyp_decl tds)) in
-    let _loc = loc_of_ctyp tds in
-    <:expr<
-      let module W = struct $P4_weakid.gen tds$ end in
-      { $rbSem_of_list bindings$ } >>
-end
-
 let env_to_env _loc env =
   let sl_of_sl sl = 
     expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) sl) in
@@ -69,7 +42,7 @@ let env_to_env _loc env =
 let init_binding tds (_loc, n, t) =
   <:binding< $lid:init n$ =
     fun db_name ->
-      let db = Orm.Sql_backend.new_state $Env.create tds$ db_name in
+      let db = Orm.Sql_backend.new_state (OW.create 128) db_name in
       let () = Orm.Sql_init.init_tables ~mode:`RW ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
       db
   >>
@@ -77,7 +50,7 @@ let init_binding tds (_loc, n, t) =
 let initRO_binding tds (_loc, n, t) =
   <:binding< $lid:initRO n$ =
     fun db_name ->
-      let db = Orm.Sql_backend.new_state $Env.create tds$ db_name in
+      let db = Orm.Sql_backend.new_state (OW.create 128) db_name in
       let () = Orm.Sql_init.init_tables ~mode:`RO ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
       db
   >>
@@ -86,14 +59,14 @@ let save_binding (_loc, n, t) =
   <:binding< $lid:save n$ =
     if not (Type.is_mutable Deps.$lid:P4_type.type_of n$) then (
       fun ~db -> fun $lid:n$ ->
-        if not (db.OS.cache.Deps.$lid:P4_weakid.has_weakid n$ $lid:n$) then (
+        if not (OW.mem db.OS.cache (Obj.repr $lid:n$)) then (
           let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
-          db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id )
+          OW.replace db.OS.cache (Obj.repr $lid:n$) id )
         else ()
     ) else (
       fun ~db -> fun $lid:n$ ->
         let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
-        db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id
+        OW.replace db.OS.cache (Obj.repr $lid:n$) id
     )
   >> 
 
@@ -115,7 +88,7 @@ module Get = struct
                   -> List.fold_left (fun accu (n,_,t) -> aux [n] accu t) accu d
       | T.Dict _  -> accu
       | T.Tuple t when name = []
-                  -> fst (List.fold_left (fun (accu, i) t -> aux ["val"; string_of_int i] accu t, i+1) (accu, 1) t)
+                  -> fst (List.fold_left (fun (accu, i) t -> aux ["value"; string_of_int i] accu t, i+1) (accu, 1) t)
       | T.Tuple t -> fst (List.fold_left (fun (accu, i) t -> aux (name @ [string_of_int i]) accu t, i+1) (accu, 1) t)
       | T.Rec (n,t) | T.Ext (n,t) when name = []
                   -> aux [] accu t
@@ -126,7 +99,7 @@ module Get = struct
   let arg_names_of_type t =
     let module T = Type in
     let fn name = function
-      | T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some (if name = [] then "val" else String.concat "_" name)
+      | T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some (if name = [] then "value" else String.concat "_" name)
       | _ -> None in
     map_type fn t
 
@@ -170,7 +143,7 @@ module Get = struct
   let constraints_of_args _loc tds n =
     let t = pp_type_of _loc tds n in
     let make name str =
-		let name_str = match name with [] -> "val" | l -> String.concat "_" l in
+		let name_str = match name with [] -> "value" | l -> String.concat "_" l in
 		let name_lst = expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) name) in
 		<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, ` $uid:str$ x) ] ] >> in
     let module T = Type in
@@ -199,9 +172,9 @@ let get_binding tds (_loc, n, t) =
          (fun (id,v) ->
            let aux () =
              let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
-             do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } in
+             do { OW.replace db.OS.cache (Obj.repr $lid:n$) id; $lid:n$ } in
            try
-             let t = db.OS.cache.Deps.$lid:P4_weakid.of_weakid n$ id in
+             let (t : $lid:n$) = Obj.magic (OW.of_weakid db.OS.cache id) in
              if Value.equal (Deps.$lid:P4_value.value_of n$ t) v then t else aux ()
            with [ Not_found -> aux () ]
          ) (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
@@ -209,10 +182,11 @@ let get_binding tds (_loc, n, t) =
       fun db ->
         List.map
           (fun (id,v) ->
-            try db.OS.cache.Deps.$lid:P4_weakid.of_weakid n$ id
-            with [ Not_found ->
+            if OW.mem_weakid db.OS.cache id then
+              ( Obj.magic OW.of_weakid db.OS.cache id : $lid:n$ )
+            else (
               let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
-              do { db.OS.cache.Deps.$lid:P4_weakid.set_weakid n$ $lid:n$ id; $lid:n$ } ])
+              do { OW.replace db.OS.cache (Obj.repr $lid:n$) id; $lid:n$ } ))
           (Orm.Sql_get.get_values ~env:Deps.env ~db ~constraints Deps.$lid:P4_type.type_of n$)
     ) >>$
   >>
@@ -220,15 +194,15 @@ let get_binding tds (_loc, n, t) =
 let delete_binding (_loc, n, t) =
   <:binding< $lid:delete n$ =
     fun ~db -> fun $lid:n$ ->
-      let id = db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$ in
-      let () = db.OS.cache.Deps.$lid:P4_weakid.rm_weakid n$ $lid:n$ in
+      let id = OW.to_weakid db.OS.cache (Obj.magic $lid:n$) in
+      let () = OW.remove db.OS.cache (Obj.magic $lid:n$) in
       Orm.Sql_delete.delete_value ~env:Deps.env ~db ~id (Deps.$lid:P4_value.value_of n$ $lid:n$)
   >>
 
 let id_binding (_loc, n, t) =
   <:binding< $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 =
     fun ~db -> fun $lid:n$ ->
-      db.OS.cache.Deps.$lid:P4_weakid.weakid_of n$ $lid:n$
+      OW.to_weakid db.OS.cache (Obj.magic $lid:n$)
   >>
 
 let gen env tds =
@@ -257,13 +231,13 @@ let gen env tds =
       $sgSem_of_list sigs$;
     end = struct
       module OS = Orm.Sql_backend;
+      module OW = Weakid.Make(struct type t = Obj.t; value equal = (=); value hash = Hashtbl.hash; end);
       module Deps = struct
         $P4_type.gen tds$;
         $P4_value.gen tds$;
-        type env = $Env.create_sig tds$;
         value env = $env_to_env _loc env$;
       end;
-      type db 'a 'b = OS.state Deps.env;
+      type db 'a 'b = OS.state OW.t;
       value $biAnd_of_list init_bindings$;
       value $biAnd_of_list initRO_bindings$;
       value rec $biAnd_of_list save_bindings$;

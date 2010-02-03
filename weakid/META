@@ -1,13 +1,5 @@
 name = "weakid"
-version = "0.1"
-description = "Weak ID for OCaml values
-"archive(byte) = "hweak.cmo"
-archive(native) = "hweak.cmx"
-
-package "syntax" (
-  name = "weakid"
-  version = "0.1"
-  description = "Syntax extension of weak IDs for OCaml values"
-  requires = "camlp4, type-conv.syntax, hash.syntax, weakid"
-  archive(syntax, preprocessor) = "pa_weakid.cma"
-)
+version = "0.2"
+description = "Weak IDs library for OCaml values"
+archive(byte) = "weakid.cmo"
+archive(native) = "weakid.cmx"

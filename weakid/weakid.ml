@@ -51,7 +51,7 @@ module type Arg = sig
 	val blit : 'a t -> int -> 'a t -> int -> int -> unit
 end
 
-module Make (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
+module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
 
   type key = H.t;;
 
@@ -240,5 +240,56 @@ module A = struct
 	let create n = create n None
 end
 
-module MakeWeakKeys = Make(W)(A)
-module MakeWeakValues = Make(A)(W)
+module MakeWeakKeys = MakeOne(W)(A)
+module MakeWeakValues = MakeOne(A)(W)
+
+module Make (H : Hashtbl.HashedType)= struct
+	module K = MakeWeakKeys(H)
+	module V = MakeWeakValues(struct type t = int64 let equal = (=) let hash = Hashtbl.hash end)
+
+	type t = {
+		id_elt : H.t V.t;
+		elt_id : int64 K.t;
+		mutable count : int64;
+	}
+	let create i = {
+		id_elt = V.create i;
+		elt_id = K.create i;
+		count = 0L;
+	}
+		
+	let to_weakid t (elt : H.t) : int64 =
+		K.find t.elt_id elt
+
+	let of_weakid t (id : int64) : H.t =
+		V.find t.id_elt id
+
+	let mem t elt =
+		K.mem t.elt_id elt
+
+	let mem_weakid t id =
+		V.mem t.id_elt id
+
+	let add t elt =
+		let rec fresh () =
+			t.count <- Int64.add t.count 1L;
+			if V.mem t.id_elt t.count then
+				fresh ()
+			else
+				t.count in
+		let id = fresh () in
+		V.replace t.id_elt id elt;
+		K.replace t.elt_id elt id;
+		id
+
+	let remove t elt =
+		if K.mem t.elt_id elt then begin
+			let id = K.find t.elt_id elt in
+			V.remove t.id_elt id;
+			K.remove t.elt_id elt
+		end
+
+	let replace t elt id =
+		V.replace t.id_elt id elt;
+		K.replace t.elt_id elt id
+end

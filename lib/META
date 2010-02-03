@@ -4,13 +4,13 @@ description = "An Object-Relational Mapping layer to persist OCaml data"
 requires = "orm.core"
 
 package "core" (
-  requires = "num, sqlite3, type-of, value, unix"
+  requires = "num, sqlite3, type-of, value, unix, weakid"
   archive(byte) = "orm.cma"
   archive(native) = "orm.cmxa"
 )
 
 package "syntax" (
-  requires = "orm.core, type-conv.syntax, camlp4, type-of.syntax, weakid.syntax, value.syntax"
+  requires = "orm.core, type-conv.syntax, camlp4, type-of.syntax, value.syntax"
   description = "Syntax extension for ORM"
   archive(syntax, preprocessor) = "pa_orm.cma"
 )
