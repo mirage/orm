@@ -26,5 +26,5 @@ let _ =
   add_generator "hash"
     (fun tds ->
       let _loc = loc_of_ctyp tds in
-      <:str_item< $P4_hash.gen ~fun_name:(fun x -> "hash_of_"^x) tds$ >>
+      <:str_item< $P4_hash.gen tds$ >>
     )

@@ -21,6 +21,8 @@ open Ast
 open Syntax
 open Printf
 
+let hash_of n = "hash_of_" ^ n
+
 let hash_variant s =
   let accu = ref 0 in
   for i = 0 to String.length s - 1 do
@@ -128,7 +130,10 @@ let rec t ~envfn depth ctyp =
      <:expr< Array.fold_left (fun a x -> _combine a $again t$) 0 x >>
 
   | <:ctyp< $lid:id$ >> ->
-      <:expr< $again (envfn id)$ >>
+    begin match envfn id with
+	  | None      -> <:expr< (let _ = Printf.printf "foo%!" in let n = $lid:hash_of id$ x in let _ = Printf.printf "oo%!\n" in n) >>
+	  | Some ctyp -> <:expr< $again ctyp$ >>
+    end
 
   | <:ctyp< $_$ -> $_$ >> -> default
 
@@ -141,7 +146,7 @@ let gen1 ~envfn ctyp =
     $t ~envfn 0 ctyp$
   >>
 
-let gen ?(fun_name=(fun x -> x)) ctyp =
+let gen ctyp =
   let _loc = loc_of_ctyp ctyp in
   (* make a list of all the terms *)
   let rec fn ty acc =
@@ -152,9 +157,9 @@ let gen ?(fun_name=(fun x -> x)) ctyp =
       (id,ty) :: acc
     | _ -> assert false in
   let env = fn ctyp [] in
-  let envfn = fun id -> List.assoc id env in
+  let envfn = fun id -> if List.mem_assoc id env then Some (List.assoc id env) else None in
   let bis = List.map (fun (id,ctyp) ->
      <:binding<
-        $lid:(fun_name id)$ (x : $lid:id$) = $gen1 ~envfn ctyp$ >>
+        $lid:hash_of id$ (x : $lid:id$) = $gen1 ~envfn ctyp$ >>
   ) env in
   <:str_item< value $biAnd_of_list bis$ >>
