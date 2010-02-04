@@ -28,24 +28,32 @@ module type S = sig
 	val find : 'a t -> key -> 'a
 	val find_all : 'a t -> key -> 'a list
 	val mem : 'a t -> key -> bool
-	val iter : (key -> 'a -> unit) -> 'a t -> unit
-	val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+	val iter : 'a t -> (key -> 'a -> unit) -> unit
+	val fold : 'a t -> (key -> 'a -> 'b -> 'b) -> 'b -> 'b
 	val count : 'a t -> int
 	val stats : 'a t -> int * int * int * int * int * int
+	val to_list : 'a t -> (key * 'a) list
 end
 
 module Weak_keys : functor (H : Hashtbl.HashedType) -> S with type key = H.t
 module Weak_values : functor (H : Hashtbl.HashedType) -> S with type key = H.t
 
-module Make : functor (H : Hashtbl.HashedType) -> sig
+module type Sig = sig
 	type t
+	type elt
+	val clear : t -> unit
 	val length : t -> int
 	val create : int -> t
-	val to_weakid : t -> H.t -> int64
-	val of_weakid : t -> int64 -> H.t
-	val mem : t -> H.t -> bool
+	val to_weakid : t -> elt -> int64
+	val of_weakid : t -> int64 -> elt list
+	val mem : t -> elt -> bool
 	val mem_weakid : t -> int64 -> bool
-	val add : t -> H.t -> int64
-	val remove : t -> H.t -> unit
-	val replace : t -> H.t -> int64 -> unit
+	val add : t -> elt -> int64 -> unit
+	val fresh : t -> elt -> int64
+	val remove : t -> elt -> unit
+	val replace : t -> elt -> int64 -> unit
+	val dump : t -> string
 end
+
+
+module Make : functor (H : Hashtbl.HashedType) -> Sig with type elt = H.t

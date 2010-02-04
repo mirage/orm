@@ -31,10 +31,11 @@ module type S = sig
 	val find : 'a t -> key -> 'a
 	val find_all : 'a t -> key -> 'a list
 	val mem : 'a t -> key -> bool
-	val iter : (key -> 'a -> unit) -> 'a t -> unit
-	val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+	val iter : 'a t -> (key -> 'a -> unit) ->  unit
+	val fold : 'a t -> (key -> 'a -> 'b -> 'b) ->  'b -> 'b
 	val count : 'a t -> int
 	val stats : 'a t -> int * int * int * int * int * int
+	val to_list : 'a t -> (key * 'a) list
 end
 
 module type Arg = sig
@@ -45,6 +46,7 @@ module type Arg = sig
 	val length : 'a t -> int
 	val create : int -> 'a t
 	val blit : 'a t -> int -> 'a t -> int -> int -> unit
+	val to_list : 'a t -> 'a list
 end
 
 module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
@@ -79,7 +81,7 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 		t.limit <- 3
 
 
-	let fold f t init =
+	let fold t f init =
 		let rec fold_bucket i ((b1, b2) as cpl) accu =
 			if i >= K.length b1 then accu else
 				match (K.get b1 i, V.get b2 i) with
@@ -88,7 +90,7 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 		in
 		Array.fold_right (fold_bucket 0) t.table init
 
-	let iter f t = fold (fun d1 d2 () -> f d1 d2) t ();;
+	let iter t f = fold t (fun d1 d2 () -> f d1 d2) ();;
 
 	let count t =
 		let rec count_bucket i ((b1, b2) as cpl) accu =
@@ -106,7 +108,7 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 		if newlen > oldlen then begin
 			let newt = create newlen in
 			newt.limit <- t.limit + 100;          (* prevent resizing of newt *)
-			fold (fun f t () -> add newt f t) t ();
+			fold t (fun f t () -> add newt f t) ();
 			(* assert Array.length newt.table = newlen; *)
 			t.table <- newt.table;
 			t.limit <- t.limit + 2;
@@ -214,12 +216,21 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 		Array.sort compare lens;
 		let totlen = Array.fold_left ( + ) 0 lens in
 		(len, count t, totlen, lens.(0), lens.(len/2), lens.(len-1))
-
+	
+	let to_list t = List.flatten (List.map (fun (k,v) -> List.combine (K.to_list k) (V.to_list v)) (Array.to_list t.table))
 end
 
 module W = struct
 	include Weak
 	let empty () = create 0
+	let to_list t =
+		let l = ref [] in
+		for i = 0 to length t - 1 do
+			match get t i with
+			| None   -> ()
+			| Some e -> l := e :: !l
+		done;
+		!l
 end
 
 module A = struct
@@ -227,33 +238,65 @@ module A = struct
 	type 'a t = 'a option array
 	let empty () = [| |]
 	let create n = create n None
+	let to_list a =
+		let l = ref [] in
+		for i = 0 to length a - 1 do
+			match a.(i) with
+			| None   -> ()
+			| Some e -> l := e :: !l
+		done;
+		!l
 end
 
 module Weak_keys = MakeOne(W)(A)
 module Weak_values = MakeOne(A)(W)
 
+module type Sig = sig
+	type t
+	type elt
+	val clear : t -> unit
+	val length : t -> int
+	val create : int -> t
+	val to_weakid : t -> elt -> int64
+	val of_weakid : t -> int64 -> elt list
+	val mem : t -> elt -> bool
+	val mem_weakid : t -> int64 -> bool
+	val add : t -> elt -> int64 -> unit
+	val fresh : t -> elt -> int64
+	val remove : t -> elt -> unit
+	val replace : t -> elt -> int64 -> unit
+	val dump : t -> string
+end
+
 module Make (H : Hashtbl.HashedType) = struct
 	module K = Weak_keys(H)
 	module V = Weak_values(struct type t = int64 let equal = (=) let hash = Hashtbl.hash end)
+
+	type elt = H.t
 
 	type t = {
 		id_elt : H.t V.t;
 		elt_id : int64 K.t;
 		mutable count : int64;
 	}
+
 	let create i = {
 		id_elt = V.create i;
 		elt_id = K.create i;
 		count = 0L;
 	}
 
+	let clear t =
+		V.clear t.id_elt;
+		K.clear t.elt_id
+
 	let length t = K.count t.elt_id
 		
 	let to_weakid t (elt : H.t) : int64 =
 		K.find t.elt_id elt
 
-	let of_weakid t (id : int64) : H.t =
-		V.find t.id_elt id
+	let of_weakid t (id : int64) : H.t list =
+		V.find_all t.id_elt id
 
 	let mem t elt =
 		K.mem t.elt_id elt
@@ -261,7 +304,7 @@ module Make (H : Hashtbl.HashedType) = struct
 	let mem_weakid t id =
 		V.mem t.id_elt id
 
-	let add t elt =
+	let fresh t elt =
 		let rec fresh () =
 			t.count <- Int64.add t.count 1L;
 			if V.mem t.id_elt t.count then
@@ -283,4 +326,12 @@ module Make (H : Hashtbl.HashedType) = struct
 	let replace t elt id =
 		V.replace t.id_elt id elt;
 		K.replace t.elt_id elt id
+
+	let add t elt id =
+		V.add t.id_elt id elt;
+		K.add t.elt_id elt id
+
+	let dump t =
+		let ids = List.map (fun (id,_) -> Int64.to_string id) (V.to_list t.id_elt) in
+		Printf.sprintf "{%s}" (String.concat ";" ids)
 end
