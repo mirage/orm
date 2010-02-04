@@ -18,6 +18,7 @@ open Test_utils
 let name = "simple.db"
 
 let x = { foo = (Random.int 100); bar="hello world" }
+let x2 = { foo = (Random.int 100); bar="bye world" }
 
 let test_init () =
   ignore(open_db x_init name);
@@ -57,9 +58,11 @@ let test_subtype () =
   "values match" @? (i.A.foo = Int64.of_int x.foo)
 
 let test_get () =
-  let db = open_db ~rm:false x_init name in
+  let db = open_db x_init name in
+  x_save db x;
+  x_save db x2;
   let i = x_get ~bar:(`Eq "hello world") db in
-  "2 in db" @? (List.length i = 1);
+  "1 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
 
