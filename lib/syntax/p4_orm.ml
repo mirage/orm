@@ -158,6 +158,7 @@ module Get = struct
       | T.Int (Some i) when i <= 64
                    -> Some (make name "Int64")
       | T.Int _    -> Some (make name "Big_int")
+      | T.String   -> Some (make name "String")
       | _          -> None in
     List.fold_left (fun accu expr -> <:expr< $expr$ @ $accu$ >>) <:expr< [] >> (map_type fn t)
   
