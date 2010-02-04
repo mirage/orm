@@ -6,11 +6,7 @@ type x = {
   foo: int;
   bar: string
 } with
-  orm(
-    unique: x<foo,bar>, x<bar>;
-    debug: all;
-    dot: "simple.dot"
-  )
+  orm
 
 open OUnit
 open Test_utils
@@ -49,7 +45,7 @@ let test_subtype () =
   let module A = struct
     type x = {
       foo: int64;
-    } with orm (debug: all)
+    } with orm 
   end in
   let db = open_db ~rm:false A.x_init_read_only name in
   let i = A.x_get db in

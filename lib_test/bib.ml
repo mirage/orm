@@ -23,7 +23,7 @@ and ent = {
   year: int option;
   title: string;
   misc: (string * string) list
-} with orm(debug:all)
+} with orm
 
 open OUnit
 open Test_utils

@@ -9,7 +9,6 @@ type t = {
   mutable second: t;
   third: int;
 } with orm (
- debug: sql, bind;
  unique: t<xyz>, t<bar>;
  index: x<first,second>
 )

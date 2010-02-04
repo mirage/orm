@@ -10,7 +10,7 @@ and x = {
   mutable x2: char; 
   x3: int64
 }
-with orm ( debug: all; dot: "recursive.dot" )
+with orm 
 
 open Test_utils
 open OUnit
