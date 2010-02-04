@@ -29,7 +29,7 @@ let of_value_aux n = n ^ "_of_value_aux"
 let value_of_aux n = "value_of_" ^ n ^ "_aux"
 
 let new_id_ref n = n ^ "__new_id__"
-let set_new_id n = "set_new_id_of" ^ n
+let set_new_id n = "set_new_id_of_" ^ n
 let get_new_id n = n ^ "_new_id"
 
 (* Utils *)

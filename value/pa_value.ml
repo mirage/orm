@@ -23,7 +23,6 @@ open Ast
 
 open Pa_type_conv
 
-
 let _ =
 	add_generator "value" (fun tds ->
 		let _loc = loc_of_ctyp tds in
