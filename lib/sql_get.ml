@@ -126,7 +126,7 @@ and get_values ~env ~db ?id ?(constraints=[]) t =
     else
       id, V.Ext ((name,id),r) in
   let constraints =
-    match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ] @
+    (match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ]) @
     List.map string_of_constraint constraints in
   match t with
   | T.Rec (n, s)
