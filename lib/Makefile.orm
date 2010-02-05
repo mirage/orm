@@ -1,7 +1,7 @@
 export OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
-SOURCES = sql_backend.ml sql_init.ml sql_save.ml sql_get.ml sql_delete.ml
+SOURCES = sql_backend.ml sql_init.ml sql_save.ml sql_get.ml sql_delete.ml sql_cache.ml db.ml
 RESULT = orm
 PACKS = sqlite3 type-of value
 LIB_PACK_NAME = orm
