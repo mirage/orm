@@ -115,7 +115,7 @@ let transaction db fn =
 		)
 
 (* iterate over a result set *)
-let map db stmt iterfn =
+let step_map db stmt iterfn =
 	let stepfn () = Sqlite3.step stmt in
 	let rec fn a = match db_busy_retry db stepfn with
 		| Sqlite3.Rc.ROW -> fn (iterfn stmt :: a)
