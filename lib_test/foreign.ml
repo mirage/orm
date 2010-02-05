@@ -3,10 +3,10 @@ TYPE_CONV_PATH "Foreign"
 type t = {
   foo: string;
   bar: int64;
-  mutable xyz: char;
+  xyz: char;
 } and x = {
   first: t;
-  mutable second: t;
+  second: t;
   third: int;
 } with orm (
  unique: t<xyz>, t<bar>;
