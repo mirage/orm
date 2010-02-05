@@ -28,20 +28,14 @@ let process_error v d s =
   Printf.printf "ERROR(%s): %s - %s\n%!" s (T.to_string v) (string_of_data d);
   raise (Sql_process_error (v, d, s))
 
+let exec_sql ~env ~db = exec_sql ~tag:"get" ~db ~env
+
 let process ~env ~db ~constraints name field_names fn =
-  let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
-  let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
-  let sql = sprintf "SELECT %s FROM %s%s" (String.concat "," field_names) name where in
-  debug env `Sql "get" sql;
-  let stmt = prepare db.db sql in
-  let bind = ref 0 in
-  List.iter (function 
-    | (_,_,None  ) -> ()
-    | (_,_,Some v) ->
-        debug env `Bind "get" (string_of_data v);
-        db_must_bind db stmt (incr bind; !bind) v;
-    ) constraints;
-  step_map db stmt fn 
+	let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
+	let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
+	let sql = sprintf "SELECT %s FROM %s%s" (String.concat "," field_names) name where in
+	let binds = List.rev (List.fold_left (function accu -> function (_,_,None) -> accu | (_,_,Some c) -> c :: accu) [] constraints) in
+	exec_sql ~env ~db sql binds (fun stmt -> step_map db stmt fn)
 
 let string_of_constraint (name, c) =
 	let make name = String.concat "__" name in
@@ -137,7 +131,7 @@ and get_enum_values ~env ~db ~id name t =
     let row = row_data stmt in
     let id = match row.(0) with Data.INT i -> i | s -> process_error t s "__id__" in
     let next = match row.(1) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next__" in
-    let size = match row.(2) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size" in
+    let size = match row.(2) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size__" in
     let v, _ = parse_row ~env ~db ~skip:false ~name t row 3 in
     id, next, size, v in
   let constraints = [ "__id__", "=", Some (Data.INT id) ] in
@@ -172,4 +166,6 @@ and get_enum_values ~env ~db ~id name t =
     | []  -> process_error t Data.NULL "No result found"
     | rs  -> process_error t Data.NULL "Too many results found"
     end
-  | _                   -> process_error t Data.NULL "get_num_values"
+  | l ->
+		let aux (id, next, size, v) = Printf.sprintf "(%Ld,%s,%i,%s)" id (match next with None -> "NULL" | Some n -> Int64.to_string n) size (Value.to_string v) in
+		process_error t Data.NULL (Printf.sprintf "get_enum_values{%s}" (String.concat ";" (List.map aux l)))
