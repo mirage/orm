@@ -131,7 +131,7 @@ let rec t ~envfn depth ctyp =
 
   | <:ctyp< $lid:id$ >> ->
     begin match envfn id with
-	  | None      -> <:expr< (let _ = Printf.printf "foo%!" in let n = $lid:hash_of id$ x in let _ = Printf.printf "oo%!\n" in n) >>
+	  | None      -> <:expr< ($lid:hash_of id$ x) >>
 	  | Some ctyp -> <:expr< $again ctyp$ >>
     end
 
