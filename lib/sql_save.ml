@@ -55,7 +55,7 @@ let process_row ~env ~db table_name field_names field_values v =
 		List.map2 (fun f v -> if v = Data.NULL then sprintf "%s ISNULL" f else sprintf "%s=?" f) field_names field_values in
     let insert = sprintf "INSERT INTO %s (%s) VALUES (%s);" table_name (String.concat "," field_names) (String.concat "," qmarks) in
     let select = sprintf "SELECT __id__ FROM %s WHERE %s;" table_name (String.concat " AND " constraints) in
-    let fn stmt =  step_map db stmt (fun stmt -> column stmt 0) in
+    let fn stmt = step_map db stmt (fun stmt -> column stmt 0) in
     match exec_sql ~env ~db select (List.filter (fun v -> v <> Data.NULL) field_values) fn with
     | [Data.INT i ] -> i
     | []            -> exec_sql ~env ~db insert field_values (db_must_step db); last_insert_rowid db.db

@@ -63,7 +63,6 @@ let save_binding env tds (_loc, n, t) =
 	let __get_id__ __name__ =
 		let __db__ = OB.new_state __name__ in
 		fun __v__ ->
-			let _ = Printf.printf "==> get_id(%s)\n%!" __name__ in
 			if OC.mem __env__ $lid:cache n$ __name__ __v__ then
 				OC.to_weakid __env__ $lid:cache n$ __name__ __v__
 			else (
@@ -74,9 +73,7 @@ let save_binding env tds (_loc, n, t) =
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		fun ~db: __db__ ->
 			fun $lid:n$ ->
-				let _ = Printf.printf "I1\n%!" in
 				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
-				let _ = Printf.printf "I2(%s)\n%!" (Value.to_string v) in
 				OS.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
