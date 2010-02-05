@@ -28,9 +28,9 @@ let of_value n = n ^ "_of_value"
 let of_value_aux n = n ^ "_of_value_aux"
 let value_of_aux n = "value_of_" ^ n ^ "_aux"
 
-let get_new_id n = n ^ "_new_id"
-let register_key n = "register_key_for_" ^ n
-let key_tbl n = n ^ "__key_tbl__"
+let get_new_id n = "new_id_for_" ^ n
+let set_new_id n = "set_new_id_for_" ^ n
+let new_id_ref n = n ^ "__new_id__"
 
 (* Utils *)
 
@@ -121,24 +121,21 @@ module Value_of = struct
 			<:expr< { (__env__) with Deps.$lid:t$ = [ ($id$, __id__) :: __env__.Deps.$lid:t$ ] } >>
 
 	let new_id_fns _loc names =
-		let binding_tbl n = <:binding< $lid:key_tbl n$ : Hashtbl.t string ($lid:n$ -> int64) = Hashtbl.create 8 >> in
-		let binding_set n = <:binding< $lid:register_key n$ key fn = Hashtbl.replace $lid:key_tbl n$ key fn >> in
+		let binding_tbl n = <:binding< $lid:new_id_ref n$ : ref (option (string -> $lid:n$ -> int64)) = ref None >> in
+		let binding_set n = <:binding< $lid:set_new_id n$ fn = $lid:new_id_ref n$.val := Some fn >> in
 		let binding n =
 			<:binding< $lid:get_new_id n$ key =
-			if Hashtbl.mem $lid:key_tbl n$ key
-			then Hashtbl.find $lid:key_tbl n$ key
-			else __fresh__id__ 
+			match $lid:new_id_ref n$.val with [
+			  None   -> failwith (Printf.sprintf "value_of_%s: No new_id function have been registered for the key '%s'" $str:n$ key)
+			| Some f -> f key ]
 			>> in
-		let set_exprs = List.map (fun n -> <:expr< $lid:register_key n$ >>) names in
-		let set_patts = List.map (fun n -> <:patt< $lid:register_key n$ >>) names in
+		let set_exprs = List.map (fun n -> <:expr< $lid:set_new_id n$ >>) names in
+		let set_patts = List.map (fun n -> <:patt< $lid:set_new_id n$ >>) names in
 		let new_id_exprs = List.map (fun n -> <:expr< $lid:get_new_id n$ >>) names in
 		let new_id_patts = List.map (fun n -> <:patt< $lid:get_new_id n$ >>) names in
 		<:binding< $patt_tuple_of_list _loc (set_patts @ new_id_patts)$ =
 			let $biAnd_of_list (List.map binding_tbl names)$ in
 			let $biAnd_of_list (List.map binding_set names)$ in
-			let count = ref 0L in
-			let __fresh__id__ _ =
-				do { count.val := Int64.add count.val 1L; count.val } in
 			let $biAnd_of_list (List.map binding names)$ in
 			$expr_tuple_of_list _loc (set_exprs @ new_id_exprs)$
 		>>
@@ -252,7 +249,7 @@ module Value_of = struct
 		let value_of_fns = List.map value_of_fn ids in
 		let set_new_id_fns =
 			if with_key then
-				List.map (fun x -> <:patt< ($lid:register_key x$ : string -> ($lid:x$ -> int64) -> unit) >>) ids
+				List.map (fun x -> <:patt< ($lid:set_new_id x$ : (string -> $lid:x$ -> int64) -> unit) >>) ids
 			else
 				[] in
 		patt_tuple_of_list _loc (value_of_fns @ set_new_id_fns)
@@ -260,7 +257,7 @@ module Value_of = struct
 	let outputs _loc ?(with_key=false) ids =
 		let set_new_id_fns =
 			if with_key then
-				List.map (fun x -> <:expr< $lid:register_key x$ >>) ids
+				List.map (fun x -> <:expr< $lid:set_new_id x$ >>) ids
 			else
 				[] in
 		let value_of_fn x =

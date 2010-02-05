@@ -27,3 +27,8 @@ let _ =
 	add_generator "value" (fun tds ->
 		let _loc = loc_of_ctyp tds in
 		<:str_item< $P4_value.gen tds$ >>)
+
+let _ =
+	add_generator "value_with_key" (fun tds ->
+		let _loc = loc_of_ctyp tds in
+		<:str_item< $P4_value.gen tds$ >>)
