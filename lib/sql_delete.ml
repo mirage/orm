@@ -20,19 +20,17 @@ open Sqlite3
 open Sql_backend
 open Value
 
+let exec_sql ~env ~db = exec_sql ~tag:"delete" ~db ~env
+
 let delete_value ~env ~db ~id v =
 
   let process table id =
     let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
-    debug env `Sql "delete" sql;
-    let stmt = prepare db.db sql in
-    debug env `Bind "delete" (Int64.to_string id);
-    db_must_bind db stmt 1 (Data.INT id);
-    db_must_step db stmt in
+	exec_sql ~env ~db sql [ Data.INT id ] (db_must_step db) in
 
   let rec aux ?name id v = match v, name with
     | Null, _ | Int _, _ | Bool _, _ | Float _, _ | String _, _ | Arrow _, _ | Enum _, None | Var _, _ -> ()
-    | Enum t    , Some n    -> process (Name.enum n) id
+    | Enum t    , Some n    -> (* TODO: process (Name.enum n) id *) ()
     | Ext ((n,i),v), _
     | Rec ((n,i),v), _      -> process n id; aux ~name:n i v
     | Sum (r,tl), Some name -> list_iteri (fun i t -> aux ~name:(Name.sum name r i) id t) tl
