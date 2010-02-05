@@ -10,7 +10,7 @@ package "core" (
 )
 
 package "syntax" (
-  requires = "orm.core, type-conv.syntax, camlp4, type-of.syntax, value.syntax"
+  requires = "orm.core, type-conv.syntax, camlp4, type-of.syntax, value.syntax, hash.syntax"
   description = "Syntax extension for ORM"
   archive(syntax, preprocessor) = "pa_orm.cma"
 )
