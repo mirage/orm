@@ -10,7 +10,7 @@ and
 photo = {
   filename: string;
   metadata: (string * exif_val) list;
-} with type_of, value
+} with orm
 
 open OUnit
 open Test_utils
@@ -21,17 +21,19 @@ type image = string (* filename *)
 let type_of_image = type_of_photo
 
 (* marshalling to the database from a image *)
-let value_of_image (img:image) : Value.t =
+let value_of_image ~key (img:image) : Value.t =
  printf "reading exif data from file: %s\n%!" img;
  let exif = [ "date", (Exif_string ("today " ^ img)) ] in
  let filename = img ^ ".jpg" in
- value_of_photo { filename=filename; metadata=exif }
+ value_of_photo ~key { filename=filename; metadata=exif }
 
 (* marshalling from the database into an image type *)
 let image_of_value (v:Value.t) : image =
  let p = photo_of_value v in
  printf "retrieving file from database: %s\n%!" p.filename;
  p.filename
+
+let hash_of_image = Hashtbl.hash
 
 type gallery = {
   date: float;
