@@ -27,8 +27,9 @@ let init n   = n ^ "_init"
 let initRO n = n ^ "_init_read_only"
 let save n   = n ^ "_save"
 let get n    = n ^ "_get"
-let id n     = n ^ "_id"
 let delete n = n ^ "_delete"
+let id n     = n ^ "_id"
+let cache n  = n ^ "_cache"
 
 let env_to_env _loc env =
 	let sl_of_sl sl = 
@@ -40,36 +41,50 @@ let env_to_env _loc env =
 		| `Dot f    -> <:expr< `Dot $str:f$ >> in
 	expr_list_of_list _loc (List.map aux env)
 
-let init_binding tds (_loc, n, t) =
+let init_binding env tds (_loc, n, t) =
 	<:binding< $lid:init n$ =
-    fun db_name ->
-		let db = Orm.Sql_backend.new_state (OW.create 128) db_name in
-		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
+	fun __file__ ->
+		let __name__ = Db.name_of_file __file__ in
+		let __db__ = OB.new_state __name__ in
+		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
+		__db__
+	>>
+
+let initRO_binding env tds (_loc, n, t) =
+	<:binding< $lid:initRO n$ =
+	fun __file__ ->
+		let db = OB.new_state (Db.name_of_file __file__) in
+		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db $lid:P4_type.type_of n$ in
 		db
 	>>
 
-let initRO_binding tds (_loc, n, t) =
-	<:binding< $lid:initRO n$ =
-    fun db_name ->
-      let db = Orm.Sql_backend.new_state (OW.create 128) db_name in
-      let () = Orm.Sql_init.init_tables ~mode:`RO ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$ in
-      db
-  >>
-
-let save_binding (_loc, n, t) =
+let save_binding env tds (_loc, n, t) =
 	<:binding< $lid:save n$ =
-    if not (Type.is_mutable Deps.$lid:P4_type.type_of n$) then (
-		fun ~db ->
+	let __get_id__ __name__ =
+		let __db__ = OB.new_state __name__ in
+		fun __v__ ->
+			let _ = Printf.printf "==> get_id(%s)\n%!" __name__ in
+			if OC.mem __env__ $lid:cache n$ __name__ __v__ then
+				OC.to_weakid __env__ $lid:cache n$ __name__ __v__
+			else (
+				let __id__ = OS.empty_row ~env:__env__ ~db:__db__ $str:n$ in
+				do { OC.add __env__ $lid:cache n$ __name__ __v__ __id__; __id__ }
+			) in
+	let () = $lid:P4_value.set_new_id n$ __get_id__ in
+	if Type.is_mutable $lid:P4_type.type_of n$ then (
+		fun ~db: __db__ ->
 			fun $lid:n$ ->
-				if not (OW.mem db.OS.cache (Obj.repr $lid:n$)) then (
-					let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
-					OW.replace db.OS.cache (Obj.repr $lid:n$) id
-				) else ()
+				let _ = Printf.printf "I1\n%!" in
+				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
+				let _ = Printf.printf "I2(%s)\n%!" (Value.to_string v) in
+				OS.update_value ~env:__env__ ~db:__db__ v
     ) else (
-		fun ~db ->
+		fun ~db:__db__ ->
 			fun $lid:n$ ->
-				let id = Orm.Sql_save.save_value ~env:Deps.env ~db (Deps.$lid:P4_value.value_of n$ $lid:n$) in
-				OW.replace db.OS.cache (Obj.repr $lid:n$) id
+				if not (OC.mem __env__ $lid:cache n$ __db__.OB.name $lid:n$) then (
+					let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
+					OS.update_value ~env:__env__ ~db:__db__ v
+				) else ()
     )
 	>> 
 
@@ -161,88 +176,112 @@ module Get = struct
   
 end
 
-let get_binding tds (_loc, n, t) =
+let get_binding env tds (_loc, n, t) =
 	<:binding< $lid:get n$ = $Get.fun_of_name _loc tds n <:expr<
-    let constraints = $Get.constraints_of_args _loc tds n$ in
-    if Type.is_mutable Deps.$lid:P4_type.type_of n$ then (
-		fun db ->
+    let __constraints__ = $Get.constraints_of_args _loc tds n$ in
+    if Type.is_mutable $lid:P4_type.type_of n$ then (
+		fun __db__ ->
 			List.map
-				(fun (id,v) ->
-					let aux () =
-						let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
-				 		do { OW.replace db.OS.cache (Obj.repr $lid:n$) id; $lid:n$ } in
-    				try
-						let (t : $lid:n$) = Obj.magic (OW.of_weakid db.OS.cache id) in
-						if Value.equal (Deps.$lid:P4_value.value_of n$ t) v then t else aux ()
-					with [ Not_found -> aux () ]
-				) (Orm.Sql_get.get_values ~env:Deps.env ~db Deps.$lid:P4_type.type_of n$)
+				(fun (__id__, __v__) ->
+					let __n__ = $lid:P4_value.of_value n$ __v__ in
+					do { OC.add __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ }
+				) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ $lid:P4_type.type_of n$)
     ) else (
-		fun db ->
+		fun __db__ ->
 			List.map
-				(fun (id,v) ->
-					 if OW.mem_weakid db.OS.cache id then (
-						 Obj.magic OW.of_weakid db.OS.cache id : $lid:n$
+				(fun (__id__, __v__) ->
+					 if OC.mem_weakid __env__ $lid:cache n$ __db__.OB.name __id__ then (
+						 let __n__ = List.hd (OC.of_weakid __env__ $lid:cache n$ __db__.OB.name __id__) in
+						 __n__
 					 ) else (
-						 let $lid:n$ = Deps.$lid:P4_value.of_value n$ v in
-						 do { OW.replace db.OS.cache (Obj.repr $lid:n$) id; $lid:n$ } )
-				) (Orm.Sql_get.get_values ~env:Deps.env ~db ~constraints Deps.$lid:P4_type.type_of n$)
+						 let __n__ = $lid:P4_value.of_value n$ __v__ in
+						 do { OC.replace __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ } )
+				) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ $lid:P4_type.type_of n$)
 	) >>$
 	>>
 
-let delete_binding (_loc, n, t) =
+let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
-    fun ~db ->
-		fun $lid:n$ ->
-			let id = OW.to_weakid db.OS.cache (Obj.magic $lid:n$) in
-			let () = OW.remove db.OS.cache (Obj.magic $lid:n$) in
-			Orm.Sql_delete.delete_value ~env:Deps.env ~db ~id (Deps.$lid:P4_value.value_of n$ $lid:n$)
+    fun ~db:__db__ ->
+		fun __n__ ->
+			let __id__ = OC.to_weakid __env__ $lid:cache n$ __db__.OB.name __n__ in
+			let () = OD.delete_value ~env:__env__ ~db:__db__ ~id:__id__ ($lid:P4_value.value_of n$ ~key:__db__.OB.name __n__) in
+			let () = OC.remove __env__ $lid:cache n$ __db__.OB.name __n__ in
+			()
 	>>
 
-let id_binding (_loc, n, t) =
-	<:binding< $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 =
-    fun ~db ->
-		fun $lid:n$ ->
-			OW.to_weakid db.OS.cache (Obj.magic $lid:n$)
-  >>
+let id_binding env tds (_loc, n, t) =
+	<:binding< $lid:id n$ =
+	fun ~db:__db__ ->
+		fun __n__ ->
+			OC.to_weakid __env__ $lid:cache n$ __db__.OB.name __n__
+	>>
+
+let cache_binding env tds (_loc, n, t) =
+	<:binding< $lid:cache n$ = Cache.$uid:String.capitalize n$.create $str:n$ >>
+
+let cache_module env tds (_loc, n, t) =
+	<:str_item<
+		module $uid:String.capitalize n$ = OC.Make(
+			struct
+				type __t__ = $lid:n$;
+				type t = __t__;
+				value equal = (==);
+				value hash = $lid:P4_hash.hash_of n$;
+			end)
+	>>
 
 let gen env tds =
 	let _loc = loc_of_ctyp tds in
 
 	let ts = list_of_ctyp_decl tds in
-	let init_bindings = List.map (init_binding tds) ts in
-	let initRO_bindings = List.map (initRO_binding tds) ts in
-	let save_bindings = List.map save_binding ts in
-	let get_bindings = List.map (get_binding tds) ts in
-	let delete_bindings = List.map delete_binding ts in
-	let id_bindings = List.map id_binding ts in
+	let init_bindings = List.map (init_binding env tds) ts in
+	let initRO_bindings = List.map (initRO_binding env tds) ts in
+	let save_bindings = List.map (save_binding env tds) ts in
+	let get_bindings = List.map (get_binding env tds) ts in
+	let delete_bindings = List.map (delete_binding env tds) ts in
+	let id_bindings = List.map (id_binding env tds) ts in
+	let cache_bindings = List.map (cache_binding env tds) ts in
+	let cache_modules = List.map (cache_module env tds) ts in
 
-	let sigs =
-		List.map (fun (_,n,_) -> <:sig_item< value $lid:init n$ : string -> db $lid:n$ [=`RW] >>) ts
-		@ List.map (fun (_,n,_) -> <:sig_item< value $lid:initRO n$ : string -> db $lid:n$ [=`RO] >>) ts
-		@ List.map (fun (_,n,_) -> <:sig_item< value $lid:save n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts
-		@ List.map (fun (_,n,_) -> <:sig_item< value $lid:get n$ : $Get.sig_of_name _loc tds n <:ctyp< (db $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ >>) ts
-		@ List.map (fun (_,n,_) -> <:sig_item< value $lid:delete n$ : ~db:(db $lid:n$ [=`RW]) -> $lid:n$ -> unit >>) ts
-		@ List.map (fun (_,n,_) -> <:sig_item< value $lid:id n$ : ~db:(db $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 >>) ts in
+	let patts = 
+		  List.map (fun (_,n,_) -> <:patt< $lid:init n$ >>) ts
+		@ List.map (fun (_,n,_) -> <:patt< $lid:initRO n$ >>) ts
+		@ List.map (fun (_,n,_) -> <:patt< $lid:save n$ >>) ts
+		@ List.map (fun (_,n,_) -> <:patt< $lid:get n$ >>) ts
+		@ List.map (fun (_,n,_) -> <:patt< $lid:delete n$ >>) ts
+		@ List.map (fun (_,n,_) -> <:patt< $lid:id n$ >>) ts in
+
+	let exprs =
+		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : Db.file -> Db.t $lid:n$ [=`RW] ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : Db.file -> Db.t $lid:n$ [=`RO] ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n <:ctyp< (Db.t $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:id n$ : ~db:(Db.t $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 ) >>) ts in
 
 	<:str_item<
-		module Internal : sig
-			type db 'a 'b;
-			$sgSem_of_list sigs$;
-		end = struct
-			module OS = Orm.Sql_backend;
-			module OW = Weakid.Make(struct type t = Obj.t; value equal = (=); value hash = Hashtbl.hash; end);
-			module Deps = struct
-				$P4_type.gen tds$;
-				$P4_value.gen tds$;
-				value env = $env_to_env _loc env$;
-			end;
-			type db 'a 'b = OS.state OW.t;
-			value $biAnd_of_list init_bindings$;
-			value $biAnd_of_list initRO_bindings$;
-			value rec $biAnd_of_list save_bindings$;
-			value rec $biAnd_of_list get_bindings$;
-			value $biAnd_of_list id_bindings$;
-			value $biAnd_of_list delete_bindings$;
-		end;
-		include Internal
+		$P4_hash.gen tds$;
+		$P4_type.gen tds$;
+		$P4_value.gen_with_key tds$;
+		value $patt_tuple_of_list _loc patts$ =
+			let module OB = Orm.Sql_backend in
+			let module OC = Orm.Sql_cache in
+			let module OI = Orm.Sql_init in
+			let module OG = Orm.Sql_get in
+			let module OS = Orm.Sql_save in
+			let module OD = Orm.Sql_delete in
+			let module Db = Orm.Db in
+			let module Cache = struct
+				$stSem_of_list cache_modules$
+			end in
+			let __env__ = $env_to_env _loc env$ in
+			let $biAnd_of_list cache_bindings$ in
+			let $biAnd_of_list init_bindings$ in
+			let $biAnd_of_list initRO_bindings$ in
+			let rec $biAnd_of_list save_bindings$ in
+			let rec $biAnd_of_list get_bindings$ in
+			let $biAnd_of_list delete_bindings$ in
+			let $biAnd_of_list id_bindings$ in
+			$expr_tuple_of_list _loc exprs$
 	>>
