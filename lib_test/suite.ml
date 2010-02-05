@@ -24,6 +24,7 @@ let suites = [
   Recursive_mutate.suite;
   Photo.suite;
   Bibtex.suite;
+  Bib.suite;
 ]
 
 let slow_suites = [

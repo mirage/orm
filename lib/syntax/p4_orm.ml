@@ -139,7 +139,7 @@ module Get = struct
 			| T.Int (Some i) when i <= 64               -> Some (int_like "int64")
 			| T.Int _    -> Some (int_like "Big_int.big_int")
 			| _          -> None in
-    map_type fn t
+		map_type fn t
 
 	let sig_of_type _loc t body =
 		List.fold_left2
@@ -171,9 +171,9 @@ module Get = struct
 			| T.Int (Some i) when i <= 32               -> Some (make name "Int32")
 			| T.Int (Some i) when i <= 64               -> Some (make name "Int64")
 			| T.Int _    -> Some (make name "Big_int")
+			| T.String   -> Some (make name "String")
 			| _          -> None in
 		List.fold_left (fun accu expr -> <:expr< $expr$ @ $accu$ >>) <:expr< [] >> (map_type fn t)
-  
 end
 
 let get_binding env tds (_loc, n, t) =

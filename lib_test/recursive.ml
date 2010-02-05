@@ -6,7 +6,7 @@ type t = {
 } and x = {
   x1: t option;
   mutable x2: char
-} with orm ( debug: all; dot: "recursive.dot" )
+} with orm
 
 open Test_utils
 open OUnit

@@ -3,7 +3,7 @@ TYPE_CONV_PATH "Record_mutate"
 type x = {
   mutable foo: string;
   mutable bar: string option
-} with orm(debug: all)
+} with orm
 
 open Test_utils
 open OUnit
