@@ -48,7 +48,7 @@ let test_subtype () =
     } with orm 
   end in
   let db = open_db ~rm:false A.x_init_read_only name in
-  let i = A.x_get db in
+  let i = A.x_get ~foo:(`Eq (Int64.of_int x.foo)) db in
   "2 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.A.foo = Int64.of_int x.foo)
