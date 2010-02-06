@@ -17,10 +17,3 @@
 type ('a, 'b) t = Sql_backend.state
 type ('a, 'b) cache = ('a, 'b) Sql_cache.t
 
-type file
-
-val create : string -> file
-
-val remove : file -> unit
-
-val name_of_file : file -> string

@@ -44,8 +44,9 @@ let env_to_env _loc env =
 let init_binding env tds (_loc, n, t) =
 	<:binding< $lid:init n$ =
 	fun __file__ ->
-		let __name__ = Db.name_of_file __file__ in
-		let __db__ = OB.new_state __name__ in
+		let () = 
+		 	if not (Sys.file_exists __file__) then OC.flush_all __env__ __file__ else () in
+		let __db__ = OB.new_state __file__ in
 		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		__db__
 	>>
@@ -53,7 +54,9 @@ let init_binding env tds (_loc, n, t) =
 let initRO_binding env tds (_loc, n, t) =
 	<:binding< $lid:initRO n$ =
 	fun __file__ ->
-		let db = OB.new_state (Db.name_of_file __file__) in
+		let () = 
+		 	if not (Sys.file_exists __file__) then OC.flush_all __env__ __file__ else () in
+		let db = OB.new_state __file__ in
 		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db $lid:P4_type.type_of n$ in
 		db
 	>>
@@ -250,8 +253,8 @@ let gen env tds =
 		@ List.map (fun (_,n,_) -> <:patt< $lid:id n$ >>) ts in
 
 	let exprs =
-		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : Db.file -> Db.t $lid:n$ [=`RW] ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : Db.file -> Db.t $lid:n$ [=`RO] ) >>) ts
+		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : string -> Db.t $lid:n$ [=`RW] ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : string -> Db.t $lid:n$ [=`RO] ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n <:ctyp< (Db.t $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
