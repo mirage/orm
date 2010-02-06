@@ -17,14 +17,5 @@
 type ('a, 'b) t = Sql_backend.state
 type ('a, 'b) cache = ('a, 'b) Sql_cache.t
 
-type file = string
 
-let create name = name
-
-let name_of_file name = name
-
-let remove name =
-	Sql_cache.flush_all [`Cache] name;
-	if Sys.file_exists name then
-		Sys.remove name
 
