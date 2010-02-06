@@ -11,14 +11,8 @@ Issues:
 
 - ORM:
    * signature generator
-   * type-check for recursion going through list/option fields.
-   * custom function of type (#t -> bool) for get functions.
-   * save of recursive value should create a new value only if it is
-     not already existing
-   * type t = ... with orm;; type x = ... with orm should work
    * handle type t = { x : M.t }
    * handle type 'a t = { x : 'a }
-   * use only tail-recursive functions
 
 Interface changes:
 -----------------
