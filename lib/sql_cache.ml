@@ -23,11 +23,11 @@ let clean_list : (unit -> unit) list ref = ref []
 let flush_list : (string -> unit) list ref = ref []
 
 let clean_all env name =
-	debug (name ^ "*") env `Cache "cache" (Printf.sprintf "clean_all(%i)" (List.length !clean_list));
+	debug (name ^ ":*") env `Cache "cache" (Printf.sprintf "clean_all(%i)" (List.length !clean_list));
 	List.iter (fun f -> f ()) !clean_list
 
 let flush_all env name =
-	debug (name ^ "*") env `Cache "cache" (Printf.sprintf "flush_all(%s,%i)" name (List.length !flush_list));
+	debug (name ^ ":*") env `Cache "cache" (Printf.sprintf "flush_all(%s,%i)" name (List.length !flush_list));
 	List.iter (fun f -> f name) !flush_list
 
 type ('a, 'b) t = {
@@ -105,7 +105,7 @@ let with_table env t db fn =
 	fn tbl
 
 let debug env t db s =
-	debug db env `Cache "cache" (Printf.sprintf "calling %s(%s) -- %s" s db (string_of_t t.dump t))
+	debug (db ^ ":*") env `Cache "cache" (Printf.sprintf "calling %s(%s) -- %s" s db (string_of_t t.dump t))
 
 let to_weakid env t db elt =
 	debug env t db "to_weakid";
