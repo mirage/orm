@@ -2,10 +2,10 @@ TYPE_CONV_PATH "Recursive"
 
 type t = { 
   t1: string;
-  mutable t2: x option
+  t2: x option
 } and x = {
   x1: t option;
-  mutable x2: char
+  x2: char
 } with orm
 
 open Test_utils
