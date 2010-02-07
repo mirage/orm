@@ -3,6 +3,7 @@
 ._ncdi/
 *.annot
 *.cmo
+*.so
 *.o
 *.cma
 *.cmx

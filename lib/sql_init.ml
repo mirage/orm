@@ -122,3 +122,13 @@ let init_tables ~mode ~env ~db t =
 	init_links_table ~mode ~env ~db t table_links;
 	create_tables ~mode ~env ~db tables;
 	init_custom_indexes ~mode ~env ~db tables
+
+(* wrapper for realpath(2) *)
+external unix_realpath : string -> string = "unix_realpath"
+let realpath file =
+	try
+		unix_realpath file
+	with _ -> (
+		unix_realpath (Filename.dirname file) ^ (Filename.basename file)
+	)
+		
