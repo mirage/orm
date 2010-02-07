@@ -210,7 +210,10 @@ module Value_of = struct
 
 		| <:ctyp< $lid:t$ >> ->
 			if not (List.mem t names) then
-				<:expr< $lid:value_of t$ $if with_key then <:expr< ~key:__key__ $id$ >> else <:expr< $id$ >>$ >>
+				if with_key then
+					<:expr< $lid:value_of t$ ~key:__key__ $id$ >>
+				else
+					<:expr< $lid:value_of t$ $id$ >>
 			else
 				<:expr<
 					if List.mem_assq $id$ __env__.Deps.$lid:t$
