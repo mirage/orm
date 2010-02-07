@@ -46,7 +46,7 @@ module type Arg = sig
 	val length : 'a t -> int
 	val create : int -> 'a t
 	val blit : 'a t -> int -> 'a t -> int -> int -> unit
-	val to_list : 'a t -> 'a list
+	val to_list : 'a t -> ('a option) list
 end
 
 module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key = H.t) = struct
@@ -95,8 +95,7 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 	let count t =
 		let rec count_bucket i ((b1, b2) as cpl) accu =
 			if i >= K.length b1 then accu else
-				count_bucket (i+1) cpl (accu + (if check_key b1 i && check_val b2 i 
-												then 1 else 0))
+				count_bucket (i+1) cpl (accu + (if check_key b1 i && check_val b2 i then 1 else 0))
 		in
 		Array.fold_right (count_bucket 0) t.table 0
 
@@ -217,7 +216,9 @@ module MakeOne (K : Arg) (V : Arg) (H : Hashtbl.HashedType) : (S with type key =
 		let totlen = Array.fold_left ( + ) 0 lens in
 		(len, count t, totlen, lens.(0), lens.(len/2), lens.(len-1))
 	
-	let to_list t = List.flatten (List.map (fun (k,v) -> List.combine (K.to_list k) (V.to_list v)) (Array.to_list t.table))
+	let to_list t =
+	  	let l = List.flatten (List.map (fun (k,v) -> List.combine (K.to_list k) (V.to_list v)) (Array.to_list t.table)) in
+		List.fold_left (fun accu -> function (Some k, Some v) -> (k,v) :: accu | _ -> accu) [] l
 end
 
 module W = struct
@@ -226,9 +227,7 @@ module W = struct
 	let to_list t =
 		let l = ref [] in
 		for i = 0 to length t - 1 do
-			match get t i with
-			| None   -> ()
-			| Some e -> l := e :: !l
+			l := get t i :: !l
 		done;
 		!l
 end
@@ -241,9 +240,7 @@ module A = struct
 	let to_list a =
 		let l = ref [] in
 		for i = 0 to length a - 1 do
-			match a.(i) with
-			| None   -> ()
-			| Some e -> l := e :: !l
+			l := a.(i) :: !l
 		done;
 		!l
 end
