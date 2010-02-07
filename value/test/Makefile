@@ -9,13 +9,13 @@ run: dc
 slow: dc
 	env SLOW=1 ./$(RESULT) -verbose
 
-export LIBS = pa_value
+export LIBS = pa_value 
 export PACKS = unix oUnit
 
 RESULT= run_test
 TESTS=  all
 
-SOURCES= $(TESTS:%=%.ml) suite.ml
+SOURCES= ../value.ml $(TESTS:%=%.ml) suite.ml
 
 pc_%:
 	$(MAKE) -f Makefile.debug $@
