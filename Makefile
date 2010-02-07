@@ -22,7 +22,6 @@ all:
 .PHONY: test
 test:
 	$(MAKE) -C hash/test/
-	$(MAKE) -C weakid/test/
 	$(MAKE) -C type-of/test/
 	$(MAKE) -C value/test/
 	$(MAKE) -C lib_test/ run
