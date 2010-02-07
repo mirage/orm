@@ -28,6 +28,7 @@ let suites = [
 ]
 
 let slow_suites = [
+  Large_string.suite;
   Stress.suite
 ]
 
