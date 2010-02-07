@@ -129,6 +129,5 @@ let realpath file =
 	try
 		unix_realpath file
 	with _ -> (
-		unix_realpath (Filename.dirname file) ^ (Filename.basename file)
+		Filename.concat (unix_realpath (Filename.dirname file)) (Filename.basename file)
 	)
-		
