@@ -131,3 +131,7 @@ let realpath file =
 	with _ -> (
 		Filename.concat (unix_realpath (Filename.dirname file)) (Filename.basename file)
 	)
+
+let database_exists ~env ~db =
+	let sql = "SELECT * FROM sqlite_master WHERE name = '__types__' AND type = 'table'" in
+	exec_sql ~env ~db sql [] (fun stmt -> List.length (step_map dn stmt (fun stmt -> column stmt 0)) = 1)
