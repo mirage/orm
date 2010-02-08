@@ -27,7 +27,7 @@ let test_save () =
 
 let test_update () =
   let dbx = open_db x_init name in
-  let dbt = open_db t_init name in
+  let dbt = open_db ~rm:false t_init name in
   x_save dbx vx;
   t_save dbt vt;
   x_save dbx vx;
@@ -50,7 +50,7 @@ let test_save_get () =
 
 let test_delete () = 
   let dbx = open_db x_init name in
-  let dbt = open_db t_init name in
+  let dbt = open_db ~rm:false t_init name in
   x_save dbx vx;
   "1 x in db" @? (List.length (x_get dbx) = 1);
   "1 s in db" @? (List.length (t_get dbt) = 1);
