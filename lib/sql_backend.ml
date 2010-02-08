@@ -228,26 +228,26 @@ let field_types_of_type ~id t =
 let subtables_of_type t =
 	let module T = Type in
 	let (>>) (l1, l2) (l3, l4) = ( l1 @ l3, l2 @ l4 ) in
-	let rec aux ?parent name ((tables,_) as accu) = function
+	let rec aux ?parent ~field name ((tables,_) as accu) = function
 		| T.Unit | T.Int _ | T.Char | T.Bool
 		| T.Float | T.String | T.Arrow _ -> accu
-		| T.Option t  -> aux ?parent (Name.option name) accu t
-		| T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent (Name.tuple name i) accu t) accu tl
-		| T.Dict tl   -> List.fold_left (fun accu (n,_,t) -> aux ?parent (Name.dict name n) accu t) accu tl
+		| T.Option t  -> aux ?parent ~field:(Name.option field) (Name.option name) accu t
+		| T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.tuple field i) (Name.tuple name i) accu t) accu tl
+		| T.Dict tl   -> List.fold_left (fun accu (n,_,t) -> aux ?parent ?field:(Name.dict field n) (Name.dict name n) accu t) accu tl
 		| T.Sum tl    ->
 			  List.fold_left
-				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent (Name.sum name r i) accu t) accu (List.rev tl))
+				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu (List.rev tl))
 				  accu tl
-		| T.Var v     -> ( [], [name, v] ) >> accu
+		| T.Var v     -> ( [], [name, field, v] ) >> accu
 		| T.Rec (v,s)
 		| T.Ext (v,s) as t ->
-			let res = ( [v, Type.unroll tables t], match parent with None -> [] | Some p -> [p, v] ) in
-			if List.mem_assoc v tables then accu else aux ~parent:v v (res >> accu) s
+			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, field, v] | _ -> [] ) in
+			if List.mem_assoc v tables then accu else aux ~parent:v ~field:"" v (res >> accu) s
 		| T.Enum s    as t ->
 			let name = Name.enum name in
-			let res = ( [name, Type.unroll tables t], match parent with None -> failwith "TODO:1" | Some p -> [p, name] ) in
-			res >> (aux ~parent:name name accu s) in
-	aux "" ([], []) t
+			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, field, name] | _ -> [] ) in
+			res >> (aux ~parent:name ~field:"" name accu s) in
+	aux ~field:"" "" ([], []) t
 
 (* Build up the list of fields from a Value.t *)
 let field_names_of_value ~id v =

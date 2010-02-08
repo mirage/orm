@@ -57,9 +57,9 @@ let init_and_check_types_table ~mode ~env ~db tables =
   List.iter process tables
 
 let init_links_table ~mode ~env ~db t table_links =
-	let create = "CREATE TABLE IF NOT EXISTS __links__ (parent TEXT, child TEXT)" in
-	let select = "SELECT child FROM __links__ WHERE parent=? AND child=?" in
-	let insert = "INSERT INTO __links__ (parent, child) VALUES (?,?)" in
+	let create = "CREATE TABLE IF NOT EXISTS __links__ (parent TEXT, field TEXT, child TEXT)" in
+	let select = "SELECT child FROM __links__ WHERE parent=? AND field=? AND child=?" in
+	let insert = "INSERT INTO __links__ (parent, field, child) VALUES (?,?,?)" in
 
 	(* Create the __links__ table *)
 	if mode = `RW then begin
@@ -67,14 +67,14 @@ let init_links_table ~mode ~env ~db t table_links =
 	end;
 
 	(* Insert the link 'p is a parent of n' into __links__ *)
-	let process (p, n) =
+	let process (p, f, n) =
 		let aux = function
 			| [] when mode = `RW ->
-				exec_sql ~env ~db insert [Data.TEXT p; Data.TEXT n] (db_must_step db)
+				exec_sql ~env ~db insert [Data.TEXT p; Data.TEXT f; Data.TEXT n] (db_must_step db)
 			| [] -> ()
 			| [Data.TEXT x] -> ()
 			| _ -> process_error t "create_links_table:1" in
-		exec_sql ~env ~db select [Data.TEXT p; Data.TEXT n] (fun stmt -> aux (step_map db stmt (fun stmt -> column stmt 0))) in
+		exec_sql ~env ~db select [Data.TEXT p; Data.TEXT f; Data.TEXT n] (fun stmt -> aux (step_map db stmt (fun stmt -> column stmt 0))) in
 
   List.iter process table_links
 
