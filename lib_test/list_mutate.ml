@@ -19,11 +19,9 @@ let test_mutate_basic () =
   t1.bar <- l;
   x_save db t1;
   match x_get db with
-  |[s;t] -> "eq" @?
-    (List.exists (fun t -> t.bar = ["foo3","bar3"; "foo1","bar1"; "foo2","bar2" ]) [s;t] &&
-    List.exists (fun t -> t.bar = ["foo1","bar1"; "foo2","bar2" ]) [s;t] )
-  |[] -> failwith "no x"
-  |x -> failwith (Printf.sprintf "too many x: %d" (List.length x))
+  | [x] -> "eq" @? (x.bar = ["foo3","bar3"; "foo1","bar1"; "foo2","bar2" ])
+  | [] -> failwith "no x"
+  | x -> failwith (Printf.sprintf "too many x: %d" (List.length x))
 
 let suite = [
   "list_mutate_basic" >:: test_mutate_basic;
