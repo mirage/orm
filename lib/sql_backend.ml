@@ -242,7 +242,7 @@ let subtables_of_type t =
 			  List.fold_left
 				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu (List.rev tl))
 				  accu tl
-		| T.Var v     -> ( [], [name, default field, `Foreign, v] ) >> accu
+		| T.Var v     -> ( [], match parent with Some p -> [p, default field, `Foreign, v] | _ -> [] ) >> accu
 		| T.Rec (v,s)
 		| T.Ext (v,s) as t ->
 			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, default field, `Foreign, v] | _ -> [] ) in
