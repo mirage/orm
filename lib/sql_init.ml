@@ -133,22 +133,26 @@ let init_triggers ~mode ~env ~db ~sync_cache ~table_links ~tables =
 	let gc (table, field, kind, enum) =
 		assert (kind = `Enum);
 		let trigger_name = Printf.sprintf "CLEAN_UP_%s" enum in
-		let trigger_fn () =
-			let gc_select = Printf.sprintf
-				"SELECT __e0__.__id__ FROM %s as __e0__ JOIN %s as __e1__ JOIN %s as __m__ WHERE NOT (__e1__.__next__=__e0__.__id__ AND __m__.%s=__e0__.__id__)"
-				enum enum table field in
-			let gc_delete = function
-				| Data.INT id -> 
-					let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
-					exec_sql ~env ~db delete [] (db_must_step db);
-				| _           -> failwith "gc" in
-			let new_db = new_state db.name in
-			exec_sql ~env ~db:new_db gc_select []
-				(fun stmt -> let (_ : unit list) = step_map new_db stmt (fun stmt -> gc_delete (column stmt 0)) in Data.NULL) in
+		let trigger_fn oldv newv =
+			if oldv <> newv then begin
+			 	(* very-small-step GC *)
+				let gc_select = Printf.sprintf
+				 	"SELECT __id__ FROM %s as __e0__  WHERE __e0__.__id__ != %s AND (SELECT __id__ FROM %s as __e1__ WHERE __e1__.__next__=__e0__.__id__) IS NULL AND (SELECT __id__ FROM %s WHERE %s=__e0__.__id__) IS NULL;"
+				enum (Data.to_string newv) enum table field in
+				let gc_delete = function
+					| Data.INT id -> 
+						let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
+						 exec_sql ~env ~db delete [] (db_must_step db);
+					| _           -> failwith "gc" in
+				let new_db = new_state db.name in
+				let ids = exec_sql ~env ~db:new_db gc_select [] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) in
+				List.iter gc_delete ids;
+			end;
+			Data.NULL in
 		let gc_trigger = Printf.sprintf
-			"CREATE TRIGGER IF NOT EXISTS %s_%s_cleanup AFTER UPDATE OF %s ON %s FOR EACH ROW BEGIN SELECT %s(); END;"
-			table field field table trigger_name in
-		create_fun0 db.db trigger_name trigger_fn;
+			"CREATE TRIGGER IF NOT EXISTS %s_%s_cleanup AFTER UPDATE OF %s ON %s FOR EACH ROW BEGIN SELECT %s(OLD.%s,NEW.%s); END;"
+			table field field table trigger_name field field in
+		create_fun2 db.db trigger_name trigger_fn;
 		exec_sql ~env ~db gc_trigger [] (db_must_step db) in
 
 	if mode = `RW then begin

@@ -230,6 +230,7 @@ type table = [ `Enum | `Foreign ]
 (* Return the sub-tables for a Type.t and the links between them *)
 let subtables_of_type t =
 	let module T = Type in
+	let default f = if f = "" then Name.default else f in
 	let (>>) (l1, l2) (l3, l4) = ( l1 @ l3, l2 @ l4 ) in
 	let rec aux ?parent ~field name ((tables,_) as accu) = function
 		| T.Unit | T.Int _ | T.Char | T.Bool
@@ -241,14 +242,14 @@ let subtables_of_type t =
 			  List.fold_left
 				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu (List.rev tl))
 				  accu tl
-		| T.Var v     -> ( [], [name, field, `Foreign, v] ) >> accu
+		| T.Var v     -> ( [], [name, default field, `Foreign, v] ) >> accu
 		| T.Rec (v,s)
 		| T.Ext (v,s) as t ->
-			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, field, `Foreign, v] | _ -> [] ) in
+			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, default field, `Foreign, v] | _ -> [] ) in
 			if List.mem_assoc v tables then accu else aux ~parent:v ~field:"" v (res >> accu) s
 		| T.Enum s    as t ->
 			let name = Name.enum name in
-			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, field, `Enum, name] | _ -> [] ) in
+			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, default field, `Enum, name] | _ -> [] ) in
 			res >> (aux ~parent:name ~field:"" name accu s) in
 	aux ~field:"" "" ([], []) t
 
