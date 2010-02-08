@@ -11,7 +11,7 @@ open OUnit
 open Test_utils
 
 let name = "large_string.db"
-let size = 100000000
+let size = 10000000
 let x1 = { name = "x1"; body = String.make size 'x' }
 let x2 = { name = "x2"; body = String.make size 'y' }
 let x3 = { name = "x3"; body = String.make size 'z' }
