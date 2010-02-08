@@ -186,7 +186,8 @@ let nb_of_qmarks str =
 let exec_sql ~tag ~env ~db sql binds fn =
 	let name = Printf.sprintf "%s:%d" db.name db.uuid in
 	debug name env `Sql tag sql;
-	assert (nb_of_qmarks sql = List.length binds);
+	if (nb_of_qmarks sql <> List.length binds) then
+		failwith (Printf.sprintf "Wrong number of ? in '%s'" sql);
 	let stmt = prepare db.db sql in
 	list_iteri (fun i v ->
 		debug name env `Bind tag (string_of_data v);
@@ -224,6 +225,8 @@ let field_types_of_type ~id t =
 		| T.Option t -> "INTEGER" :: aux t in
 	if id then "INTEGER" :: aux t else aux t
 
+type table = [ `Enum | `Foreign ]
+
 (* Return the sub-tables for a Type.t and the links between them *)
 let subtables_of_type t =
 	let module T = Type in
@@ -238,16 +241,20 @@ let subtables_of_type t =
 			  List.fold_left
 				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu (List.rev tl))
 				  accu tl
-		| T.Var v     -> ( [], [name, field, v] ) >> accu
+		| T.Var v     -> ( [], [name, field, `Foreign, v] ) >> accu
 		| T.Rec (v,s)
 		| T.Ext (v,s) as t ->
-			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, field, v] | _ -> [] ) in
+			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, field, `Foreign, v] | _ -> [] ) in
 			if List.mem_assoc v tables then accu else aux ~parent:v ~field:"" v (res >> accu) s
 		| T.Enum s    as t ->
 			let name = Name.enum name in
-			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, field, name] | _ -> [] ) in
+			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, field, `Enum, name] | _ -> [] ) in
 			res >> (aux ~parent:name ~field:"" name accu s) in
 	aux ~field:"" "" ([], []) t
+
+let enum_subtables_of_type t =
+	let _, links = subtables_of_type t in
+	List.filter (function (_, _, `Enum, _) -> true | _ -> false) links
 
 (* Build up the list of fields from a Value.t *)
 let field_names_of_value ~id v =

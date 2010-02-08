@@ -67,7 +67,7 @@ let init_links_table ~mode ~env ~db t table_links =
 	end;
 
 	(* Insert the link 'p is a parent of n' into __links__ *)
-	let process (p, f, n) =
+	let process (p, f, _, n) =
 		let aux = function
 			| [] when mode = `RW ->
 				exec_sql ~env ~db insert [Data.TEXT p; Data.TEXT f; Data.TEXT n] (db_must_step db)
@@ -116,12 +116,52 @@ let init_custom_indexes ~mode ~env ~db tables =
 			) env;
 	end
 
-let init_tables ~mode ~env ~db t =
+let init_triggers ~mode ~env ~db ~sync_cache ~table_links ~tables =
+	(* Trigger to keep the local weakid cache in sync with the database *)
+	let local_cache (table, _) =
+		let trigger_name = Printf.sprintf "SYNC_CACHE_%s" table in
+		let trigger_fn = function
+			| Data.INT id -> let () = sync_cache id in Data.NULL
+			| _           -> failwith trigger_name in
+		let sync_trigger = Printf.sprintf 
+			"CREATE TRIGGER IF NOT EXISTS %s_update_cache AFTER DELETE ON %s FOR EACH ROW BEGIN SELECT %s(OLD.__id__); END;"
+			table table trigger_name in
+		create_fun1 db.db trigger_name trigger_fn;
+		exec_sql ~env ~db sync_trigger [] (db_must_step db) in
+
+	(* Trigger to clean-up automatically the enum tables *)
+	let gc (table, field, kind, enum) =
+		assert (kind = `Enum);
+		let trigger_name = Printf.sprintf "CLEAN_UP_%s" enum in
+		let trigger_fn () =
+			let gc_select = Printf.sprintf
+				"SELECT __e0__.__id__ FROM %s as __e0__ JOIN %s as __e1__ JOIN %s as __m__ WHERE NOT (__e1__.__next__=__e0__.__id__ AND __m__.%s=__e0__.__id__)"
+				enum enum table field in
+			let gc_delete = function
+				| Data.INT id -> 
+					let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
+					exec_sql ~env ~db delete [] (db_must_step db);
+				| _           -> failwith "gc" in
+			exec_sql ~env ~db gc_select [] (fun stmt -> let (_ : unit list) = step_map db stmt (fun stmt -> gc_delete (column stmt 0)) in Data.NULL) in
+		let gc_trigger = Printf.sprintf
+			"CREATE TRIGGER IF NOT EXISTS %s_%s_cleanup AFTER UPDATE OF %s ON %s FOR EACH ROW BEGIN SELECT %s(); END;"
+			table field field table trigger_name in
+		create_fun0 db.db trigger_name trigger_fn;
+		exec_sql ~env ~db gc_trigger [] (db_must_step db) in
+
+	if mode = `RW then begin
+		List.iter local_cache tables;
+		List.iter gc (List.filter (fun (_,_,k,_) -> k=`Enum) table_links)
+	end
+
+let init_tables ~mode ~env ~db ~sync_cache t =
 	let tables, table_links = subtables_of_type t in
 	init_and_check_types_table ~mode ~env ~db tables;
 	init_links_table ~mode ~env ~db t table_links;
 	create_tables ~mode ~env ~db tables;
-	init_custom_indexes ~mode ~env ~db tables
+	init_custom_indexes ~mode ~env ~db tables;
+	init_triggers ~mode ~env ~db ~sync_cache ~table_links ~tables
+	
 
 (* wrapper for realpath(2) *)
 external unix_realpath : string -> string = "unix_realpath"
