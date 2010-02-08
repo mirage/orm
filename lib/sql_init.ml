@@ -142,7 +142,9 @@ let init_triggers ~mode ~env ~db ~sync_cache ~table_links ~tables =
 					let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
 					exec_sql ~env ~db delete [] (db_must_step db);
 				| _           -> failwith "gc" in
-			exec_sql ~env ~db gc_select [] (fun stmt -> let (_ : unit list) = step_map db stmt (fun stmt -> gc_delete (column stmt 0)) in Data.NULL) in
+			let new_db = new_state db.name in
+			exec_sql ~env ~db:new_db gc_select []
+				(fun stmt -> let (_ : unit list) = step_map new_db stmt (fun stmt -> gc_delete (column stmt 0)) in Data.NULL) in
 		let gc_trigger = Printf.sprintf
 			"CREATE TRIGGER IF NOT EXISTS %s_%s_cleanup AFTER UPDATE OF %s ON %s FOR EACH ROW BEGIN SELECT %s(); END;"
 			table field field table trigger_name in
