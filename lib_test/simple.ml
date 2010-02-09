@@ -32,7 +32,7 @@ let test_id () =
 
 let test_save () =
   let db = open_db x_init name in
-  let db2 = open_db ~rm:false x_init_read_only name in
+  let _ = open_db ~rm:false x_init_read_only name in
   x_save db x;
   x_save db x
 
