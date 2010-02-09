@@ -38,21 +38,40 @@ let foreign_ids ~env ~db table id =
 
 	List.fold_left aux [] all_parents
 
-let internal_ids v =
-	let rec aux name accu = function
+let list_union l1 l2 =
+	List.fold_left (fun accu elt -> if List.mem elt l1 then accu else elt :: accu) l1 l2
+
+let get_ids ~env ~db var v =
+	let rec mem = function
+		| Unit | Int _ | String _ | Bool _ | Float _ | Arrow _ | Null -> false
+		| Var m      -> m=var
+		| Value w    -> mem w
+		| Tuple vs
+		| Enum vs
+		| Sum (_,vs) -> List.exists mem vs
+		| Dict vs    -> List.exists (fun (_,w) -> mem w) vs
+		| Ext (_,w)
+		| Rec (_,w)  -> mem w in
+	let rec aux name ((foreigns, internals) as accu) v =
+		if not (mem v) then
+			accu
+		else match v with
 		| Unit | Int _ | String _ | Bool _ | Float _ | Arrow _ | Null | Var _ -> accu
 		| Value v         -> aux (Name.option name) accu v
 		| Tuple vs        -> list_foldi (fun accu i v -> aux (Name.tuple name i) accu v) accu vs
 		| Dict vs         -> List.fold_left (fun accu (n,v) -> aux (Name.dict name n) accu v) accu vs
-		| Sum (r,vs)      -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) [] vs
+		| Sum (r,vs)      -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) accu vs
+		| Enum vs         -> List.fold_left (aux name) accu vs
 		| Ext ((n,i), w)
-		| Rec ((n,i), w)  -> aux n (if List.mem (n,i) accu then accu else (n,i) :: accu) w
-		| Enum vs         -> List.fold_left (aux name) accu vs in
-	aux "" [] v
+		| Rec ((n,i), w)  ->
+			let new_foreigns = list_union (foreign_ids ~env ~db n i) foreigns in
+			let new_internals = list_union [ n,i ] internals in
+			aux n (new_foreigns, new_internals) w in
+	aux "" ([], []) (Rec (var, v))
 
 let string_of_ids ids =
-	let aux (p,i) = sprintf "%s:%Ld" p i in
-	String.concat ";" (List.map aux ids)
+	let aux (p,i) = sprintf "(%s:%Ld)" p i in
+	String.concat "; " (List.map aux ids)
 
 let delete_value ~env ~db v =
 
@@ -70,15 +89,13 @@ let delete_value ~env ~db v =
 			process n i;
 			aux ~name:n v;
 		end
-    | Rec ((n,i),v), _      ->
-		let external_ids = foreign_ids ~env ~db n i in
-		let internal_ids = internal_ids v in
-		let foreign_ids = List.filter (fun x -> not (List.mem x internal_ids)) external_ids in
+    | Rec (var, w), _      ->
+		let externals, internals = get_ids ~env ~db var w in
+		let foreign_ids = List.filter (fun x -> not (List.mem x internals)) externals in
 		let delete = List.length foreign_ids = 0 in
-		(* Printf.printf "external: %s\ninternal: %s\nforeign:%s\n%!" (string_of_ids external_ids) (string_of_ids internal_ids) (string_of_ids foreign_ids); *)
+		(* Printf.printf "externals: %s\ninternals: %s\nforeigns:  %s\n%!" (string_of_ids externals) (string_of_ids internals) (string_of_ids foreign_ids); *)
 		if delete then begin
-			process n i;
-			aux ~name:n v;
+			List.iter (fun (n,i) -> process n i) internals;
 		end
     | Sum (r,tl), Some name -> list_iteri (fun i t -> aux ~name:(Name.sum name r i) t) tl
     | Dict tl   , Some name -> List.iter (fun (n,t) -> aux ~name:(Name.dict name n) t) tl
