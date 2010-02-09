@@ -63,6 +63,27 @@ let free_vars t =
     | Ext (n,t)  -> aux accu t in
   aux [] t
 
+(* Get all the type variables defined inside a type *)
+let foreigns t =
+	let rec aux accu = function
+    | Ext (n,t)
+    | Rec (n,t) when List.mem n accu
+                -> aux accu t
+    | Ext (n,t)
+    | Rec (n,t) -> aux (n::accu) t
+    | Var n when List.mem n accu
+                -> accu
+    | Var n     -> n :: accu
+    | Enum t
+    | Option t  -> aux accu t
+    | Tuple ts  -> List.fold_left aux accu ts
+    | Dict ts   -> List.fold_left (fun accu (_,_,t) -> aux accu t) accu ts
+    | Sum ts    -> List.fold_left (fun accu (_,t) -> List.fold_left aux accu t) accu ts
+    | Unit | Int _ | Bool | Float | Char | String
+                 -> accu
+    | Arrow(t,s) -> aux (aux accu t) s in
+  aux [] t
+
 (* Replace the Vars  by their type contained in env, and update the Ext/Rec stuff *)
 let unroll env t =
   let rec aux name = function
