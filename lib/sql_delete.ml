@@ -22,11 +22,12 @@ open Value
 
 let exec_sql ~env ~db = exec_sql ~tag:"delete" ~db ~env
 
-let is_referenced ~env ~db table id =
+let foreign_ids ~env ~db table id =
 
-	let exists (parent, field) =
+	let aux accu (parent, field) =
 		let sql = sprintf "SELECT * FROM %s WHERE %s=?;" parent field in
-		exec_sql ~env ~db sql [ Data.INT id ]  (fun stmt -> List.length (step_map db stmt (fun stmt -> column stmt 0)) = 1) in
+		let ids = exec_sql ~env ~db sql [ Data.INT id ] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) in
+		List.fold_left (fun accu -> function Data.INT id -> (parent, id) :: accu | _ -> accu) accu  ids in
 
 	let all_parents =
 		let sql = "SELECT parent, field FROM __links__ WHERE child=?;" in
@@ -35,8 +36,23 @@ let is_referenced ~env ~db table id =
 			| _                        -> failwith "is_referenced" in
 		exec_sql ~env ~db sql [Data.TEXT table] (fun stmt -> step_map db stmt fn) in
 
-	List.exists exists all_parents
+	List.fold_left aux [] all_parents
 
+let internal_ids v =
+	let rec aux name accu = function
+		| Unit | Int _ | String _ | Bool _ | Float _ | Arrow _ | Null | Var _ -> accu
+		| Value v         -> aux (Name.option name) accu v
+		| Tuple vs        -> list_foldi (fun accu i v -> aux (Name.tuple name i) accu v) accu vs
+		| Dict vs         -> List.fold_left (fun accu (n,v) -> aux (Name.dict name n) accu v) accu vs
+		| Sum (r,vs)      -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) [] vs
+		| Ext ((n,i), w)
+		| Rec ((n,i), w)  -> aux n (if List.mem (n,i) accu then accu else (n,i) :: accu) w
+		| Enum vs         -> List.fold_left (aux name) accu vs in
+	aux "" [] v
+
+let string_of_ids ids =
+	let aux (p,i) = sprintf "%s:%Ld" p i in
+	String.concat ";" (List.map aux ids)
 
 let delete_value ~env ~db v =
 
@@ -46,10 +62,20 @@ let delete_value ~env ~db v =
 
   let rec aux ?name v = match v, name with
     | Null, _ | Int _, _ | Bool _, _ | Float _, _ | String _, _ | Arrow _, _ | Enum _, None | Var _, _ -> ()
+    | Value t   , Some name -> aux ~name:(Name.option name) t
     | Enum t    , Some n    -> ()
-    | Ext ((n,i),v), _
+    | Ext ((n,i),v), _      ->
+		let delete = List.length (foreign_ids ~env ~db n i) = 0 in
+		if delete then begin
+			process n i;
+			aux ~name:n v;
+		end
     | Rec ((n,i),v), _      ->
-		let delete = not (is_referenced ~env ~db n i) in
+		let external_ids = foreign_ids ~env ~db n i in
+		let internal_ids = internal_ids v in
+		let foreign_ids = List.filter (fun x -> not (List.mem x internal_ids)) external_ids in
+		let delete = List.length foreign_ids = 0 in
+		(* Printf.printf "external: %s\ninternal: %s\nforeign:%s\n%!" (string_of_ids external_ids) (string_of_ids internal_ids) (string_of_ids foreign_ids); *)
 		if delete then begin
 			process n i;
 			aux ~name:n v;
