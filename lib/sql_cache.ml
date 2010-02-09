@@ -15,12 +15,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+open Sqlite3
 open Sql_backend
 
 let global_count = ref 0
 
 let clean_list : (unit -> unit) list ref = ref []
 let flush_list : (string -> unit) list ref = ref []
+let sync_list : (string -> string -> int64 -> unit) list ref = ref []
 
 let clean_all env name =
 	debug (name ^ ":*") env `Cache "cache" (Printf.sprintf "clean_all(%i)" (List.length !clean_list));
@@ -29,6 +31,32 @@ let clean_all env name =
 let flush_all env name =
 	debug (name ^ ":*") env `Cache "cache" (Printf.sprintf "flush_all(%s,%i)" name (List.length !flush_list));
 	List.iter (fun f -> f name) !flush_list
+
+let sync_all env name table id =
+	debug (name ^ ":*") env `Cache "cache" (Printf.sprintf "sync_all(%s,%s,%Ld,%i)" name table id (List.length !sync_list));
+	List.iter (fun f -> f name table id) !sync_list
+
+
+module Trigger = struct
+	
+	let name table =
+		Printf.sprintf "SYNC_CACHE_%s" table
+
+	(* custom function needs to be registred for each connection *)
+	let create_function ~env ~db table =
+		let trigger_fn = function
+			| Data.INT id -> sync_all env db.name table id; Data.NULL
+			| _           -> failwith (name table) in
+		create_fun1 db.db (name table) trigger_fn
+
+	(* trigger needs to be registred once per pair (database * type) *)
+	let install ~env ~db table =
+		let sync_trigger = Printf.sprintf 
+			"CREATE TRIGGER IF NOT EXISTS %s_update_cache AFTER DELETE ON %s FOR EACH ROW BEGIN SELECT %s(OLD.__id__); END;"
+			table table (name table) in
+		exec_sql ~tag:"cache" ~env ~db sync_trigger [] (db_must_step db)
+
+end
 
 type ('a, 'b) t = {
 	type_name : string;
@@ -69,8 +97,17 @@ module Make (H : Hashtbl.HashedType) : Sig with type tbl = Weakid.Make(H).t and 
 		List.iter (fun k -> Hashtbl.remove t.tbl k) !to_remove
 
 	let flush t name =
-		Hashtbl.iter (fun k v -> if k = name then W.clear v) t.tbl
+		let to_remove = ref [] in
+		Hashtbl.iter (fun k v -> if k = name then (to_remove := k :: !to_remove; W.clear v)) t.tbl;
+		List.iter (fun k -> Hashtbl.remove t.tbl k) !to_remove
 
+	let sync t name table id =
+		let aux w =
+			let vs = t.of_weakid w id in
+			List.iter (t.remove w) vs in
+		if t.type_name = table then
+			Hashtbl.iter (fun k v -> if k = name then aux v) t.tbl
+		
 	let create name =
 		let tbl = Hashtbl.create 32 in
 		let t = {
@@ -88,6 +125,7 @@ module Make (H : Hashtbl.HashedType) : Sig with type tbl = Weakid.Make(H).t and 
 		} in
 		clean_list := (fun () -> clean t) :: !clean_list;
 		flush_list := (flush t) :: !flush_list;
+		sync_list := (sync t) :: !sync_list;
 		t
 end
 
@@ -100,6 +138,9 @@ let with_table env t db fn =
 		else begin
 			let w = t.create 128 in
 			Hashtbl.replace t.tbl db w;
+			let s = new_state db in
+			Trigger.install ~env ~db:s t.type_name;
+			let (_:bool) = db_close s.db in
 			w
 		end in
 	fn tbl

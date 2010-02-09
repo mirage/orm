@@ -47,10 +47,8 @@ let init_binding env tds (_loc, n, t) =
 		let __file__ = OI.realpath __file__ in
 		let __db__ = OB.new_state __file__ in
 		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
-		let __sync__ __id__ =
-			let __vs__ = OC.of_weakid __env__ $lid:cache n$ __db__.OB.name __id__ in
-			List.iter (OC.remove __env__ $lid:cache n$ __db__.OB.name) __vs__ in
-		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ ~sync_cache:__sync__ $lid:P4_type.type_of n$ in
+		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
+		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		__db__
 	>>
 
@@ -60,7 +58,8 @@ let initRO_binding env tds (_loc, n, t) =
 		let __file__ = OI.realpath __file__ in
 		let __db__ = OB.new_state __file__ in
 		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
-		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db:__db__ ~sync_cache:(fun _ -> ()) $lid:P4_type.type_of n$ in
+		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
+		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		__db__
 	>>
 
@@ -80,12 +79,14 @@ let save_binding env tds (_loc, n, t) =
 		fun ~db: __db__ ->
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
+				let () = Printf.printf "saving(m): %s\n%!" (Value.to_string v) in
 				OS.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
 			fun $lid:n$ ->
 				if not (OC.mem __env__ $lid:cache n$ __db__.OB.name $lid:n$) then (
 					let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
+					let () = Printf.printf "saving(i): %s\n%!" (Value.to_string v) in
 					OS.update_value ~env:__env__ ~db:__db__ v
 				) else ()
     )
