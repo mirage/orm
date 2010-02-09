@@ -271,7 +271,7 @@ module Value_of = struct
 					let __env__ = $empty_env _loc ids$ in
 					let __id__ = $lid:get_new_id x$ $key$ $xe$ in
 					let __env__ = $replace_env _loc ids <:expr< $xe$ >> x$ in
-					let __v__ = $lid:value_of_aux x$ $key$ __env__ $xe$ in
+					let __x__ = $lid:value_of_aux x$ $key$ __env__ $xe$ in
 					if List.mem ($str:x$, __id__) (Value.free_vars __x__) then
 						Value.Rec (($str:x$, __id__), __x__)
 					else
