@@ -70,33 +70,35 @@ let test_delete () =
   let dby = open_db ~rm:false y_init name in
   let dba = open_db ~rm:false a_init name in
 
-  let check (z, t, x, y, a) =
-    (Printf.sprintf "%d z in db" z) @? (List.length (z_get dbz) = z);
-    (Printf.sprintf "%d t in db" t) @? (List.length (t_get dbt) = t);
-	(Printf.sprintf "%d x in db" x) @? (List.length (x_get dbx) = x);
-	(Printf.sprintf "%d y in db" y) @? (List.length (y_get dby) = y);
-	(Printf.sprintf "%d a in db" a) @? (List.length (a_get dba) = a) in
+  let check n (z, t, x, y, a) =
+    (Printf.sprintf "%d: %d z in db" n z) @? (List.length (z_get dbz) = z);
+    (Printf.sprintf "%d: %d t in db" n t) @? (List.length (t_get dbt) = t);
+    (Printf.sprintf "%d: %d x in db" n x) @? (List.length (x_get dbx) = x);
+    (Printf.sprintf "%d: %d y in db" n y) @? (List.length (y_get dby) = y);
+    (Printf.sprintf "%d: %d a in db" n a) @? (List.length (a_get dba) = a) in
 
   z_save dbz vz;
   a_save dba va;
   
   (* 0. basic sanity checks before doing the delete test *)
-  check (1, 1, 1, 1, 1);
+  check 0 (1, 1, 1, 1, 1);
 
   (* 1. deleting vx should not be possible *)
   x_delete dbx vx;
-  check (1, 1, 1, 1, 1);
+  check 1 (1, 1, 1, 1, 1);
 
   (* 2. deleting vz should delete vt and vx as well and let vy in the database *)
   z_delete dbz vz;
-  check (0, 0, 0, 1, 1);
+  check 2 (0, 0, 0, 1, 1);
 
   z_save dbz vz;
+  check 3 (1, 1, 1, 1, 1);
+
   (* 3. after deleting va and the vz, all the values should be deleted *)
   a_delete dba va;
-  check (1, 1, 1, 1, 0);
+  check 4 (1, 1, 1, 1, 0);
   z_delete dbz vz;
-  check (0, 0, 0, 0, 0)
+  check 5 (0, 0, 0, 0, 0)
 
 let suite = [
   "recursive_init" >:: test_init;
