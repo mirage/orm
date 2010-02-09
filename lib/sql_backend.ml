@@ -277,7 +277,7 @@ let subtables_of_value v =
 		| V.Value v      -> aux (Name.option name) accu v
 		| V.Tuple vs     -> list_foldi (fun accu i v -> aux (Name.tuple name i) accu v) accu vs
 		| V.Dict vs      -> List.fold_left (fun accu (n,v) -> aux (Name.dict name n) accu v) accu vs
-		| V.Sum (r,vs)   -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) [] vs
+		| V.Sum (r,vs)   -> list_foldi (fun accu i v -> aux (Name.sum name r i) accu v) accu vs
 		| V.Ext((n,i),v)
 		| V.Rec((n,i),v) -> aux n ((n,[v]) :: accu) v
 		| V.Enum vs      -> let name = Name.enum name in List.fold_left (aux name) ((name,vs) :: accu) vs in
