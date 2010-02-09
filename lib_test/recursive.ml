@@ -89,7 +89,14 @@ let test_delete () =
 
   (* 2. deleting vz should delete vt and vx as well and let vy in the database *)
   z_delete dbz vz;
-  check (0, 0, 0, 1, 1)
+  check (0, 0, 0, 1, 1);
+
+  z_save dbz vz;
+  (* 3. after deleting va and the vz, all the values should be deleted *)
+  a_delete dba va;
+  check (1, 1, 1, 1, 0);
+  z_delete dbz vz;
+  check (0, 0, 0, 0, 0)
 
 let suite = [
   "recursive_init" >:: test_init;
