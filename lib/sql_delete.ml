@@ -22,7 +22,7 @@ open Value
 
 let exec_sql ~env ~db = exec_sql ~tag:"delete" ~db ~env
 
-let foreign_ids ~env ~db table id =
+let foreign_ids ~env ~db (table, id) =
 
 	let aux accu (parent, field) =
 		let sql = sprintf "SELECT * FROM %s WHERE %s=?;" parent field in
@@ -64,7 +64,7 @@ let get_ids ~env ~db var v =
 		| Enum vs         -> List.fold_left (aux name) accu vs
 		| Ext ((n,i), w)
 		| Rec ((n,i), w)  ->
-			let new_foreigns = list_union (foreign_ids ~env ~db n i) foreigns in
+			let new_foreigns = list_union (foreign_ids ~env ~db (n,i)) foreigns in
 			let new_internals = list_union [ n,i ] internals in
 			aux n (new_foreigns, new_internals) w in
 	aux "" ([], []) (Rec (var, v))
@@ -75,31 +75,37 @@ let string_of_ids ids =
 
 let delete_value ~env ~db v =
 
-  let process table id =
-    let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
-	exec_sql ~env ~db sql [ Data.INT id ] (db_must_step db) in
+	let process (table, id) =
+		let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
+		exec_sql ~env ~db sql [ Data.INT id ] (db_must_step db) in
 
-  let rec aux ?name v = match v, name with
-    | Null, _ | Int _, _ | Bool _, _ | Float _, _ | String _, _ | Arrow _, _ | Enum _, None | Var _, _ -> ()
-    | Value t   , Some name -> aux ~name:(Name.option name) t
-    | Enum t    , Some n    -> ()
-    | Ext ((n,i),v), _      ->
-		let delete = List.length (foreign_ids ~env ~db n i) = 0 in
-		if delete then begin
-			process n i;
-			aux ~name:n v;
-		end
-    | Rec (var, w), _      ->
-		let externals, internals = get_ids ~env ~db var w in
-		let foreign_ids = List.filter (fun x -> not (List.mem x internals)) externals in
-		let delete = List.length foreign_ids = 0 in
-		(* Printf.printf "externals: %s\ninternals: %s\nforeigns:  %s\n%!" (string_of_ids externals) (string_of_ids internals) (string_of_ids foreign_ids); *)
-		if delete then begin
-			List.iter (fun (n,i) -> process n i) internals;
-		end
-    | Sum (r,tl), Some name -> list_iteri (fun i t -> aux ~name:(Name.sum name r i) t) tl
-    | Dict tl   , Some name -> List.iter (fun (n,t) -> aux ~name:(Name.dict name n) t) tl
-    | Tuple tl  , Some name -> list_iteri (fun i t -> aux ~name:(Name.tuple name i) t) tl
-    | _                     -> failwith (Printf.sprintf "TODO:%s,%s" (to_string v) (match name with None -> "<none>" | Some n -> n)) in
+	let rec aux ~deleted = function
+		| Null | Unit | Int _ | Bool _ | Float _ | String _ | Arrow _ | Var _ -> ()
+		| Value t      -> aux ~deleted t
+		| Ext (var, w) ->
+			if not (List.mem var deleted) then begin
+				let delete = List.length (foreign_ids ~env ~db var) = 0 in
+				if delete then begin
+					process var;
+					aux ~deleted:(var::deleted) w;
+				end
+			end else
+				aux ~deleted w
+		| Rec (var, w) ->
+			if not (List.mem var deleted) then begin
+				let externals, internals = get_ids ~env ~db var w in
+				let foreign_ids = List.filter (fun x -> not (List.mem x internals)) externals in
+				let delete = List.length foreign_ids = 0 in
+				(* Printf.printf "externals: %s\ninternals: %s\nforeigns:  %s\n%!" (string_of_ids externals) (string_of_ids internals) (string_of_ids foreign_ids); *)
+				if delete then begin
+					List.iter process internals;
+					aux ~deleted:(internals @ deleted) w
+				end
+			end else
+				aux ~deleted w
+		| Sum (_,tl)
+		| Tuple tl
+		| Enum tl      -> List.iter (aux ~deleted) tl
+		| Dict tl      -> List.iter (fun (_,t) -> aux ~deleted t) tl in
 
-  aux v
+	aux ~deleted:[] v
