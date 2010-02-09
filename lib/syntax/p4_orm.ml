@@ -79,14 +79,12 @@ let save_binding env tds (_loc, n, t) =
 		fun ~db: __db__ ->
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
-				let () = Printf.printf "saving(m): %s\n%!" (Value.to_string v) in
 				OS.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
 			fun $lid:n$ ->
 				if not (OC.mem __env__ $lid:cache n$ __db__.OB.name $lid:n$) then (
 					let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
-					let () = Printf.printf "saving(i): %s\n%!" (Value.to_string v) in
 					OS.update_value ~env:__env__ ~db:__db__ v
 				) else ()
     )
