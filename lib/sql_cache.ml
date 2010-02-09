@@ -140,7 +140,6 @@ let with_table env t db fn =
 			Hashtbl.replace t.tbl db w;
 			let s = new_state db in
 			Trigger.install ~env ~db:s t.type_name;
-			let (_:bool) = db_close s.db in
 			w
 		end in
 	fn tbl
