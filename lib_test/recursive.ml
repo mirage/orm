@@ -7,7 +7,7 @@ type t = {
   t2: x option
 } and x = {
   x1: t option;
-  x2: char
+  x2: y
 } with orm
 
 type z = t with orm
