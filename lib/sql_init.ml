@@ -144,8 +144,7 @@ let init_triggers ~mode ~env ~db ~sync_cache ~table_links ~tables =
 						let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
 						 exec_sql ~env ~db delete [] (db_must_step db);
 					| _           -> failwith "gc" in
-				let new_db = new_state db.name in
-				let ids = exec_sql ~env ~db:new_db gc_select [] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) in
+				let ids = exec_sql ~env ~db gc_select [] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) in
 				List.iter gc_delete ids;
 			end;
 			Data.NULL in
