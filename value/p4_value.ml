@@ -271,10 +271,11 @@ module Value_of = struct
 					let __env__ = $empty_env _loc ids$ in
 					let __id__ = $lid:get_new_id x$ $key$ $xe$ in
 					let __env__ = $replace_env _loc ids <:expr< $xe$ >> x$ in
-					match $lid:value_of_aux x$ $key$ __env__ $xe$ with [
-					  Value.Rec _ as __x__ -> __x__
-					| __x__ when ( List.mem ($str:x$, __id__) (Value.free_vars __x__) ) -> Value.Rec (($str:x$, __id__), __x__)
-					| __x__ -> Value.Ext (($str:x$, $lid:get_new_id x$ $key$ $xe$), __x__) ]
+					let __v__ = $lid:value_of_aux x$ $key$ __env__ $xe$ in
+					if List.mem ($str:x$, __id__) (Value.free_vars __x__) then
+						Value.Rec (($str:x$, __id__), __x__)
+					else
+						Value.Ext (($str:x$, $lid:get_new_id x$ $key$ $xe$), __x__)
 			>> in
 		let value_of_fn x =
 			if with_key then
