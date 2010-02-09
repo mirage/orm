@@ -79,7 +79,7 @@ let test_delete () =
   "1 s in db" @? (List.length (t_get dbt) = 1);
   x_delete db vx;
   "0 x in db" @? (List.length (x_get db) = 0);
-  "0 s in db" @? (List.length (t_get dbt) = 1)
+  "0 s in db" @? (List.length (t_get dbt) = 0)
 
 let suite = [
   "recursive_mutate_init" >:: test_init;
