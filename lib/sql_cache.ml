@@ -145,7 +145,7 @@ let with_table env t db fn =
 	fn tbl
 
 let debug env t db s =
-	debug (db ^ ":*") env `Cache "cache" (Printf.sprintf "calling %s(%s) -- %s" s db (string_of_t t.dump t))
+	debug (db ^ ":*") env `Cache "cache" (Printf.sprintf "calling %s(%s)" s db)
 
 let to_weakid env t db elt =
 	debug env t db "to_weakid";
