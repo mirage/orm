@@ -179,28 +179,42 @@ module Get = struct
 end
 
 let get_binding env tds (_loc, n, t) =
-	<:binding< $lid:get n$ = $Get.fun_of_name _loc tds n <:expr<
-    let __constraints__ = $Get.constraints_of_args _loc tds n$ in
+	<:binding< $lid:get n$ =
     if Type.is_mutable $lid:P4_type.type_of n$ then (
-		fun __db__ ->
-			List.map
-				(fun (__id__, __v__) ->
-					let __n__ = $lid:P4_value.of_value n$ __v__ in
-					do { OC.add __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ }
-				) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ $lid:P4_type.type_of n$)
+		$Get.fun_of_name _loc tds n <:expr<
+			fun ?custom: (__custom_fn__) ->
+				fun __db__ ->
+					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
+					let __custom_fn__ = match __custom_fn__ with [
+					  None    -> None
+					| Some fn -> Some (fun __v__ -> fn ($lid:P4_value.of_value n$ __v__))
+					] in
+					List.map
+						(fun (__id__, __v__) ->
+							let __n__ = $lid:P4_value.of_value n$ __v__ in
+							do { OC.add __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ }
+						) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+		>>$
     ) else (
-		fun __db__ ->
-			List.map
-				(fun (__id__, __v__) ->
-					 if OC.mem_weakid __env__ $lid:cache n$ __db__.OB.name __id__ then (
-						 let __n__ = List.hd (OC.of_weakid __env__ $lid:cache n$ __db__.OB.name __id__) in
-						 __n__
-					 ) else (
-						 let __n__ = $lid:P4_value.of_value n$ __v__ in
-						 do { OC.replace __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ } )
-				) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ $lid:P4_type.type_of n$)
-	) >>$
-	>>
+		$Get.fun_of_name _loc tds n <:expr<
+			fun ?custom: (__custom_fn__) ->
+				fun __db__ ->
+					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
+					let __custom_fn__ = match __custom_fn__ with [
+					  None    -> None
+					| Some fn -> Some (fun __v__ -> fn ($lid:P4_value.of_value n$ __v__))
+					] in
+					List.map
+						(fun (__id__, __v__) ->
+							if OC.mem_weakid __env__ $lid:cache n$ __db__.OB.name __id__ then (
+								let __n__ = List.hd (OC.of_weakid __env__ $lid:cache n$ __db__.OB.name __id__) in
+								__n__
+							) else (
+								let __n__ = $lid:P4_value.of_value n$ __v__ in
+								do { OC.replace __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ } )
+						) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+		>>$
+	) >>
 
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
@@ -257,7 +271,9 @@ let gen env tds =
 		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : string -> Db.t $lid:n$ [=`RW] ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : string -> Db.t $lid:n$ [=`RO] ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n <:ctyp< (Db.t $lid:n$ [<`RW|`RO]) -> list $lid:n$ >>$ ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n
+				<:ctyp< ?custom:( $lid:n$ -> bool ) -> Db.t $lid:n$ [<`RW|`RO] -> list $lid:n$ >>
+			$ ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:id n$ : ~db:(Db.t $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 ) >>) ts in
 

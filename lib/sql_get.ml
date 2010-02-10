@@ -110,22 +110,39 @@ let rec parse_row ~env ~db ~skip ~name t row n =
   | _ when skip              -> V.Null, n + 1
   | _                        -> process_error t row.(n) (sprintf "%s: unknown" name)
 
-and get_values ~env ~db ?id ?(constraints=[]) t =
-  let aux name s = function stmt ->
-    let row = row_data stmt in
-    let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
-    let r, _ = parse_row ~env ~db ~skip:false ~name s row 1 in
-    if List.mem (name, id) (V.free_vars r) then
-      id, V.Rec ((name,id),r)
-    else
-      id, V.Ext ((name,id),r) in
-  let constraints =
-    (match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ]) @
-    List.map string_of_constraint constraints in
-  match t with
-  | T.Rec (n, s)
-  | T.Ext (n, s) -> process ~env ~db ~constraints n (field_names_of_type ~id:true s) (aux n s)
-  | _            -> failwith "TODO"  
+and get_values ~env ~db ?id ?(constraints=[]) ?custom_fn t =
+
+	let value_of_row name s row =
+		let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
+		let r, _ = parse_row ~env ~db ~skip:false ~name s row 1 in
+		if List.mem (name, id) (V.free_vars r) then
+			id, V.Rec ((name,id), r)
+		else
+			id, V.Ext ((name,id), r) in
+
+	let value_of_stmt name s stmt =
+		value_of_row name s (row_data stmt) in
+
+	let _custom = ref None in
+	let custom name body fn =
+		let custom_name = sprintf "%s_custom" name in
+		let custom_str = sprintf "%s(%s)" custom_name (String.concat "," (field_names_of_type ~id:true body)) in
+		create_funN db.db custom_name (fun row -> let _,v = value_of_row name body row in if fn v then Data.INT 1L else Data.INT 0L);
+		_custom := Some custom_name;
+		[ custom_str, "", None ] in
+
+	let make_constraints name s =
+		(match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ]) @
+		(match custom_fn with None -> [] | Some fn -> custom name s fn) @
+		List.map string_of_constraint constraints in
+
+	match t with
+	| T.Rec (n, s)
+	| T.Ext (n, s) ->
+		let res = process ~env ~db ~constraints:(make_constraints n s) n (field_names_of_type ~id:true s) (value_of_stmt n s) in
+		(match !_custom with None -> () | Some name -> delete_function db.db name);
+		res
+	| _            -> failwith "TODO"  
 
 and get_enum_values ~env ~db ~id name t =
   let aux stmt =
