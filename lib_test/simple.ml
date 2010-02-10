@@ -62,6 +62,15 @@ let test_get () =
   let i = List.hd i in
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
 
+let test_custom_get () =
+  let db = open_db x_init name in
+  x_save db x;
+  x_save db x2;
+  let nb = ref 0 in
+  let subs = ref [] in
+  let i = x_get ~custom:(fun x -> let s = String.sub x.bar 3 2 in subs := s :: !subs; if s="lo" then (incr nb; true) else false) db in
+  (Printf.sprintf "1 in db (nb=%d, subs={%s})" !nb (String.concat ", " !subs)) @? (List.length i = 1)
+
 let test_save_get () =
   let db = open_db x_init name in
   x_save db x;
@@ -94,6 +103,7 @@ let suite = [
   "simple_save" >:: test_save;
   "simple_update" >:: test_update;
   "simple_get" >:: test_get;
+  "simple_custom_get" >:: test_custom_get;
   "simple_subtype" >:: test_subtype;
   "simple_save_get" >:: test_save_get;
   "simple_delete" >:: test_delete;
