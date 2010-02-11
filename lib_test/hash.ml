@@ -1,6 +1,4 @@
-(*pp camlp4o -I .. -I `ocamlfind query type-conv` pa_type_conv.cmo pa_hash.cma *)
-
-TYPE_CONV_PATH "All"
+TYPE_CONV_PATH "Hash"
 
 type p =
  |One of int array * string * float * bool * (char list)
@@ -69,5 +67,5 @@ let test_replace () =
   done
 
 let suite = [
-  "all_f_replace" >::  test_replace
+  "hash_replace" >::  test_replace
 ]
