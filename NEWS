@@ -1,5 +1,7 @@
 0.5:
 
+* Simplify layout and use the dyntype library [11 Feb 2010]
+* Many, many bugfixes and test suite improvements [Nov 2009-Feb 2010]
 * Breakdown core into smaller sub-libraries for value, hash, type
   comparison, and weak table generation [9 Nov 2009]
 

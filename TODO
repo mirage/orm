@@ -4,13 +4,8 @@ ORM is a work-in-progress and anything is subject to change dramatically!
 Issues:
 -------
 
-- Type-of/Value:
-   * handle type x = { x : M.t }
-   * handle type 'a x = {x : 'a }
-   * for Value, handle Bigint.t (and integers of range > 64)
-
 - ORM:
-   * signature generator
+   * no type-conv signature generator yet
    * handle type t = { x : M.t }
    * handle type 'a t = { x : 'a }
 
@@ -36,8 +31,6 @@ Nice to have:
 
 - Warn on reserved keywords in types (id, from) which are not
   valid SQL field names (or transform them to be safe).
-
-- Support polymorphic variant types and reference types.
 
 - Add foreign key constraints for sanity checking in debug mode.
   Not strictly needed, but an additional integrity check
