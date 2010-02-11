@@ -1,5 +1,0 @@
-name = "weakid"
-version = "0.2"
-description = "Weak IDs library for OCaml values"
-archive(byte) = "weakid.cmo"
-archive(native) = "weakid.cmx"
