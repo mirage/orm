@@ -1,8 +1,8 @@
 OCAMLMAKEFILE = ../../OCamlMakefile
 ANNOTATE = yes
 
-SOURCES = p4_utils.ml p4_orm.ml pa_orm.ml
-PACKS = type-conv weakid type-of.syntax value.syntax hash.syntax
+SOURCES = p4_hash.ml pa_hash.ml p4_utils.ml p4_orm.ml pa_orm.ml
+PACKS = type-conv dyntype.syntax
 RESULT = pa_orm
 USE_CAMLP4 = yes
 

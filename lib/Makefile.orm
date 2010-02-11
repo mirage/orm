@@ -1,12 +1,12 @@
 export OCAMLMAKEFILE = ../OCamlMakefile
 
 ANNOTATE = yes
-SOURCES = custom_unix_stubs.c sql_backend.ml sql_init.ml sql_save.ml sql_get.ml sql_delete.ml sql_cache.ml db.ml
+SOURCES = custom_unix_stubs.c weakid.ml sql_backend.ml sql_init.ml sql_save.ml sql_get.ml sql_delete.ml sql_cache.ml db.ml
 RESULT = orm
-PACKS = sqlite3 type-of value
+PACKS = sqlite3 dyntype.syntax
 LIB_PACK_NAME = orm
 
-LIBINSTALL_FILES = orm.cmx orm.cmxa orm.cma orm.cmi orm.a dllorm_stubs.so liborm_stubs.a syntax/pa_orm.cma
+LIBINSTALL_FILES = orm.cmx orm.cmxa orm.cma orm.cmi orm.a dllorm_stubs.so liborm_stubs.a syntax/pa_orm.cma 
 
 .PHONY: all
 all: ncl dcl
