@@ -1,7 +1,0 @@
-package "syntax" (
-  name = "hash"
-  version = "0.1"
-  description = "Stable hash keys for OCaml mutable values"
-  requires = "type-conv.syntax, camlp4"
-  archive(syntax, preprocessor) = "pa_hash.cma"
-)
