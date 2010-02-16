@@ -110,9 +110,10 @@ Finally, using `Dyntype.type-of`, functions to access the database are generated
         gallery list
 
 For both types, we are generating:
+
 1. arguments that can be easily translated into an optimized SQL queries;
 2. a more general (and thus slow) custom query function directly written in OCaml.
 
 On one hand, (1) is achieved by generating optional labelled arguments with the OCaml type corresponding to what `Dyntype.type_of` generated. This allows the programmer to specify a conjunction of type-safe constraints for his queries. For example, the field `name` is of type string which is associated to the constraint of type `Eq of string | Contains of string`. Values of this type can then be mapped to SQL equality or the `LIKE` operator.
 
-On the other hand, (2) is achieved using a SQLite extension to define custom SQL functions---in our case we register an OCaml callback directly. This is relatively slow as it bypasse the query optimizer, but allows the programmer to define very complex queries.
+On the other hand, (2) is achieved using a SQLite extension to define custom SQL functions; in our case we register an OCaml callback directly. This is relatively slow as it bypasses the query optimizer, but allows the programmer to define very complex queries.
