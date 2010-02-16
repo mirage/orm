@@ -1,4 +1,4 @@
-ORM is using the `dyntype` library to build an integrated SQL backend to persist ML values. This backend is integrated seamlessly with OCaml: the user does not have to worry about writing SQL queries manually.
+The ORM library provides a storage backend to persist ML values. This backend is integrated seamlessly with OCaml and currently uses SQLite (although other backends are easily possible). The user does not have to worry about writing any SQL queries manually.
 
 Installation
 ============
@@ -18,6 +18,8 @@ The library installs an ocamlfind META file, so use it with the `orm.syntax` pac
 To link it into a standalone executable:
 
     ocamlfind ocamlopt -syntax camlp4o -linkpkg -package orm.syntax t.ml
+
+You can report issues using the Github issue tracker at <http://github.com/mirage/orm/issues>, or mail the authors at <mailto:mirage@recoil.org>.  If you use the ORM somewhere, feel free to drop us a short line and we can add your project to the Wiki as well.
 
 Usage
 =====
@@ -52,6 +54,24 @@ We hold an `image` as a binary string, and a gallery is a named list of images. 
     val gallery_init : string -> (gallery, [ `RW ]) db
     val image_init_read_only : string -> (image, [ `RO ]) db
     val gallery_init_read_only : string -> (gallery, [ `RO ]) db
+
+Query functions are generated with signatures matching the various fields in the record or object, for example:
+
+    val gallery_get : (gallery, [< `RO | `RW ]) db ->
+        ?name:[ `Eq string | `Contains string] ->
+        ?date:[ `Le float | `Ge float | `Eq float | `Neq float] ->
+        ?custom:(gallery -> bool) ->
+        gallery list
+
+    let my_pics db = gallery_get ~name:(`Contains "Anil") db
+    let my_pics db = gallery_get ~custom:(fun g -> String.lowercase g.name = "anil") db
+
+To use this, you simply pass the database handle and specify any constraints to the optional variables.  More complex functions can be specified using the `custom` function which filters the full result set (as seen in the second example above).
+
+Be aware that custom functions currently disable the query optimizer and force a full scan.  We are investigating ways of exposing relational operations in a future release, and ideas (or even better, patches) are always appreciated.
+
+How It Works
+------------
 
 Intuitively, calling `gallery_init` will:
 
