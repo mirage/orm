@@ -21,6 +21,7 @@ open Sql_backend
 open Sqlite3
 
 exception Sql_process_error of Type.t * string
+exception Subtype_error of string * string
 
 let process_error t s =
 	Printf.printf "ERROR(%s): %s\n%!" s (to_string t);
@@ -46,10 +47,10 @@ let init_and_check_types_table ~mode ~env ~db tables =
 			| [Data.TEXT x] ->
 				if not (t <: (Type.of_string x)) then begin
 					Printf.printf "%s\n%!" (string_of_last_type_error ());
-					raise (Type.Subtype_error (Type.to_string t, x));
+					raise (Subtype_error (Type.to_string t, x));
 				end else if mode = `RW && not (Type.of_string x <: t) then begin
 					Printf.printf "%s\n%!" (string_of_last_type_error ());
-					raise (Type.Subtype_error (x, Type.to_string t));
+					raise (Subtype_error (x, Type.to_string t));
 				end
 			| _ -> process_error t "create_types_table:1" in
 		exec_sql ~env ~db select [Data.TEXT n] (fun stmt -> aux (step_map db stmt (fun stmt -> column stmt 0))) in
