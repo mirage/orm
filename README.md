@@ -35,19 +35,19 @@ Intuitively, calling `gallery_init` will:
 
 1. use `dyntype.type-of` to translate the type definitions into:
 
-    let type_of_image = Ext ( "image", String )
-    let type_of_gallery =
-      Ext("gallery", Dict [ 
-        ("name", String); ("date", Float) ; ("contents", Enum type_of_image)
-      ])
+        let type_of_image = Ext ( "image", String )
+        let type_of_gallery =
+            Ext("gallery", Dict [ 
+                ("name", String); ("date", Float) ; ("contents", Enum type_of_image)
+        ])
 
 2. use some basic inductive rules to generate the database schema:
 
-    CREATE TABLE image (__id__ INTEGER PRIMARY KEY, image TEXT);
-    CREATE TABLE gallery (__id__ INTEGER PRIMARY KEY, gallery__name TEXT, 
-        gallery__date REAL, gallery__contents__0 INTEGER);
-    CREATE TABLE gallery__contents__0 (__id__ INTEGER PRIMARY KEY,  
-        __next__ INTEGER, __size__ INTEGER, gallery__contents__0 INTEGER);
+        CREATE TABLE image (__id__ INTEGER PRIMARY KEY, image TEXT);
+        CREATE TABLE gallery (__id__ INTEGER PRIMARY KEY, gallery__name TEXT, 
+            gallery__date REAL, gallery__contents__0 INTEGER);
+        CREATE TABLE gallery__contents__0 (__id__ INTEGER PRIMARY KEY,  
+            __next__ INTEGER, __size__ INTEGER, gallery__contents__0 INTEGER);
 
 Second, using `dyntype.value`, any value of type `image` or `gallery` can be translated into a value of type `Value.t`. Save functions can be then defined with the signature:
 
