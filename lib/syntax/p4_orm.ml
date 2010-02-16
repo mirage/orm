@@ -49,7 +49,7 @@ let init_binding env tds (_loc, n, t) =
 		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
 		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
-		__db__
+		Db.of_state __db__
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
@@ -60,7 +60,7 @@ let initRO_binding env tds (_loc, n, t) =
 		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
 		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
-		__db__
+		Db.of_state __db__
 	>>
 
 let save_binding env tds (_loc, n, t) =
@@ -77,11 +77,13 @@ let save_binding env tds (_loc, n, t) =
 	let () = $lid:P4_value.set_new_id n$ __get_id__ in
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		fun ~db: __db__ ->
+			let __db__ = Db.to_state __db__ in
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
 				OS.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
+			let __db__ = Db.to_state __db__ in
 			fun $lid:n$ ->
 				if not (OC.mem __env__ $lid:cache n$ __db__.OB.name $lid:n$) then (
 					let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
@@ -184,6 +186,7 @@ let get_binding env tds (_loc, n, t) =
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun __db__ ->
+					let __db__ = Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None    -> None
@@ -199,6 +202,7 @@ let get_binding env tds (_loc, n, t) =
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun __db__ ->
+					let __db__ = Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None    -> None
@@ -219,6 +223,7 @@ let get_binding env tds (_loc, n, t) =
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
     fun ~db:__db__ ->
+		let __db__ = Db.to_state __db__ in
 		fun __n__ ->
 			if OC.mem __env__ $lid:cache n$ __db__.OB.name __n__ then (
 				OD.delete_value ~env:__env__ ~db:__db__ ($lid:P4_value.value_of n$ ~key:__db__.OB.name __n__)
@@ -228,6 +233,7 @@ let delete_binding env tds (_loc, n, t) =
 let id_binding env tds (_loc, n, t) =
 	<:binding< $lid:id n$ =
 	fun ~db:__db__ ->
+		let __db__ = Db.to_state __db__ in
 		fun __n__ ->
 			OC.to_weakid __env__ $lid:cache n$ __db__.OB.name __n__
 	>>
@@ -268,14 +274,14 @@ let gen env tds =
 		@ List.map (fun (_,n,_) -> <:patt< $lid:id n$ >>) ts in
 
 	let exprs =
-		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : string -> Db.t $lid:n$ [=`RW] ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : string -> Db.t $lid:n$ [=`RO] ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
+		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : string -> Orm.Db.t $lid:n$ [>`RW] ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : string -> Orm.Db.t $lid:n$ [>`RO] ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Orm.Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
 		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n
-				<:ctyp< ?custom:( $lid:n$ -> bool ) -> Db.t $lid:n$ [<`RW|`RO] -> list $lid:n$ >>
+				<:ctyp< ?custom:( $lid:n$ -> bool ) -> Orm.Db.t $lid:n$ [=`RW|`RO] -> list $lid:n$ >>
 			$ ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:id n$ : ~db:(Db.t $lid:n$ [<`RW|`RO]) -> $lid:n$ -> int64 ) >>) ts in
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Orm.Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
+		@ List.map (fun (_,n,_) -> <:expr< ( $lid:id n$ : ~db:(Orm.Db.t $lid:n$ [=`RW|`RO]) -> $lid:n$ -> int64 ) >>) ts in
 
 	<:str_item<
 		$P4_hash.gen tds$;

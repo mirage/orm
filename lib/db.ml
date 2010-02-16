@@ -14,8 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type ('a, 'b) t = Sql_backend.state
-type ('a, 'b) cache = ('a, 'b) Sql_cache.t
-
-
-
+type ('a, +'b) t = Sql_backend.state
+let of_state x = x
+let to_state x = x
