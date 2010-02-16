@@ -3,10 +3,13 @@ ORM is using the `dyntype` library to build an integrated SQL backend to persist
 Installation
 ============
 
-You can download the latest distribution from Github at http://github.com/mirage/orm.  It also depends on the following libraries:
-* `dyntype` : available from http://github.com/mirage/dyntype
-* `ocaml-sqlite3`: version 1.5.7+, available from http://www.ocaml.info/home/ocaml_sources.html. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
-* `type-conv`: available from http://www.ocaml.info/home/ocaml_sources.html
+You can download the latest distribution from Github at <http://github.com/mirage/orm>.  It also depends on the following libraries:
+
+* `dyntype` : available from <http://github.com/mirage/dyntype>
+
+* `ocaml-sqlite3`: version 1.5.7+, available from <http://www.ocaml.info/home/ocaml_sources.html>. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
+
+* `type-conv`: available from <http://www.ocaml.info/home/ocaml_sources.html>
 
 The library installs an ocamlfind META file, so use it with the `orm.syntax` package.  To compile a file `foo.ml` with the ORM and findlib, do:
 
