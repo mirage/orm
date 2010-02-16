@@ -1,5 +1,24 @@
 ORM is using the `dyntype` library to build an integrated SQL backend to persist ML values. This backend is integrated seamlessly with OCaml: the user does not have to worry about writing SQL queries manually.
 
+Installation
+============
+
+You can download the latest distribution from Github at http://github.com/mirage/orm.  It also depends on the following libraries:
+* `dyntype` : available from http://github.com/mirage/dyntype
+* `ocaml-sqlite3`: version 1.5.7+, available from http://www.ocaml.info/home/ocaml_sources.html. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
+* `type-conv`: available from http://www.ocaml.info/home/ocaml_sources.html
+
+The library installs an ocamlfind META file, so use it with the `orm.syntax` package.  To compile a file `foo.ml` with the ORM and findlib, do:
+
+    ocamlfind ocamlopt -syntax camlp4o -package orm.syntax -c t.ml
+
+To link it into a standalone executable:
+
+    ocamlfind ocamlopt -syntax camlp4o -linkpkg -package orm.syntax t.ml
+
+Usage
+=====
+
 For each type definition `t` annotated with the keyword `orm`, a tuple of functions to persist and query the saved values are automatically generated:
 
     (* User-defined datatype *)
