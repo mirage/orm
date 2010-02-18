@@ -1,11 +1,11 @@
 Package: godi-orm
 Version: 0.5
 Revision: 0
-Depends: godi-ocaml (>= 3.11), godi-dyntype (>= 0.7), ocaml-sqlite3 (>= 1.5.7), type-conv (>= 1.6.10)
+Depends: godi-ocaml (>= 3.11), godi-dyntype (>= 0.7), godi-sqlite3 (>= 1.5.7), godi-type-conv (>= 1.6.10)
 Build-Depends: godi-findlib (>= 1.2.5)
-Sources: http://github.com/mirage/orm/tarball/orm-0.5.tar.gz
+Sources: http://download.github.com/mirage-orm-3c0a0e5.tar.gz 
 Homepage: http://github.com/mirage/orm
-Maintainer: Thomas Gazagnaire <mirage@github.com>
+Maintainer: Thomas Gazagnaire <mirage@recoil.com>
 Docfiles: README.md, LICENSE
 Description: Object Relational Mapper extension
 .
