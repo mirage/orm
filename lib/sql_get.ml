@@ -33,7 +33,7 @@ let exec_sql ~env ~db = exec_sql ~tag:"get" ~db ~env
 let process ~env ~db ~constraints name field_names fn =
 	let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
 	let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
-	let sql = sprintf "SELECT %s FROM %s%s" (String.concat "," field_names) name where in
+	let sql = sprintf "SELECT %s FROM %s%s;" (String.concat "," field_names) name where in
 	let binds = List.rev (List.fold_left (function accu -> function (_,_,None) -> accu | (_,_,Some c) -> c :: accu) [] constraints) in
 	exec_sql ~env ~db sql binds (fun stmt -> step_map db stmt fn)
 
