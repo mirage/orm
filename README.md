@@ -11,6 +11,8 @@ You can download the latest distribution from Github at <http://github.com/mirag
 
 * `type-conv`: available from <http://www.ocaml.info/home/ocaml_sources.html>
 
+* `sqlite3`: version 3.6.22+, available from <http://www.sqlite.org/download.html>. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
+
 The library installs an ocamlfind META file, so use it with the `orm.syntax` package.  To compile a file `foo.ml` with the ORM and findlib, do:
 
     ocamlfind ocamlopt -syntax camlp4o -package orm.syntax -c t.ml
