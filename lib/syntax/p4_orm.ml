@@ -239,11 +239,11 @@ let id_binding env tds (_loc, n, t) =
 	>>
 
 let cache_binding env tds (_loc, n, t) =
-	<:binding< $lid:cache n$ = Cache.$uid:String.capitalize n$.create $str:n$ >>
+	<:binding< $lid:cache n$ = $uid:"Cache_" ^ n$.create $str:n$ >>
 
 let cache_module env tds (_loc, n, t) =
 	<:str_item<
-		module $uid:String.capitalize n$ = Orm.Sql_cache.Make(
+		module $uid:"Cache_" ^ n$ = Orm.Sql_cache.Make(
 			struct
 				type __t__ = $lid:n$;
 				type t = __t__;
@@ -287,10 +287,8 @@ let gen env tds =
 		$P4_hash.gen tds$;
 		$P4_type.gen tds$;
 		$P4_value.gen_with_key tds$;
+		$stSem_of_list cache_modules$;
 		value $patt_tuple_of_list _loc patts$ =
-			let module Cache = struct
-				$stSem_of_list cache_modules$
-			end in
 			let __env__ : Orm.Sql_backend.env = $env_to_env _loc env$ in
 			let $biAnd_of_list cache_bindings$ in
 			let $biAnd_of_list init_bindings$ in
