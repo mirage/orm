@@ -30,7 +30,13 @@ type state = {
 	mode: transaction_mode;
 }
 
-let debug db env ty n e = 
+type env = [
+      `Debug of string list
+    | `Dot of string
+    | `Index of (string * string list) list
+    | `Unique of (string * string list) list ] list
+
+let debug db (env:env) ty n e = 
 	let in_env s = List.exists (function | `Debug sl -> List.mem s sl | _ -> false)  env in
 	let d () = Printf.eprintf "%s(%s): %s\n%!" n db e in
 	let b () = () in
