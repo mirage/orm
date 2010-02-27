@@ -44,50 +44,50 @@ let env_to_env _loc env =
 let init_binding env tds (_loc, n, t) =
 	<:binding< $lid:init n$ =
 	fun __file__ ->
-		let __file__ = OI.realpath __file__ in
-		let __db__ = OB.new_state __file__ in
-		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
-		let () = OI.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
-		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
+		let __file__ = Orm.Sql_init.realpath __file__ in
+		let __db__ = Orm.Sql_backend.new_state __file__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
+		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Db.of_state __db__
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
 	<:binding< $lid:initRO n$ =
 	fun __file__ ->
-		let __file__ = OI.realpath __file__ in
-		let __db__ = OB.new_state __file__ in
-		let () = if not (OI.database_exists ~env:__env__ ~db:__db__) then OC.flush_all __env__ __file__ else () in
-		let () = OI.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
-		let () = List.iter (OC.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
+		let __file__ = Orm.Sql_init.realpath __file__ in
+		let __db__ = Orm.Sql_backend.new_state __file__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+		let () = Orm.Sql_init.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
+		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Db.of_state __db__
 	>>
 
 let save_binding env tds (_loc, n, t) =
 	<:binding< $lid:save n$ =
 	let __get_id__ __name__ =
-		let __db__ = OB.new_state __name__ in
+		let __db__ = Orm.Sql_backend.new_state __name__ in
 		fun __v__ ->
-			if OC.mem __env__ $lid:cache n$ __name__ __v__ then
-				OC.to_weakid __env__ $lid:cache n$ __name__ __v__
+			if Orm.Sql_cache.mem __env__ $lid:cache n$ __name__ __v__ then
+				Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __name__ __v__
 			else (
-				let __id__ = OS.empty_row ~env:__env__ ~db:__db__ $str:n$ in
-				do { OC.add __env__ $lid:cache n$ __name__ __v__ __id__; __id__ }
+				let __id__ = Orm.Sql_save.empty_row ~env:__env__ ~db:__db__ $str:n$ in
+				do { Orm.Sql_cache.add __env__ $lid:cache n$ __name__ __v__ __id__; __id__ }
 			) in
 	let () = $lid:P4_value.set_new_id n$ __get_id__ in
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		fun ~db: __db__ ->
 			let __db__ = Db.to_state __db__ in
 			fun $lid:n$ ->
-				let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
-				OS.update_value ~env:__env__ ~db:__db__ v
+				let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
+				Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
 			let __db__ = Db.to_state __db__ in
 			fun $lid:n$ ->
-				if not (OC.mem __env__ $lid:cache n$ __db__.OB.name $lid:n$) then (
-					let v = $lid:P4_value.value_of n$ ~key:__db__.OB.name $lid:n$ in
-					OS.update_value ~env:__env__ ~db:__db__ v
+				if not (Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name $lid:n$) then (
+					let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
+					Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
 				) else ()
     )
 	>> 
@@ -195,8 +195,8 @@ let get_binding env tds (_loc, n, t) =
 					List.map
 						(fun (__id__, __v__) ->
 							let __n__ = $lid:P4_value.of_value n$ __v__ in
-							do { OC.add __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ }
-						) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+							do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
+						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
 		>>$
     ) else (
 		$Get.fun_of_name _loc tds n <:expr<
@@ -210,13 +210,13 @@ let get_binding env tds (_loc, n, t) =
 					] in
 					List.map
 						(fun (__id__, __v__) ->
-							if OC.mem_weakid __env__ $lid:cache n$ __db__.OB.name __id__ then (
-								let __n__ = List.hd (OC.of_weakid __env__ $lid:cache n$ __db__.OB.name __id__) in
+							if Orm.Sql_cache.mem_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__ then (
+								let __n__ = List.hd (Orm.Sql_cache.of_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__) in
 								__n__
 							) else (
 								let __n__ = $lid:P4_value.of_value n$ __v__ in
-								do { OC.replace __env__ $lid:cache n$ __db__.OB.name __n__ __id__; __n__ } )
-						) (OG.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+								do { Orm.Sql_cache.replace __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ } )
+						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
 		>>$
 	) >>
 
@@ -225,8 +225,8 @@ let delete_binding env tds (_loc, n, t) =
     fun ~db:__db__ ->
 		let __db__ = Db.to_state __db__ in
 		fun __n__ ->
-			if OC.mem __env__ $lid:cache n$ __db__.OB.name __n__ then (
-				OD.delete_value ~env:__env__ ~db:__db__ ($lid:P4_value.value_of n$ ~key:__db__.OB.name __n__)
+			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
+				Orm.Sql_delete.delete_value ~env:__env__ ~db:__db__ ($lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name __n__)
 			) else ()
 	>>
 
@@ -235,7 +235,7 @@ let id_binding env tds (_loc, n, t) =
 	fun ~db:__db__ ->
 		let __db__ = Db.to_state __db__ in
 		fun __n__ ->
-			OC.to_weakid __env__ $lid:cache n$ __db__.OB.name __n__
+			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__
 	>>
 
 let cache_binding env tds (_loc, n, t) =
@@ -243,7 +243,7 @@ let cache_binding env tds (_loc, n, t) =
 
 let cache_module env tds (_loc, n, t) =
 	<:str_item<
-		module $uid:String.capitalize n$ = OC.Make(
+		module $uid:String.capitalize n$ = Orm.Sql_cache.Make(
 			struct
 				type __t__ = $lid:n$;
 				type t = __t__;
@@ -288,17 +288,11 @@ let gen env tds =
 		$P4_type.gen tds$;
 		$P4_value.gen_with_key tds$;
 		value $patt_tuple_of_list _loc patts$ =
-			let module OB = Orm.Sql_backend in
-			let module OC = Orm.Sql_cache in
-			let module OI = Orm.Sql_init in
-			let module OG = Orm.Sql_get in
-			let module OS = Orm.Sql_save in
-			let module OD = Orm.Sql_delete in
 			let module Db = Orm.Db in
 			let module Cache = struct
 				$stSem_of_list cache_modules$
 			end in
-			let __env__ : OB.env = $env_to_env _loc env$ in
+			let __env__ : Orm.Sql_backend.env = $env_to_env _loc env$ in
 			let $biAnd_of_list cache_bindings$ in
 			let $biAnd_of_list init_bindings$ in
 			let $biAnd_of_list initRO_bindings$ in
