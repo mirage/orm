@@ -49,7 +49,7 @@ let init_binding env tds (_loc, n, t) =
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
-		Db.of_state __db__
+		Orm.Db.of_state __db__
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
@@ -60,7 +60,7 @@ let initRO_binding env tds (_loc, n, t) =
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
-		Db.of_state __db__
+		Orm.Db.of_state __db__
 	>>
 
 let save_binding env tds (_loc, n, t) =
@@ -77,13 +77,13 @@ let save_binding env tds (_loc, n, t) =
 	let () = $lid:P4_value.set_new_id n$ __get_id__ in
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		fun ~db: __db__ ->
-			let __db__ = Db.to_state __db__ in
+			let __db__ = Orm.Db.to_state __db__ in
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
 				Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
     ) else (
 		fun ~db:__db__ ->
-			let __db__ = Db.to_state __db__ in
+			let __db__ = Orm.Db.to_state __db__ in
 			fun $lid:n$ ->
 				if not (Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name $lid:n$) then (
 					let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
@@ -186,7 +186,7 @@ let get_binding env tds (_loc, n, t) =
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun __db__ ->
-					let __db__ = Db.to_state __db__ in
+					let __db__ = Orm.Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None    -> None
@@ -202,7 +202,7 @@ let get_binding env tds (_loc, n, t) =
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun __db__ ->
-					let __db__ = Db.to_state __db__ in
+					let __db__ = Orm.Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None    -> None
@@ -223,7 +223,7 @@ let get_binding env tds (_loc, n, t) =
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
     fun ~db:__db__ ->
-		let __db__ = Db.to_state __db__ in
+		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
 				Orm.Sql_delete.delete_value ~env:__env__ ~db:__db__ ($lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name __n__)
@@ -233,7 +233,7 @@ let delete_binding env tds (_loc, n, t) =
 let id_binding env tds (_loc, n, t) =
 	<:binding< $lid:id n$ =
 	fun ~db:__db__ ->
-		let __db__ = Db.to_state __db__ in
+		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__
 	>>
@@ -288,7 +288,6 @@ let gen env tds =
 		$P4_type.gen tds$;
 		$P4_value.gen_with_key tds$;
 		value $patt_tuple_of_list _loc patts$ =
-			let module Db = Orm.Db in
 			let module Cache = struct
 				$stSem_of_list cache_modules$
 			end in
