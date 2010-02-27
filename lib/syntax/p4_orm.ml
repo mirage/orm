@@ -42,8 +42,7 @@ let env_to_env _loc env =
 	expr_list_of_list _loc (List.map aux env)
 
 let init_binding env tds (_loc, n, t) =
-	<:binding< $lid:init n$ =
-	fun __file__ ->
+	<:binding< $lid:init n$ __file__ : Orm.Db.t $lid:n$ [=`RW] =
 		let __file__ = Orm.Sql_init.realpath __file__ in
 		let __db__ = Orm.Sql_backend.new_state __file__ in
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
@@ -53,8 +52,7 @@ let init_binding env tds (_loc, n, t) =
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
-	<:binding< $lid:initRO n$ =
-	fun __file__ ->
+	<:binding< $lid:initRO n$ __file__ : Orm.Db.t $lid:n$ [=`RO] =
 		let __file__ = Orm.Sql_init.realpath __file__ in
 		let __db__ = Orm.Sql_backend.new_state __file__ in
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
@@ -76,7 +74,7 @@ let save_binding env tds (_loc, n, t) =
 			) in
 	let () = $lid:P4_value.set_new_id n$ __get_id__ in
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
-		fun ~db: __db__ ->
+		fun ~db: (__db__ : Orm.Db.t $lid:n$ [=`RW])  ->
 			let __db__ = Orm.Db.to_state __db__ in
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
@@ -185,7 +183,7 @@ let get_binding env tds (_loc, n, t) =
     if Type.is_mutable $lid:P4_type.type_of n$ then (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
-				fun __db__ ->
+				fun (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW])  ->
 					let __db__ = Orm.Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
@@ -222,7 +220,7 @@ let get_binding env tds (_loc, n, t) =
 
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
-    fun ~db:__db__ ->
+    fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
 		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
@@ -232,7 +230,7 @@ let delete_binding env tds (_loc, n, t) =
 
 let id_binding env tds (_loc, n, t) =
 	<:binding< $lid:id n$ =
-	fun ~db:__db__ ->
+	fun ~db: (__db__: Orm.Db.t $lid:n$ [<`RO|`RW]) ->
 		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__
@@ -265,37 +263,18 @@ let gen env tds =
 	let cache_bindings = List.map (cache_binding env tds) ts in
 	let cache_modules = List.map (cache_module env tds) ts in
 
-	let patts = 
-		  List.map (fun (_,n,_) -> <:patt< $lid:init n$ >>) ts
-		@ List.map (fun (_,n,_) -> <:patt< $lid:initRO n$ >>) ts
-		@ List.map (fun (_,n,_) -> <:patt< $lid:save n$ >>) ts
-		@ List.map (fun (_,n,_) -> <:patt< $lid:get n$ >>) ts
-		@ List.map (fun (_,n,_) -> <:patt< $lid:delete n$ >>) ts
-		@ List.map (fun (_,n,_) -> <:patt< $lid:id n$ >>) ts in
-
-	let exprs =
-		  List.map (fun (_,n,_) -> <:expr< ( $lid:init n$ : string -> Orm.Db.t $lid:n$ [>`RW] ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:initRO n$ : string -> Orm.Db.t $lid:n$ [>`RO] ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:save n$ : ~db:(Orm.Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:get n$ : $Get.sig_of_name _loc tds n
-				<:ctyp< ?custom:( $lid:n$ -> bool ) -> Orm.Db.t $lid:n$ [=`RW|`RO] -> list $lid:n$ >>
-			$ ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:delete n$ : ~db:(Orm.Db.t $lid:n$ [=`RW]) -> $lid:n$ -> unit ) >>) ts
-		@ List.map (fun (_,n,_) -> <:expr< ( $lid:id n$ : ~db:(Orm.Db.t $lid:n$ [=`RW|`RO]) -> $lid:n$ -> int64 ) >>) ts in
-
 	<:str_item<
 		$P4_hash.gen tds$;
 		$P4_type.gen tds$;
 		$P4_value.gen_with_key tds$;
 		$stSem_of_list cache_modules$;
-		value $patt_tuple_of_list _loc patts$ =
-			let __env__ : Orm.Sql_backend.env = $env_to_env _loc env$ in
-			let $biAnd_of_list cache_bindings$ in
-			let $biAnd_of_list init_bindings$ in
-			let $biAnd_of_list initRO_bindings$ in
-			let rec $biAnd_of_list save_bindings$ in
-			let rec $biAnd_of_list get_bindings$ in
-			let $biAnd_of_list delete_bindings$ in
-			let $biAnd_of_list id_bindings$ in
-			$expr_tuple_of_list _loc exprs$
+
+		value __env__ : Orm.Sql_backend.env = $env_to_env _loc env$;
+		value $biAnd_of_list cache_bindings$;
+		value $biAnd_of_list init_bindings$;
+		value $biAnd_of_list initRO_bindings$;
+		value rec $biAnd_of_list save_bindings$;
+		value rec $biAnd_of_list get_bindings$;
+		value $biAnd_of_list delete_bindings$;
+		value $biAnd_of_list id_bindings$;
 	>>
