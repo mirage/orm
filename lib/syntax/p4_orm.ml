@@ -298,7 +298,7 @@ let gen env tds =
 			let module Cache = struct
 				$stSem_of_list cache_modules$
 			end in
-			let __env__ = $env_to_env _loc env$ in
+			let __env__ : OB.env = $env_to_env _loc env$ in
 			let $biAnd_of_list cache_bindings$ in
 			let $biAnd_of_list init_bindings$ in
 			let $biAnd_of_list initRO_bindings$ in
