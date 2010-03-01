@@ -1,3 +1,8 @@
+0.5.1:
+
+* Fix variant phantom types of RW/RO handles (#1) [27 Feb 2010]
+* Make generated SQL more robust against older SQLite [19 Feb 2010]
+
 0.5:
 
 * Simplify layout and use the dyntype library [11 Feb 2010]
