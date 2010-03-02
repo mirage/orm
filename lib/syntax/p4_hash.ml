@@ -105,11 +105,11 @@ let rec t ~envfn depth ctyp =
       | <:ctyp< $uid:id$ of $t$ >> ->
           let patt, ex = combine_tuple t in
           <:match_case< $uid:id$ $patt$ -> $ex$ >>
-      | <:ctyp< ` $uid:id$ of $t$ >> ->
+      | <:ctyp< `$uid:id$ of $t$ >> ->
           let patt, ex = combine_tuple t in
-          <:match_case< ` $uid:id$ $patt$ -> $ex$ >>
+          <:match_case< `$uid:id$ $patt$ -> $ex$ >>
       | <:ctyp< $uid:id$ >> -> <:match_case< $uid:id$ -> $`int:hash_variant id$ >>
-      | <:ctyp< ` $uid:id$ >> -> <:match_case< ` $uid:id$ -> $`int:hash_variant id$ >>
+      | <:ctyp< `$uid:id$ >> -> <:match_case< `$uid:id$ -> $`int:hash_variant id$ >>
       | _ -> assert false
     ) (list_of_ctyp rf []) in
     <:expr< match x with [ $mcOr_of_list mcs$ ] >>
