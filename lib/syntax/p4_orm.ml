@@ -132,7 +132,7 @@ module Get = struct
 		let int_like t =
 			<:ctyp< [= `Eq of $lid:t$ | `Neq of $lid:t$ | `Le of $lid:t$ | `Ge of $lid:t$ | `Leq of $lid:t$ | `Geq of $lid:t$ ] >> in
 		let fn _ = function
-			| T.Bool     -> Some (<:ctyp< [= `True | `False ] >>)
+			| T.Bool     -> Some (<:ctyp< [< `T | `F ] >>)
 			| T.Float    -> Some (int_like "float")
 			| T.Char     -> Some (int_like "char")
 			| T.String   -> Some (<:ctyp< [=`Eq of string | `Contains of string ] >>)
