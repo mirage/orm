@@ -163,7 +163,7 @@ module Get = struct
 		let make name str =
 			let name_str = match name with [] -> "value" | l -> String.concat "_" l in
 			let name_lst = expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) name) in
-			<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, ` $uid:str$ x) ] ] >> in
+			<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, `$uid:str$ x) ] ] >> in
 		let module T = Type in
 		let fn name = function
 			| T.Bool     -> Some (make name "Bool")
