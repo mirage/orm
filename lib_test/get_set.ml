@@ -3,10 +3,14 @@ TYPE_CONV_PATH "Get_set"
 type t = {
   mutable x : string;
   mutable y : string;
+  z : bool;
 } with orm()
 
 let get db x =
   t_get db ~x:x
+
+let get_true db =
+  t_get ~z:(`T) db
 
 let set db x y =
   let t = List.hd (get db x) in

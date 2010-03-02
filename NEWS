@@ -1,5 +1,6 @@
 0.5.1:
 
+* Rename `True|`False to `T|`F to fix syntax conflict (#2) [1 Mar 2010]
 * Fix variant phantom types of RW/RO handles (#1) [27 Feb 2010]
 * Make generated SQL more robust against older SQLite [19 Feb 2010]
 
