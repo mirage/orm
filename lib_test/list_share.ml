@@ -38,7 +38,7 @@ let test_update () =
 
 let test_get () =
   let db = open_db ~rm:false x_init name in
-  "4 x in db" @? (List.length (x_get db) = 3)
+  "4 x in db" @? (List.length (x_get db) = 4)
 
 let test_save_get () =
   let db = open_db x_init name in
