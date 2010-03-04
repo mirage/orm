@@ -73,6 +73,7 @@ let rec parse_row ~env ~db ~skip ~name t row n =
   | T.Float   , Data.FLOAT f -> V.Float f, n + 1
   | T.String  , Data.TEXT t  -> V.String t, n + 1
   | T.String  , Data.INT t   -> V.String (Int64.to_string t), n + 1
+  | T.String  , Data.FLOAT f -> V.String (string_of_float f), n + 1
   | T.Enum t  , Data.NULL    -> V.Enum [], n + 1
   | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id (Name.enum name) t), n + 1
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
