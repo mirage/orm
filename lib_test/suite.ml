@@ -17,6 +17,7 @@ let suites = [
   List_foreign.suite;
   List_tuple.suite;
   List_list.suite;
+  List_share.suite;
   Nested_tuple.suite;
   Nested_option.suite;
   Record_mutate.suite;
