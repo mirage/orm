@@ -43,7 +43,6 @@ let suite = [
   "list_simple_init" >:: test_init;
   "list_simple_save" >:: test_save;
   "list_simple_update" >:: test_update;
-  "list_simple_update" >:: test_update;
   "list_simple_get" >:: test_get;
   "list_simple_save_get" >:: test_save_get;
 ]
