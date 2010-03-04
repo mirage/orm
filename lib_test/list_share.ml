@@ -2,7 +2,7 @@ TYPE_CONV_PATH "List_share"
 
 type x = {
   foo: string list;
-} with orm(debug:all)
+} with orm
 
 open OUnit
 open Test_utils
