@@ -26,7 +26,7 @@
 #include <caml/signals.h>
 #include <caml/unixsupport.h>
 
-CAMLprim value unix_realpath(value path)
+CAMLprim value orm_unix_realpath(value path)
 {
   char buffer[PATH_MAX];
   char *r;
@@ -34,5 +34,3 @@ CAMLprim value unix_realpath(value path)
   if (r == NULL) uerror("realpath", path);
   return copy_string(buffer);
 }
-
-
