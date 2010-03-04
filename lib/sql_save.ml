@@ -65,14 +65,14 @@ let process_row ~env ~db table_name field_names field_values v =
 let process_enum_rows ~env ~db table_name field_names field_values_enum v =
 	let join =
 		sprintf "%s as __t0__" table_name ::
-			list_mapi (fun i _ -> sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" table_name (i+1) i (i+1)) field_values_enum in
+			list_mapi (fun i _ -> sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" table_name (i+1) i (i+1)) (List.tl field_values_enum) in
 	let constraints =
 		List.flatten (list_mapi (fun i _ -> List.map (fun f -> sprintf "__t%i__.%s=?" i f) field_names) field_values_enum) in
 	let binds =
 		List.flatten field_values_enum in
 	let select = sprintf "SELECT __t0__.__id__ FROM %s WHERE __t%i__.__next__ ISNULL AND %s;"
 		(String.concat " JOIN " join)
-		(List.length field_values_enum)
+		(List.length field_values_enum - 1)
 		(String.concat " AND " constraints) in
 	let fn stmt = step_map db stmt (fun stmt -> column stmt 0) in
 	match exec_sql ~env ~db select binds fn with
