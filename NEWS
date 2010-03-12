@@ -1,3 +1,7 @@
+0.6.0:
+
+* Working version...
+
 0.5.1:
 
 * Fix database sharing of lists for small sizes [4 Mar 2010]
