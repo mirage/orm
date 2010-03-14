@@ -38,7 +38,8 @@ let env_to_env _loc env =
 		| `Unique l -> <:expr< `Unique $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
 		| `Index l  -> <:expr< `Index $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
 		| `Debug l  -> <:expr< `Debug $sl_of_sl l$ >>
-		| `Dot f    -> <:expr< `Dot $str:f$ >> in
+		| `Dot f    -> <:expr< `Dot $str:f$ >> 
+                | `Mode _   -> assert false in
 	expr_list_of_list _loc (List.map aux env)
 
 let init_binding env tds (_loc, n, t) =
@@ -250,7 +251,7 @@ let cache_module env tds (_loc, n, t) =
 			end)
 	>>
 
-let gen env tds =
+let gen mode env tds =
 	let _loc = loc_of_ctyp tds in
 
 	let ts = list_of_ctyp_decl tds in
