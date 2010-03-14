@@ -43,20 +43,20 @@ let env_to_env _loc env =
 	expr_list_of_list _loc (List.map aux env)
 
 let init_binding env tds (_loc, n, t) =
-	<:binding< $lid:init n$ __file__ : Orm.Db.t $lid:n$ [=`RW] =
-		let __file__ = Orm.Sql_init.realpath __file__ in
-		let __db__ = Orm.Sql_backend.new_state __file__ in
-		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+	<:binding< $lid:init n$ __name__ : Orm.Db.t $lid:n$ [=`RW] =
+		let __name__ = Orm.Sql_init.canonical_name __name__ in
+		let __db__ = Orm.Sql_backend.new_state __name__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
-	<:binding< $lid:initRO n$ __file__ : Orm.Db.t $lid:n$ [=`RO] =
-		let __file__ = Orm.Sql_init.realpath __file__ in
-		let __db__ = Orm.Sql_backend.new_state __file__ in
-		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+	<:binding< $lid:initRO n$ __name__ : Orm.Db.t $lid:n$ [=`RO] =
+		let __name__ = Orm.Sql_init.canonical_name __name__ in
+		let __db__ = Orm.Sql_backend.new_state __name__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
