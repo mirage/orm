@@ -251,7 +251,7 @@ let cache_module env tds (_loc, n, t) =
 			end)
 	>>
 
-let gen mode env tds =
+let gen env tds =
 	let _loc = loc_of_ctyp tds in
 
 	let ts = list_of_ctyp_decl tds in

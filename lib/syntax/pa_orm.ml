@@ -84,8 +84,8 @@ let _ =
       let _loc = loc_of_ctyp tds in
       let args = match args with None -> [] |Some x -> x in
       let mode, keys =  List.partition (function `Mode _ -> true |_ -> false) args in
-      let mode = match mode with [] -> `Sqlite | [`Mode x] -> x | _ -> failwith "too many mode args" in
-      P4_orm.gen mode keys tds 
+      match mode with
+      | [] | [`Mode `Sqlite] -> P4_orm_sqlite.gen keys tds
+      | [`Mode `Appengine] ->   P4_orm_appengine.gen keys tds
+      | _ -> failwith "unknown orm:mode argument"
     )
-
-
