@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE module SYSTEM "dtds/module.dtd">
+
+<module name="Appengine_datastore">
+
+  <interface java-name="com.google.appengine.api.datastore.DatastoreService" ocaml-name="datastore_service" >
+    <method signature="prepare(com.google.appengine.api.datastore.Query)" />
+    <method signature="put(com.google.appengine.api.datastore.Entity)" />
+  </interface>
+
+  <interface java-name="com.google.appengine.api.datastore.PreparedQuery" ocaml-name="prepared_query" >
+    <method signature="asIterator()" />
+  </interface>
+
+  <interface java-name="java.util.Iterator" ocaml-name="util_iterator" >
+    <method signature="hasNext()" />
+    <method signature="next()" />
+  </interface>
+
+  <interface java-name="java.util.Map" ocaml-name="util_map" >
+    <method signature="keySet()" />
+  </interface>
+
+  <interface java-name="java.util.Set" ocaml-name="util_set" >
+    <method signature="iterator()" />
+  </interface>
+
+  <class java-name="java.lang.Integer" ocaml-name="lang_integer" >
+    <constructor signature="(int)" />
+    <method signature="intValue()" />
+  </class>
+
+  <class java-name="java.lang.Long" ocaml-name="lang_long" >
+    <constructor signature="(long)" />
+    <method signature="longValue()" />
+  </class>
+
+  <class java-name="java.lang.String" ocaml-name="lang_string" >
+    <constructor signature="(java.lang.String)" />
+  </class>
+
+  <class java-name="java.lang.Boolean" ocaml-name="lang_bool" >
+    <constructor signature="(boolean)" />
+    <method signature="booleanValue()" />
+  </class>
+
+  <class java-name="java.lang.Float" ocaml-name="lang_float" >
+    <constructor signature="(float)" />
+    <method signature="floatValue()" />
+  </class>
+
+  <class java-name="java.util.Vector" ocaml-name="lang_vector" >
+    <constructor signature="(int)" />
+    <methods pattern="addElement(*)" />
+  </class>
+
+  <class java-name="java.util.ArrayList" ocaml-name="util_arraylist">
+    <method signature="iterator()" />
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.Entity" ocaml-name="entity" >
+    <constructor signature="(java.lang.String)" />
+    <methods pattern="*(*)" />
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.Key" ocaml-name="key" >
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.Link" ocaml-name="link" >
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.Query" ocaml-name="query" >
+    <constructor signature="()" />
+    <constructor signature="(com.google.appengine.api.datastore.Key)" />
+    <constructor signature="(java.lang.String)" />
+    <constructor signature="(com.google.appengine.api.datastore.Key,java.lang.String)" />
+    <methods pattern="*(*)" />
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.Text" ocaml-name="text" >
+    <constructor signature="(java.lang.String)" />
+    <methods pattern="*(*)" />
+  </class>
+
+  <class java-name="com.google.appengine.api.datastore.DatastoreServiceFactory" ocaml-name="datastore_service_factory">
+    <method signature="getDatastoreService()" />
+  </class>
+
+</module>
