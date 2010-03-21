@@ -7,7 +7,7 @@ JAVA=${JAVA:-java}
 SUDO=${SUDO:-sudo}
 OCAMLFIND=${OCAMLFIND:-ocamlfind}
 
-SOURCES_ML="appengine_datastore.ml appengine_backend.ml weakid.ml appengine_save.ml ae_db.ml"
+SOURCES_ML="appengine_datastore.ml appengine_backend.ml weakid.ml appengine_save.ml appengine_get.ml ae_db.ml"
 SOURCES_MLI="appengine_datastore.mli weakid.mli ae_db.mli"
 SOURCES_CMJ=$(echo ${SOURCES_ML} | sed -e 's/\.ml/.cmj/g')
 
@@ -24,7 +24,7 @@ mkdir -p org/openmirage/orm/prims
 env CLASSPATH=${PATH_ocamlwrap}:${PATH_appengine} ${JAVA} fr.x9c.nickel.Main --java-dir=org/openmirage/orm/prims --java-package=org.openmirage.orm.prims appengine.nickel
 ${JAVAC} -target 1.6 -cp ${PATH_ocamlrun}:${PATH_appengine} org/openmirage/orm/prims/Appengine_datastore.java
 ${OCAMLJAVA} -i -I +cadmium appengine_datastore.ml > appengine_datastore.mli
-${OCAMLJAVA} ${OCAMLBCFLAGS} -for-pack Orm -java-package org.openmirage.orm -c -I +cadmium -I +site-lib/dyntype -I +site-lib/shelf ${SOURCES_MLI} ${SOURCES_ML}
+${OCAMLJAVA} ${OCAMLBCFLAGS} -for-pack Orm -java-package org.openmirage.orm -c -annot -I +cadmium -I +site-lib/dyntype -I +site-lib/shelf ${SOURCES_MLI} ${SOURCES_ML}
 
 ${OCAMLJAVA} -pack ${SOURCES_CMJ} -o orm.cmj
 

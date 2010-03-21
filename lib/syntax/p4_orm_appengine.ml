@@ -62,6 +62,24 @@ let save_binding env tds (_loc, n, t) =
         Orm.Appengine_save.update_value ~env:__env__ ~db:__db__ __ty__ __val__
     >>
 
+let get_binding env tds (_loc, n, t) =
+        <:binding< $lid:get n$ =
+            $P4_orm_sqlite.Get.fun_of_name _loc tds n <:expr<
+                fun ?custom: (__custom_fn__) ->
+                    fun (__db__ : Orm.Ae_db.t $lid:n$ [<`RO|`RW])  ->
+                        let __db__ = Orm.Ae_db.to_state __db__ in
+                        let __constraints__ = $P4_orm_sqlite.Get.constraints_of_args _loc tds n$ in
+                        let __custom_fn__ = match __custom_fn__ with [
+                            None    -> None
+                          | Some fn -> Some (fun __v__ -> fn ($lid:P4_value.of_value n$ __v__))
+                          ] in
+                        List.map
+                          (fun (__id__, __v__) -> $lid:P4_value.of_value n$ __v__) 
+                              (Orm.Appengine_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+
+                >>$
+        >>
+
 let gen env tds =
     let _loc = loc_of_ctyp tds in
 
@@ -69,7 +87,7 @@ let gen env tds =
     let init_bindings = List.map (init_binding env tds) ts in
     let initRO_bindings = List.map (initRO_binding env tds) ts in
     let save_bindings = List.map (save_binding env tds) ts in
-
+    let get_bindings = List.map (get_binding env tds) ts in
     <:str_item<
         $P4_hash.gen tds$;
         $P4_type.gen tds$;
@@ -79,4 +97,5 @@ let gen env tds =
         value $biAnd_of_list init_bindings$;
         value $biAnd_of_list initRO_bindings$;
         value rec $biAnd_of_list save_bindings$;
+        value rec $biAnd_of_list get_bindings$;
     >>
