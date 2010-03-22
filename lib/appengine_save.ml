@@ -20,6 +20,10 @@ open Printf
 
 open Appengine_datastore
 
+let fail fmt =
+  let xfn f = Printf.printf "FAIL: %s\n%!" f; failwith "" in
+  kprintf xfn fmt
+
 let to_jlong i = (new lang_long (`Long i) :> CadmiumObj.jObject)
 let to_jbool b = (new lang_bool (`Bool b) :> CadmiumObj.jObject)
 let to_jfloat v = (new lang_float (`Float v) :> CadmiumObj.jObject)
@@ -51,9 +55,10 @@ let to_entity ty va =
                 | x -> to_jstring (Json.to_string x)
               ) vl in
               ent#setProperty f l
+          | v -> ent#setProperty f (to_jstring (Json.to_string v))
       ) vs;
       ent
-  | _ -> failwith "eek"
+  | ty, va -> fail "to_entity: ty=%s va=%s" (Type.to_string ty) (Value.to_string va)
 
 let update_value ~env ~db ty va =
   let ent = to_entity ty va in
