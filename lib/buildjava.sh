@@ -1,7 +1,7 @@
 #!/bin/bash -ex
 # build and install the appengine java backend
 
-OCAMLJAVA=${OCAMLJAVA:-ocamljava}
+OCAMLJAVA=${OCAMLJAVA:-ocamljava.opt}
 JAVAC=${JAVAC:-javac}
 JAVA=${JAVA:-java}
 SUDO=${SUDO:-sudo}
