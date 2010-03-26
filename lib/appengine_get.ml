@@ -81,7 +81,7 @@ let rec to_value prop ty =
         let l = new util_arraylist (`Cd'initObj prop) in
         Value.Tuple (foldIter2 (fun a v ty' -> (to_value v ty') :: a) [] l#iterator tyl)
     | tyl, "java.lang.String" ->
-        Json.of_string tyl (of_jstring prop) in
+        Json.of_string tyl (of_jstring prop) 
     | ty,cl -> Printf.printf "Unknown ty/cl: %s %s, returning null\n%!" (Type.to_string ty) cl; failwith ""
 
 let entity_to_value n ty (ent:entity) =
