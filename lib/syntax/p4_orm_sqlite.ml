@@ -301,6 +301,7 @@ let gen env tds =
 		value $biAnd_of_list initRO_bindings$;
 		value rec $biAnd_of_list save_bindings$;
 		value rec $biAnd_of_list get_bindings$;
+		value rec $biAnd_of_list get_by_id_bindings$;
 		value $biAnd_of_list delete_bindings$;
 		value $biAnd_of_list id_bindings$;
 	>>
