@@ -245,11 +245,11 @@ let get_binding env tds (_loc, n, t) =
 
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
-	fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
+	fun ?(recursive=True) -> fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
 		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
-				Orm.Sql_delete.delete_value ~env:__env__ ~db:__db__ ($lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name __n__)
+				Orm.Sql_delete.delete_value ~env:__env__ ~db:__db__ ~recursive ($lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name __n__)
 			) else ()
 	>>
 

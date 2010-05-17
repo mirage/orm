@@ -73,25 +73,25 @@ let string_of_ids ids =
 	let aux (p,i) = sprintf "(%s:%Ld)" p i in
 	String.concat "; " (List.map aux ids)
 
-let delete_value ~env ~db v =
+let delete_value ~env ~db ~recursive v =
 
 	let process (table, id) =
 		let sql = sprintf "DELETE FROM %s WHERE __id__=?" table in
 		exec_sql ~env ~db sql [ Data.INT id ] (db_must_step db) in
 
-	let rec aux ~deleted = function
+	let rec aux ~recurse ~deleted = function
 		| Null | Unit | Int _ | Bool _ | Float _ | String _ | Arrow _ | Var _ -> ()
-		| Value t      -> aux ~deleted t
-		| Ext (var, w) ->
+		| Value t      -> aux ~recurse ~deleted t
+		| Ext (var, w) when recurse ->
 			if not (List.mem var deleted) then begin
 				let delete = List.length (foreign_ids ~env ~db var) = 0 in
 				if delete then begin
 					process var;
-					aux ~deleted:(var::deleted) w;
+					aux ~recurse:recursive ~deleted:(var::deleted) w;
 				end
 			end else
-				aux ~deleted w
-		| Rec (var, w) ->
+				aux ~recurse:recursive ~deleted w
+		| Rec (var, w) when recurse ->
 			if not (List.mem var deleted) then begin
 				let externals, internals = get_ids ~env ~db var w in
 				let foreign_ids = List.filter (fun x -> not (List.mem x internals)) externals in
@@ -99,13 +99,14 @@ let delete_value ~env ~db v =
 				(* Printf.printf "externals: %s\ninternals: %s\nforeigns:  %s\n%!" (string_of_ids externals) (string_of_ids internals) (string_of_ids foreign_ids); *)
 				if delete then begin
 					List.iter process internals;
-					aux ~deleted:(internals @ deleted) w
+					aux ~recurse:recursive ~deleted:(internals @ deleted) w
 				end
 			end else
-				aux ~deleted w
+				aux ~recurse:recursive ~deleted w
 		| Sum (_,tl)
 		| Tuple tl
-		| Enum tl      -> List.iter (aux ~deleted) tl
-		| Dict tl      -> List.iter (fun (_,t) -> aux ~deleted t) tl in
+		| Enum tl      -> List.iter (aux ~recurse ~deleted) tl
+		| Dict tl      -> List.iter (fun (_,t) -> aux ~recurse ~deleted t) tl
+		| Ext _ | Rec _ -> () in
 
-	aux ~deleted:[] v
+	aux ~recurse:true ~deleted:[] v
