@@ -1,4 +1,5 @@
 0.6.0:
+
 * Add x_get_by_id to retrieve values by id directly [17 May 2010]
 * Experimental support for Google Appengine datastore [20 Mar 2010]
 
