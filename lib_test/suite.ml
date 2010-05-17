@@ -26,6 +26,7 @@ let suites = [
   Photo.suite;
   Bibtex.suite;
   Bib.suite;
+  Delete.suite;
 ]
 
 let slow_suites = [
