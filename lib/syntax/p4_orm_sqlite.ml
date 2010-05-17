@@ -23,13 +23,14 @@ open Ast
 
 open P4_utils
 
-let init n   = n ^ "_init"
-let initRO n = n ^ "_init_read_only"
-let save n   = n ^ "_save"
-let get n    = n ^ "_get"
-let delete n = n ^ "_delete"
-let id n     = n ^ "_id"
-let cache n  = n ^ "_cache"
+let init n     = n ^ "_init"
+let initRO n   = n ^ "_init_read_only"
+let save n     = n ^ "_save"
+let get n      = n ^ "_get"
+let delete n   = n ^ "_delete"
+let id n       = n ^ "_id"
+let cache n    = n ^ "_cache"
+let get_by i n = n ^ "_get_by_" ^ i
 
 let env_to_env _loc env =
 	let sl_of_sl sl = 
@@ -38,24 +39,25 @@ let env_to_env _loc env =
 		| `Unique l -> <:expr< `Unique $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
 		| `Index l  -> <:expr< `Index $expr_list_of_list _loc (List.map (fun (x,y) -> <:expr< ($str:x$, $sl_of_sl y$) >>) l)$ >>
 		| `Debug l  -> <:expr< `Debug $sl_of_sl l$ >>
-		| `Dot f    -> <:expr< `Dot $str:f$ >> in
+		| `Dot f	-> <:expr< `Dot $str:f$ >> 
+				| `Mode _   -> assert false in
 	expr_list_of_list _loc (List.map aux env)
 
 let init_binding env tds (_loc, n, t) =
-	<:binding< $lid:init n$ __file__ : Orm.Db.t $lid:n$ [=`RW] =
-		let __file__ = Orm.Sql_init.realpath __file__ in
-		let __db__ = Orm.Sql_backend.new_state __file__ in
-		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+	<:binding< $lid:init n$ __name__ : Orm.Db.t $lid:n$ [=`RW] =
+		let __name__ = Orm.Sql_init.canonical_name __name__ in
+		let __db__ = Orm.Sql_backend.new_state __name__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
 	>>
 
 let initRO_binding env tds (_loc, n, t) =
-	<:binding< $lid:initRO n$ __file__ : Orm.Db.t $lid:n$ [=`RO] =
-		let __file__ = Orm.Sql_init.realpath __file__ in
-		let __db__ = Orm.Sql_backend.new_state __file__ in
-		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __file__ else () in
+	<:binding< $lid:initRO n$ __name__ : Orm.Db.t $lid:n$ [=`RO] =
+		let __name__ = Orm.Sql_init.canonical_name __name__ in
+		let __db__ = Orm.Sql_backend.new_state __name__ in
+		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
 		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
@@ -79,7 +81,7 @@ let save_binding env tds (_loc, n, t) =
 			fun $lid:n$ ->
 				let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
 				Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
-    ) else (
+	) else (
 		fun ~db:__db__ ->
 			let __db__ = Orm.Db.to_state __db__ in
 			fun $lid:n$ ->
@@ -87,7 +89,7 @@ let save_binding env tds (_loc, n, t) =
 					let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
 					Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
 				) else ()
-    )
+	)
 	>> 
 
 module Get = struct
@@ -137,10 +139,10 @@ module Get = struct
 			| T.Char     -> Some (int_like "char")
 			| T.String   -> Some (<:ctyp< [=`Eq of string | `Contains of string ] >>)
 			| T.Int (Some i) when i + 1 = Sys.word_size -> Some (int_like "int")
-			| T.Int (Some i) when i <= 32               -> Some (int_like "int32")
-			| T.Int (Some i) when i <= 64               -> Some (int_like "int64")
-			| T.Int _    -> Some (int_like "Big_int.big_int")
-			| _          -> None in
+			| T.Int (Some i) when i <= 32			   -> Some (int_like "int32")
+			| T.Int (Some i) when i <= 64			   -> Some (int_like "int64")
+			| T.Int _	-> Some (int_like "Big_int.big_int")
+			| _		  -> None in
 		map_type fn t
 
 	let sig_of_type _loc t body =
@@ -166,28 +168,51 @@ module Get = struct
 			<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, `$uid:str$ x) ] ] >> in
 		let module T = Type in
 		let fn name = function
-			| T.Bool     -> Some (make name "Bool")
-			| T.Float    -> Some (make name "Float")
-			| T.Char     -> Some (make name "Char")
+			| T.Bool	 -> Some (make name "Bool")
+			| T.Float	-> Some (make name "Float")
+			| T.Char	 -> Some (make name "Char")
 			| T.Int (Some i) when i + 1 = Sys.word_size -> Some (make name "Int")
-			| T.Int (Some i) when i <= 32               -> Some (make name "Int32")
-			| T.Int (Some i) when i <= 64               -> Some (make name "Int64")
-			| T.Int _    -> Some (make name "Big_int")
+			| T.Int (Some i) when i <= 32			   -> Some (make name "Int32")
+			| T.Int (Some i) when i <= 64			   -> Some (make name "Int64")
+			| T.Int _	-> Some (make name "Big_int")
 			| T.String   -> Some (make name "String")
-			| _          -> None in
+			| _		  -> None in
 		List.fold_left (fun accu expr -> <:expr< $expr$ @ $accu$ >>) <:expr< [] >> (map_type fn t)
 end
 
+let get_by_id_binding env tds (_loc, n, t) =
+	<:binding< $lid:get_by "id" n$ =
+		 fun ~id (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW]) ->
+			 let __db__ = Orm.Db.to_state __db__ in
+			 let constraints = [ ( ["__id__"], (`Opaque_id id) ) ] in
+			 match Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints $lid:P4_type.type_of n$ with [ 
+			   [ (__id__, __v__) ] -> 
+				   if Type.is_mutable $lid:P4_type.type_of n$ then (
+					   let __n__ = $lid:P4_value.of_value n$ __v__ in
+					   do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
+				   ) else (
+					   if Orm.Sql_cache.mem_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__ then (
+						   let __n__ = List.hd (Orm.Sql_cache.of_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__) in
+						   __n__
+					   ) else (
+						   let __n__ = $lid:P4_value.of_value n$ __v__ in
+						   do { Orm.Sql_cache.replace __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ } 
+					   )
+				   )
+			  | _ -> raise Not_found
+			 ]
+	 >>
+
 let get_binding env tds (_loc, n, t) =
 	<:binding< $lid:get n$ =
-    if Type.is_mutable $lid:P4_type.type_of n$ then (
+	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW])  ->
 					let __db__ = Orm.Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
-					  None    -> None
+					  None	-> None
 					| Some fn -> Some (fun __v__ -> fn ($lid:P4_value.of_value n$ __v__))
 					] in
 					List.map
@@ -196,14 +221,14 @@ let get_binding env tds (_loc, n, t) =
 							do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
 						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
 		>>$
-    ) else (
+	) else (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
 				fun __db__ ->
 					let __db__ = Orm.Db.to_state __db__ in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
-					  None    -> None
+					  None	-> None
 					| Some fn -> Some (fun __v__ -> fn ($lid:P4_value.of_value n$ __v__))
 					] in
 					List.map
@@ -220,7 +245,7 @@ let get_binding env tds (_loc, n, t) =
 
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
-    fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
+	fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
 		let __db__ = Orm.Db.to_state __db__ in
 		fun __n__ ->
 			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
@@ -258,6 +283,7 @@ let gen env tds =
 	let initRO_bindings = List.map (initRO_binding env tds) ts in
 	let save_bindings = List.map (save_binding env tds) ts in
 	let get_bindings = List.map (get_binding env tds) ts in
+	let get_by_id_bindings = List.map (get_by_id_binding env tds) ts in
 	let delete_bindings = List.map (delete_binding env tds) ts in
 	let id_bindings = List.map (id_binding env tds) ts in
 	let cache_bindings = List.map (cache_binding env tds) ts in

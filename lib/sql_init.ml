@@ -159,7 +159,7 @@ let init_tables ~mode ~env ~db t =
 
 (* wrapper for realpath(2) *)
 external unix_realpath : string -> string = "orm_unix_realpath"
-let realpath file =
+let canonical_name file =
 	try
 		unix_realpath file
 	with _ -> (

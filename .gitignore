@@ -13,7 +13,15 @@
 *.a
 *.cmxa
 *.db
+*.cmj
+*.cmja
+*.jo
+lib/appengine_datastore.ml
+lib/appengine_datastore.mli
+lib/appengine_datastore.c
+lib/org
 doc/
+lib/pack
 c_*.ml
 pc_*.ml
 pi_*.ml

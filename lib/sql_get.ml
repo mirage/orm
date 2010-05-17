@@ -49,6 +49,8 @@ let string_of_constraint (name, c) =
 		| `Ge i  -> make name, ">", Some (conv i)
 		| `Leq i -> make name, "<=", Some (conv i)
 		| `Geq i -> make name, ">=", Some (conv i)
+        and direct name conv = function
+                | `Eq i  -> make name, "=", Some (conv i)
 	and string name = function
 		| `Eq s       -> make name, "IS", Some (Data.TEXT s)
 		| `Contains s -> make name, "IS", Some (Data.TEXT (sprintf "*%s*" s)) in
@@ -60,6 +62,7 @@ let string_of_constraint (name, c) =
 		| `Int i     -> int_like name (fun i -> Data.INT (Int64.of_int i)) i
 		| `Int32 i   -> int_like name (fun i -> Data.INT (Int64.of_int32 i)) i
 		| `Int64 i   -> int_like name (fun i -> Data.INT i) i
+                | `Opaque_id i -> direct name (fun i -> Data.INT i) i
 		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
 
 (* Build up the list of fields actually needed to save the row *)
