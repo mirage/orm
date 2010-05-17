@@ -30,6 +30,7 @@ let get n    = n ^ "_get"
 let delete n = n ^ "_delete"
 let id n     = n ^ "_id"
 let cache n  = n ^ "_cache"
+let get_by i n = n ^ "_get_by_" ^ i
 
 let env_to_env _loc env =
     let sl_of_sl sl = 
@@ -179,6 +180,29 @@ module Get = struct
         List.fold_left (fun accu expr -> <:expr< $expr$ @ $accu$ >>) <:expr< [] >> (map_type fn t)
 end
 
+let get_by_id_binding env tds (_loc, n, t) =
+    <:binding< $lid:get_by "id" n$ =
+         fun ~id (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW]) ->
+             let __db__ = Orm.Db.to_state __db__ in
+             let constraints = [ ( ["__id__"], (`Opaque_id id) ) ] in
+             match Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints $lid:P4_type.type_of n$ with [ 
+               [ (__id__, __v__) ] -> 
+                   if Type.is_mutable $lid:P4_type.type_of n$ then (
+                       let __n__ = $lid:P4_value.of_value n$ __v__ in
+                       do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
+                   ) else (
+                       if Orm.Sql_cache.mem_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__ then (
+                           let __n__ = List.hd (Orm.Sql_cache.of_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __id__) in
+                           __n__
+                       ) else (
+                           let __n__ = $lid:P4_value.of_value n$ __v__ in
+                           do { Orm.Sql_cache.replace __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ } 
+                       )
+                   )
+              | _ -> raise Not_found
+             ]
+     >>
+
 let get_binding env tds (_loc, n, t) =
     <:binding< $lid:get n$ =
     if Type.is_mutable $lid:P4_type.type_of n$ then (
@@ -259,6 +283,7 @@ let gen env tds =
     let initRO_bindings = List.map (initRO_binding env tds) ts in
     let save_bindings = List.map (save_binding env tds) ts in
     let get_bindings = List.map (get_binding env tds) ts in
+    let get_by_id_bindings = List.map (get_by_id_binding env tds) ts in
     let delete_bindings = List.map (delete_binding env tds) ts in
     let id_bindings = List.map (id_binding env tds) ts in
     let cache_bindings = List.map (cache_binding env tds) ts in
@@ -276,6 +301,7 @@ let gen env tds =
         value $biAnd_of_list initRO_bindings$;
         value rec $biAnd_of_list save_bindings$;
         value rec $biAnd_of_list get_bindings$;
+        value rec $biAnd_of_list get_by_id_bindings$;
         value $biAnd_of_list delete_bindings$;
         value $biAnd_of_list id_bindings$;
     >>

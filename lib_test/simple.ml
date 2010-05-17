@@ -26,9 +26,11 @@ let test_id () =
    x_save db x;
    let i = x_id db x in
    "id is 1" @? (i = 1L);
+   let x' = x_get_by_id (`Eq i) db in
+   "bar eq" @? (x'.bar = x.bar);
    let x2 = { foo=100; bar="x2222" } in
-   assert_raises ~msg:"test_id_not_found" Not_found 
-    (fun () -> x_id db x2)
+   assert_raises ~msg:"test_id_not_found" Not_found (fun () -> x_id db x2);
+   assert_raises ~msg:"test_id_not_found2" Not_found (fun () -> x_get_by_id ~id:(`Eq 5L) db)
 
 let test_save () =
   let db = open_db x_init name in
