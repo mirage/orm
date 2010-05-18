@@ -58,6 +58,7 @@ module Trigger = struct
 
 end
 
+(* 'a = 'b Weaktbl.t *)
 type ('a, 'b) t = {
 	type_name : string;
 	tbl : (string, 'a) Hashtbl.t;

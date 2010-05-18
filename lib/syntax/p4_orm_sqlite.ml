@@ -63,31 +63,32 @@ let initRO_binding env tds (_loc, n, t) =
 		Orm.Db.of_state __db__
 	>>
 
+let gen_id _loc n =
+	<:expr< fun $lid:n$ ->
+		if Orm.Sql_cache.mem __env__ $lid:cache n$ id_seed.Orm.Sql_backend.name $lid:n$ then
+		Orm.Sql_cache.to_weakid __env__ $lid:cache n$ id_seed.Orm.Sql_backend.name $lid:n$
+	else (
+		let id = Orm.Sql_save.empty_row ~env:__env__ ~db:id_seed $str:n$ in
+		do { Orm.Sql_cache.add __env__ $lid:cache n$ id_seed.Orm.Sql_backend.name $lid:n$ id; id }
+	) >>
+
+let id_seed _loc = None, <:ctyp< Orm.Sql_backend.state >>
+
 let save_binding env tds (_loc, n, t) =
 	<:binding< $lid:save n$ =
-	let __get_id__ __name__ =
-		let __db__ = Orm.Sql_backend.new_state __name__ in
-		fun __v__ ->
-			if Orm.Sql_cache.mem __env__ $lid:cache n$ __name__ __v__ then
-				Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __name__ __v__
-			else (
-				let __id__ = Orm.Sql_save.empty_row ~env:__env__ ~db:__db__ $str:n$ in
-				do { Orm.Sql_cache.add __env__ $lid:cache n$ __name__ __v__ __id__; __id__ }
-			) in
-	let () = $lid:P4_value.set_new_id n$ __get_id__ in
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
-		fun ~db: (__db__ : Orm.Db.t $lid:n$ [=`RW])  ->
-			let __db__ = Orm.Db.to_state __db__ in
-			fun $lid:n$ ->
-				let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
-				Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
+		fun ~db: (db: Orm.Db.t $lid:n$ [=`RW])  ->
+			let db = Orm.Db.to_state db in
+			fun __n__ ->
+				let v = $lid:P4_value.value_of n$ ~id_seed:db __n__ in
+				Orm.Sql_save.update_value ~env:__env__ ~db v
 	) else (
-		fun ~db:__db__ ->
-			let __db__ = Orm.Db.to_state __db__ in
-			fun $lid:n$ ->
-				if not (Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name $lid:n$) then (
-					let v = $lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name $lid:n$ in
-					Orm.Sql_save.update_value ~env:__env__ ~db:__db__ v
+		fun ~db ->
+			let db = Orm.Db.to_state db in
+			fun __n__ ->
+				if not (Orm.Sql_cache.mem __env__ $lid:cache n$ db.Orm.Sql_backend.name __n__) then (
+					let v = $lid:P4_value.value_of n$ ~id_seed:db __n__ in
+					Orm.Sql_save.update_value ~env:__env__ ~db v
 				) else ()
 	)
 	>> 
@@ -246,19 +247,19 @@ let get_binding env tds (_loc, n, t) =
 let delete_binding env tds (_loc, n, t) =
 	<:binding< $lid:delete n$ =
 	fun ?(recursive=True) -> fun ~db: (__db__: Orm.Db.t $lid:n$ [=`RW]) ->
-		let __db__ = Orm.Db.to_state __db__ in
+		let db = Orm.Db.to_state __db__ in
 		fun __n__ ->
-			if Orm.Sql_cache.mem __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ then (
-				Orm.Sql_delete.delete_value ~env:__env__ ~db:__db__ ~recursive ($lid:P4_value.value_of n$ ~key:__db__.Orm.Sql_backend.name __n__)
+			if Orm.Sql_cache.mem __env__ $lid:cache n$ db.Orm.Sql_backend.name __n__ then (
+				Orm.Sql_delete.delete_value ~env:__env__ ~db ~recursive ($lid:P4_value.value_of n$ ~id_seed:db __n__)
 			) else ()
 	>>
 
 let id_binding env tds (_loc, n, t) =
 	<:binding< $lid:id n$ =
 	fun ~db: (__db__: Orm.Db.t $lid:n$ [<`RO|`RW]) ->
-		let __db__ = Orm.Db.to_state __db__ in
+		let db = Orm.Db.to_state __db__ in
 		fun __n__ ->
-			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__
+			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ db.Orm.Sql_backend.name __n__
 	>>
 
 let cache_binding env tds (_loc, n, t) =
@@ -290,13 +291,15 @@ let gen env tds =
 	let cache_modules = List.map (cache_module env tds) ts in
 
 	<:str_item<
-		$P4_hash.gen tds$;
-		$P4_type.gen tds$;
-		$P4_value.gen_with_key tds$;
-		$stSem_of_list cache_modules$;
-
 		value __env__ : Orm.Sql_backend.env = $env_to_env _loc env$;
+
+		$P4_hash.gen tds$;
+		$stSem_of_list cache_modules$;
 		value $biAnd_of_list cache_bindings$;
+
+		$P4_type.gen tds$;
+		$P4_value.gen ~gen_id ~id_seed tds$;
+
 		value $biAnd_of_list init_bindings$;
 		value $biAnd_of_list initRO_bindings$;
 		value rec $biAnd_of_list save_bindings$;

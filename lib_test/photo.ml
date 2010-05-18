@@ -21,11 +21,11 @@ type image = string (* filename *)
 let type_of_image = type_of_photo
 
 (* marshalling to the database from a image *)
-let value_of_image ~key (img:image) : Value.t =
+let value_of_image ~id_seed (img:image) : Value.t =
  (* printf "reading exif data from file: %s\n%!" img; *)
  let exif = [ "date", (Exif_string ("today " ^ img)) ] in
  let filename = img ^ ".jpg" in
- value_of_photo ~key { filename=filename; metadata=exif }
+ value_of_photo ~id_seed { filename=filename; metadata=exif }
 
 (* marshalling from the database into an image type *)
 let image_of_value (v:Value.t) : image =
