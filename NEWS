@@ -1,5 +1,6 @@
 0.6.0:
 
+* Use the new dyntype's interface to create custom ID generator [18 May 2010]
 * Allow non-recursive deletion of values [17 May 2010]
 * Add x_get_by_id to retrieve values by id directly [17 May 2010]
 * Experimental support for Google Appengine datastore [20 Mar 2010]
