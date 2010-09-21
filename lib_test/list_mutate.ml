@@ -23,6 +23,15 @@ let test_mutate_basic () =
   | [] -> failwith "no x"
   | x -> failwith (Printf.sprintf "too many x: %d" (List.length x))
 
+let test_mutate_empty () =
+	let db = open_db x_init name in
+	let l = [ "foo1", "bar1" ] in
+	let t1 = { foo = 1; bar = l } in
+	x_save db t1;
+	t1.bar <- [];
+	x_save db t1
+
 let suite = [
   "list_mutate_basic" >:: test_mutate_basic;
+	"list_mutate_empty" >:: test_mutate_empty;
 ]
