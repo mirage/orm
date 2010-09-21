@@ -126,13 +126,20 @@ let init_triggers ~mode ~env ~db ~table_links ~tables =
 		let trigger_fn oldv newv =
 			if oldv <> newv then begin
 			 	(* very-small-step GC *)
-				let gc_select = Printf.sprintf
-				 	"SELECT __id__ FROM %s as __e0__  WHERE __e0__.__id__ != %s AND (SELECT __id__ FROM %s as __e1__ WHERE __e1__.__next__=__e0__.__id__) IS NULL AND (SELECT __id__ FROM %s WHERE %s=__e0__.__id__) IS NULL;"
-				enum (Data.to_string newv) enum table field in
+				let gc_select =
+					match newv with
+					| Data.NULL ->
+						Printf.sprintf
+				 			"SELECT __id__ FROM %s as __e0__  WHERE (SELECT __id__ FROM %s as __e1__ WHERE __e1__.__next__=__e0__.__id__) IS NULL AND (SELECT __id__ FROM %s WHERE %s=__e0__.__id__) IS NULL;"
+							enum enum table field
+					| _ ->
+						Printf.sprintf
+				 			"SELECT __id__ FROM %s as __e0__  WHERE __e0__.__id__ != %s AND (SELECT __id__ FROM %s as __e1__ WHERE __e1__.__next__=__e0__.__id__) IS NULL AND (SELECT __id__ FROM %s WHERE %s=__e0__.__id__) IS NULL;"
+							enum (Data.to_string newv) enum table field in
 				let gc_delete = function
 					| Data.INT id -> 
 						let delete = Printf.sprintf "DELETE FROM %s WHERE __id__=%Ld" enum id in
-						 exec_sql ~env ~db delete [] (db_must_step db);
+						exec_sql ~env ~db delete [] (db_must_step db);
 					| _           -> failwith "gc" in
 				let ids = exec_sql ~env ~db gc_select [] (fun stmt -> step_map db stmt (fun stmt -> column stmt 0)) in
 				List.iter gc_delete ids;
