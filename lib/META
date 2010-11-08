@@ -1,5 +1,5 @@
 name = "orm"
-version = "0.6.0"
+version = "0.6.1"
 description = "An Object-Relational Mapper (ORM) to persist and retrieve data" 
 requires = "orm.core"
 
