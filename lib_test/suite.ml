@@ -32,6 +32,7 @@ let suites = [
 
 let slow_suites = [
   Large_string.suite;
+  Stress_mutate.suite;
   Stress.suite;
   Hash.suite;
 ]
