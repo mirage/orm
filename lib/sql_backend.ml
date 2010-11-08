@@ -246,7 +246,7 @@ let subtables_of_type t =
 		| T.Dict tl   -> List.fold_left (fun accu (n,_,t) -> aux ?parent ?field:(Name.dict field n) (Name.dict name n) accu t) accu tl
 		| T.Sum tl    ->
 			  List.fold_left
-				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu (List.rev tl))
+				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu tl)
 				  accu tl
 		| T.Var v     -> ( [], match parent with Some p -> [p, default field, `Foreign, v] | _ -> [] ) >> accu
 		| T.Rec (v,s)
