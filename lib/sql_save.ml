@@ -61,35 +61,105 @@ let process_row ~env ~db table_name field_names field_values v =
     | []            -> exec_sql ~env ~db insert field_values (db_must_step db); last_insert_rowid db.db
     | ds            -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds)))
 
+(* Cut a list into chunks of size [chunk_size] *)
+(* The result is in the reverse order *)
+let cut_into_chunks chunk_size l =
+  let rec aux chunks n accu = function
+    | []   -> (List.rev accu) :: chunks
+    | h::t ->
+      if n mod chunk_size = 0 then
+        aux ((List.rev (h :: accu)) :: chunks) (n+1) [] t
+      else
+        aux chunks (n+1) (h :: accu) t in
+  aux [] 1 [] l
+
+
+(*
+let _ =
+  cut_into_chunks 3 [1;2;3;4;5;6;7;8]
+*)
+
+let combine chunks =
+  let rec one list accu (a,b) = match list with
+    | (c,d)::t when b=c -> one t ((a,d)::accu) (a,b)
+    | _ :: t -> one t accu (a,b)
+    | [] -> accu in
+  let rec merge l1 l2 =
+    List.fold_left (one l2) [] l1 in
+  let rec aux = function
+    | []        -> []
+    | [l]       -> l
+    | l1::l2::t -> aux ((merge l1 l2)::t) in
+  aux chunks
+
+(*
+let _ =
+  combine [ 
+    [ (1,2); (1,3) ];
+    [ (2,4); (3,5); (5,6); ];
+    [ (4,5); (5,6); (7,8); ];
+  ]
+*)
+
 (* Insert a collection of rows in a specific table *)
 let process_enum_rows ~env ~db table_name field_names field_values_enum v =
-	let join =
-		sprintf "%s as __t0__" table_name ::
-			list_mapi (fun i _ -> sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" table_name (i+1) i (i+1)) (List.tl field_values_enum) in
+
+  let get_chunk chunk next_chunks =
+	  let join =
+		  sprintf "%s as __t0__" table_name ::
+			  list_mapi (fun i _ -> sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" table_name (i+1) i (i+1)) (List.tl chunk) in
 	let constraints =
-		List.flatten (list_mapi (fun i _ -> List.map (fun f -> sprintf "__t%i__.%s=?" i f) field_names) field_values_enum) in
+		List.flatten (list_mapi (fun i _ -> List.map (fun f -> sprintf "__t%i__.%s=?" i f) field_names) chunk) 
+    @ (match next_chunks with
+      | [] -> [sprintf "__t%i__.__next__ ISNULL" (List.length chunk - 1)]
+      | l  -> [sprintf "(%s)" (String.concat " OR " (List.map (sprintf "__t%i__.__next__ = %Ld" (List.length chunk - 1)) l))]) in
 	let binds =
-		List.flatten field_values_enum in
-	let select = sprintf "SELECT __t0__.__id__ FROM %s WHERE __t%i__.__next__ ISNULL AND %s;"
+		List.flatten chunk in
+	let select = sprintf "SELECT __t0__.__id__ FROM %s WHERE %s;"
 		(String.concat " JOIN " join)
-		(List.length field_values_enum - 1)
 		(String.concat " AND " constraints) in
 	let fn stmt = step_map db stmt (fun stmt -> column stmt 0) in
 	match exec_sql ~env ~db select binds fn with
-		| [Data.INT i ] -> i
-		| []            ->
-			let rec aux ?last i = function
-				| []                -> (match last with None -> process_error v "Empy enum" | Some id -> id)
+  | [] -> raise Not_found
+  | l  -> List.map (function Data.INT i -> i | k -> process_error v "get_chunk") l in
+
+  let get_by_chunks () =
+    let next_chunks = ref [] in
+    let chunks = Array.of_list (cut_into_chunks max_join field_values_enum) in
+    try
+      for i = 0 to Array.length chunks - 1 do
+        next_chunks := get_chunk chunks.(i) !next_chunks;
+      done;
+      !next_chunks
+    with _ -> [] in
+
+  (* The array is in reverse order *)
+  let ids = Array.create (List.length field_values_enum) (-1L) in
+  let get_id n =
+    if n < 0 then
+      Data.NULL
+    else
+      Data.INT ids.(n) in
+  let first () =
+    match ids.(List.length field_values_enum - 1) with
+    | -1L -> process_error v "Empy enum"
+    | i   -> i in
+
+  match get_by_chunks () with
+		| [i] -> i
+		| []  ->
+			let rec save i = function
+				| []                -> first ()
 				| field_values :: t ->
-					let last = match last with None -> Data.NULL | Some id -> Data.INT id in
 					let id = process_row ~env ~db
 						table_name
-						("__next__" :: "__size__" :: field_names)
-						(last :: Data.INT (Int64.of_int i) :: field_values)
+						("__next__" :: "__next_chunk__" :: "__size__" :: field_names)
+						(get_id (i-1) :: get_id (i-max_join) :: Data.INT (Int64.of_int (i+1)) :: field_values)
 						v in
-					aux ~last:id (i+1) t in
-			aux 0 (List.rev field_values_enum)
-		| ds           -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map string_of_data ds)))
+          ids.(i) <- id;
+					save (i+1) t in
+			save 0 (List.rev field_values_enum)
+		| ds           -> process_error v (sprintf "Found {%s}" (String.concat "," (List.map Int64.to_string ds)))
 
 let rec value_of_field ~env ~db name v =
 	match v with
