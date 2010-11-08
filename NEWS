@@ -1,3 +1,7 @@
+0.6.1:
+* Use dyntype 0.7.2
+* Fix save and get for 'big' list (ie more than 64 elements)
+
 0.6.0:
 
 * Fix annoying bug when assigning the empty list to a mutable list [21 Sept 2010]
