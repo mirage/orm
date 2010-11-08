@@ -153,41 +153,68 @@ and get_enum_values ~env ~db ~id name t =
     let row = row_data stmt in
     let id = match row.(0) with Data.INT i -> i | s -> process_error t s "__id__" in
     let next = match row.(1) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next__" in
-    let size = match row.(2) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size__" in
-    let v, _ = parse_row ~env ~db ~skip:false ~name t row 3 in
-    id, next, size, v in
-  let constraints = [ "__id__", "=", Some (Data.INT id) ] in
-  let field_names = "__id__" :: "__next__" :: "__size__" :: field_names_of_type ~id:false t in
-  match process ~env ~db ~constraints name field_names aux with
-  | [ _ , None     , _   , v ] -> [ v ]
-  | [ id, Some next, size, _ ] ->
-    let rec joints i =
-      if i = 0
-      then sprintf "%s AS __t0__" name :: joints (i+1)
-      else if i > size
-      then []
-      else sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" name i (i-1) i :: joints (i+1) in
-    let names = field_names_of_type ~id:false t in
-    let rec field_names i =
-      if i = (-1)
-      then []
-      else field_names (i-1) @ List.map (fun f -> sprintf "__t%i__.%s" i f) names in
-    let table_name = String.concat " JOIN " (joints 0) in
-    let constraints = [ (sprintf "__t%i__.__next__" size, "ISNULL", None) ; ("__t0__.__id__","=", Some (Data.INT id)) ] in
-    let fn stmt =
-      let row = row_data stmt in
-      let rec aux n =
-        if n >= Array.length row
+    let next_chunk = match row.(2) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next_chunk__" in
+    let size = match row.(3) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size__" in
+    let v, _ = parse_row ~env ~db ~skip:false ~name t row 4 in
+    id, next, next_chunk, size, v in
+
+  let get_chunk first_id =
+    let constraints = [ "__id__", "=", Some (Data.INT first_id) ] in
+    let field_names = "__id__" :: "__next__" :: "__next_chunk__" :: "__size__" :: field_names_of_type ~id:false t in
+    match process ~env ~db ~constraints name field_names aux with
+    | [ _ , None     , None      , _   , v ] -> None, [ v ]
+    | [ id, Some next, next_chunk, size, _ ] ->
+      let size = min size max_join in
+      let rec joints i =
+        if i = 0
+        then sprintf "%s AS __t0__" name :: joints (i+1)
+        else if i = size
         then []
-        else
-          let v, m = parse_row ~env ~db ~skip:false ~name t row n in
-          v :: aux m in
-      aux 0 in
-    begin match process ~env ~db ~constraints table_name (field_names size) fn with
-    | [r] -> r
-    | []  -> process_error t Data.NULL "No result found"
-    | rs  -> process_error t Data.NULL "Too many results found"
-    end
-  | l ->
-		let aux (id, next, size, v) = Printf.sprintf "(%Ld,%s,%i,%s)" id (match next with None -> "NULL" | Some n -> Int64.to_string n) size (Value.to_string v) in
-		process_error t Data.NULL (Printf.sprintf "get_enum_values{%s}" (String.concat ";" (List.map aux l)))
+        else sprintf "%s AS __t%i__ ON __t%i__.__next__=__t%i__.__id__" name i (i-1) i :: joints (i+1) in
+      let names = field_names_of_type ~id:false t in
+      let rec field_names i =
+        if i = size
+        then []
+        else List.map (fun f -> sprintf "__t%i__.%s" i f) names @ field_names (i+1) in
+      let table_name = String.concat " JOIN " (joints 0) in
+      let constraints = [
+        (match next_chunk with
+        | None         -> sprintf "__t%i__.__next__" (size-1), "ISNULL", None;
+        | Some next_id -> sprintf "__t%i__.__next__" (size-1), "="     , Some (Data.INT next_id));
+        "__t0__.__id__","=", Some (Data.INT first_id);
+      ] in
+      let fn stmt =
+        let row = row_data stmt in
+        let rec aux n =
+          if n >= Array.length row
+          then []
+          else
+            let v, m = parse_row ~env ~db ~skip:false ~name t row n in
+            v :: aux m in
+        aux 0 in
+      begin match process ~env ~db ~constraints table_name (field_names 0) fn with
+      | [r] -> next_chunk, r
+      | []  -> process_error t Data.NULL "No result found"
+      | rs  -> process_error t Data.NULL "Too many results found"
+      end
+    | l ->
+		let aux (id, next, next_chunk, size, v) =
+      Printf.sprintf "(%Ld,%s,%s,%i,%s)"
+        id
+        (match next with None -> "NULL" | Some n -> Int64.to_string n)
+        (match next_chunk with None -> "NULL" | Some n -> Int64.to_string n)
+        size
+        (Value.to_string v) in
+		process_error t Data.NULL (Printf.sprintf "get_enum_values{%s}" (String.concat ";" (List.map aux l))) in
+  
+  let result = ref [[]] in
+  let stop = ref false in
+  let first_id = ref id in
+  while not !stop do
+    let n, r = get_chunk !first_id in
+    (match n with
+    | None   -> stop := true;
+    | Some k -> first_id := k);
+    result := r :: !result;
+  done;
+  List.concat (List.rev !result)

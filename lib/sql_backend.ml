@@ -19,6 +19,9 @@
 open Sqlite3
 open Printf
 
+(* Maximum number of JOINS *)
+let max_join = 64
+
 type transaction_mode = [ `Deferred |`Immediate |`Exclusive ]
 
 type state = {
