@@ -22,6 +22,7 @@ let suites = [
   Nested_option.suite;
   Record_mutate.suite;
   List_mutate.suite;
+  Big_list.suite;
   Recursive_mutate.suite;
   Photo.suite;
   Bibtex.suite;
