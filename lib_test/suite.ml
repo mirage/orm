@@ -28,6 +28,7 @@ let suites = [
   Bibtex.suite;
   Bib.suite;
   Delete.suite;
+  Option_rec.suite;
 ]
 
 let slow_suites = [
