@@ -66,7 +66,7 @@ let string_of_constraint (name, c) =
 		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
 
 (* Build up the list of fields actually needed to save the row *)
-let rec parse_row ~env ~db ~skip ~name t row n =
+let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
   match t, row.(n) with
   | T.Unit    , Data.INT 0L -> V.Unit, n + 1
   | T.Int _   , Data.INT i
@@ -78,84 +78,91 @@ let rec parse_row ~env ~db ~skip ~name t row n =
   | T.String  , Data.INT t   -> V.String (Int64.to_string t), n + 1
   | T.String  , Data.FLOAT f -> V.String (string_of_float f), n + 1
   | T.Enum t  , Data.NULL    -> V.Enum [], n + 1
-  | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id (Name.enum name) t), n + 1
+  | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id ~type_env ~vars (Name.enum name) t), n + 1
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
-  | T.Option t, Data.INT r   -> let res, j = parse_row ~env ~db ~skip:(r=0L) ~name:(Name.option name) t row (n + 1) in (if r=0L then V.Null else V.Value res), j
+  | T.Option t, Data.INT r   ->
+    let res, j = parse_row ~env ~db ~skip:(r=0L) ~name:(Name.option name) ~type_env ~vars t row (n + 1) in
+    (if r=0L then V.Null else V.Value res), j
   | T.Tuple tl, _            ->
     let tuple, n = list_foldi (fun (accu, n1) i t ->
-      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.tuple name i) t row n1 in res :: accu, n2
-      ) ([], n) tl in
+      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.tuple name i) ~type_env ~vars t row n1 in
+      res :: accu, n2
+    ) ([], n) tl in
     V.Tuple (List.rev tuple), n
   | T.Dict tl , _            ->
     let dict, n = List.fold_left (fun (accu, n1) (f,_,t) ->
-      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.dict name f) t row n1 in (f, res) :: accu, n2
-      ) ([], n) tl in
+      let res, n2 = parse_row ~env ~db ~skip ~name:(Name.dict name f) ~type_env ~vars t row n1 in
+      (f, res) :: accu, n2
+    ) ([], n) tl in
     V.Dict (List.rev dict), n
   | T.Sum tl  , Data.TEXT r  ->
     let row, n = List.fold_left (fun (accu, n1) (rn, tl) ->
       list_foldi (fun (accu, n2) i t ->
-        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum "" rn i) t row n2 in (if rn<>r then accu else res :: accu), n3
-        ) (accu, n1) tl)
+        let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum "" rn i) ~type_env ~vars t row n2 in
+        (if rn<>r then accu else res :: accu), n3
+      ) (accu, n1) tl)
       ([], n + 1) tl in
     V.Sum (r, List.rev row), n
-  | T.Rec(r, s), Data.INT i  ->
-    begin match get_values ~env ~db ~id:i t with
-    | [_,v] -> v, n + 1
-    | []    -> process_error t row.(n) "No value found"
-    | _     -> process_error t row.(n) "Too many values found"
+  | T.Ext (v,_), Data.INT i
+  | T.Rec (v,_), Data.INT i
+  | T.Var v, Data.INT i ->
+    if List.mem (v,i) vars then
+      V.Var (v,i), n + 1
+    else begin
+      let vars = match t with T.Rec _ | T.Var _ -> (v,i) :: vars | _ -> vars in
+      match get_values ~env ~db ~id:i ~type_env ~vars t with
+      | [_,v] -> v, n + 1
+      | []    -> process_error t row.(n) "No value found"
+      | _     -> process_error t row.(n) "Too many values found"
     end
-  | T.Ext(e, s), Data.INT i  ->
-    begin match get_values ~env ~db ~id:i t with
-    | [_,v] -> v, n + 1
-    | []    -> process_error t row.(n) "No value found"
-    | _     -> process_error t row.(n) "Too many values found"
-    end
-  | T.Var v   , Data.INT i   -> V.Var (v, i), n + 1
   | _ when skip              -> V.Null, n + 1
   | _                        -> process_error t row.(n) (sprintf "%s: unknown" name)
 
-and get_values ~env ~db ?id ?(constraints=[]) ?custom_fn t =
+and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?custom_fn t =
 
-	let value_of_row name s row =
+	let name, s, type_env =
+    match t with
+	  | T.Rec (n, s)
+	  | T.Ext (n, s) -> n, s, (n,s) :: type_env
+    | T.Var n      -> n, List.assoc n type_env, type_env
+	  | _            -> failwith "TODO"  in
+
+	let value_of_row row =
 		let id = match row.(0) with Data.INT i -> i | _ -> failwith "TODO:4" in
-		let r, _ = parse_row ~env ~db ~skip:false ~name s row 1 in
+		let r, _ = parse_row ~env ~db ~skip:false ~name ~type_env ~vars s row 1 in
 		if List.mem (name, id) (V.free_vars r) then
 			id, V.Rec ((name,id), r)
 		else
 			id, V.Ext ((name,id), r) in
 
-	let value_of_stmt name s stmt =
-		value_of_row name s (row_data stmt) in
+	let value_of_stmt stmt =
+		value_of_row (row_data stmt) in
 
 	let _custom = ref None in
-	let custom name body fn =
+	let custom fn =
 		let custom_name = sprintf "%s_custom" name in
-		let custom_str = sprintf "%s(%s)" custom_name (String.concat "," (field_names_of_type ~id:true body)) in
-		create_funN db.db custom_name (fun row -> let _,v = value_of_row name body row in if fn v then Data.INT 1L else Data.INT 0L);
+		let custom_str = sprintf "%s(%s)" custom_name (String.concat "," (field_names_of_type ~id:true s)) in
+		create_funN db.db custom_name (fun row -> let _,v = value_of_row row in if fn v then Data.INT 1L else Data.INT 0L);
 		_custom := Some custom_name;
 		[ custom_str, "", None ] in
 
-	let make_constraints name s =
+	let constraints =
 		(match id with None -> [] | Some id -> [ "__id__", "=", Some (Data.INT id) ]) @
-		(match custom_fn with None -> [] | Some fn -> custom name s fn) @
+		(match custom_fn with None -> [] | Some fn -> custom fn) @
 		List.map string_of_constraint constraints in
 
-	match t with
-	| T.Rec (n, s)
-	| T.Ext (n, s) ->
-		let res = process ~env ~db ~constraints:(make_constraints n s) n (field_names_of_type ~id:true s) (value_of_stmt n s) in
-		(match !_custom with None -> () | Some name -> delete_function db.db name);
-		res
-	| _            -> failwith "TODO"  
+	let res = process ~env ~db ~constraints name (field_names_of_type ~id:true s) value_of_stmt in
+	(match !_custom with None -> () | Some name -> delete_function db.db name);
+	res
 
-and get_enum_values ~env ~db ~id name t =
+and get_enum_values ~env ~db ~id ~type_env ~vars name t =
   let aux stmt =
     let row = row_data stmt in
     let id = match row.(0) with Data.INT i -> i | s -> process_error t s "__id__" in
     let next = match row.(1) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next__" in
     let next_chunk = match row.(2) with Data.INT i -> Some i | Data.NULL -> None | s -> process_error t s "__next_chunk__" in
     let size = match row.(3) with Data.INT i -> Int64.to_int i | s -> process_error t s "__size__" in
-    let v, _ = parse_row ~env ~db ~skip:false ~name t row 4 in
+    let v, _ = parse_row ~env ~db ~skip:false ~name ~type_env ~vars t row 4 in
     id, next, next_chunk, size, v in
 
   let get_chunk first_id =
@@ -189,7 +196,7 @@ and get_enum_values ~env ~db ~id name t =
           if n >= Array.length row
           then []
           else
-            let v, m = parse_row ~env ~db ~skip:false ~name t row n in
+            let v, m = parse_row ~env ~db ~skip:false ~name ~type_env ~vars t row n in
             v :: aux m in
         aux 0 in
       begin match process ~env ~db ~constraints table_name (field_names 0) fn with
