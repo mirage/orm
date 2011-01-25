@@ -31,7 +31,7 @@ let test_id () =
   let db = open_db x_init name in
    x_save db x1;
    let i = x_id db x1 in
-   "id is 1" @? (i = 1L);
+   "id is 1" @? (ORMID_x.to_int64 i = 1L);
    assert_raises ~msg:"test_id_not_found" Not_found 
     (fun () -> x_id db x2)
    

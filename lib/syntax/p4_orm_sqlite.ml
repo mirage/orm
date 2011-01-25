@@ -31,6 +31,7 @@ let delete n   = n ^ "_delete"
 let id n       = n ^ "_id"
 let cache n    = n ^ "_cache"
 let get_by i n = n ^ "_get_by_" ^ i
+let ormid n    = "ORMID_" ^ n
 
 let env_to_env _loc env =
 	let sl_of_sl sl = 
@@ -135,7 +136,7 @@ module Get = struct
 		let int_like t =
 			<:ctyp< [= `Eq of $lid:t$ | `Neq of $lid:t$ | `Le of $lid:t$ | `Ge of $lid:t$ | `Leq of $lid:t$ | `Geq of $lid:t$ ] >> in
 		let fn _ = function
-			| T.Bool     -> Some (<:ctyp< [< `T | `F ] >>)
+			| T.Bool     -> Some (<:ctyp< [=`T|`F] >>)
 			| T.Float    -> Some (int_like "float")
 			| T.Char     -> Some (int_like "char")
 			| T.String   -> Some (<:ctyp< [=`Eq of string | `Contains of string ] >>)
@@ -146,20 +147,21 @@ module Get = struct
 			| _		  -> None in
 		map_type fn t
 
-	let sig_of_type _loc t body =
+	let sig_of_type _loc t =
 		List.fold_left2
 			(fun accu n ctyp -> <:ctyp< ? $lid:n$ : $ctyp$ -> $accu$ >> )
-			body
-			(arg_names_of_type t)
-			(ctyp_of_arg _loc t)
+      <:ctyp< 'get_result >>
+      (arg_names_of_type t)
+      (ctyp_of_arg _loc t)
+
 
 	let fun_of_name _loc tds n body =
 		let t = pp_type_of _loc tds n in
 		fun_of_type _loc t body
 
-	let sig_of_name _loc tds n body =
+	let sig_of_name _loc tds n =
 		let t = pp_type_of _loc tds n in
-		sig_of_type _loc t body
+		sig_of_type _loc t
 
 	let constraints_of_args _loc tds n =
 		let t = pp_type_of _loc tds n in
@@ -185,6 +187,7 @@ let get_by_id_binding env tds (_loc, n, t) =
 	<:binding< $lid:get_by "id" n$ =
 		 fun ~id (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW]) ->
 			 let __db__ = Orm.Db.to_state __db__ in
+       let id = match id with [ `Eq id -> `Eq ($uid:ormid n$.to_int64 id) ] in
 			 let constraints = [ ( ["__id__"], (`Opaque_id id) ) ] in
 			 match Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints $lid:P4_type.type_of n$ with [ 
 			   [ (__id__, __v__) ] -> 
@@ -259,7 +262,7 @@ let id_binding env tds (_loc, n, t) =
 	fun ~db: (__db__: Orm.Db.t $lid:n$ [<`RO|`RW]) ->
 		let db = Orm.Db.to_state __db__ in
 		fun __n__ ->
-			Orm.Sql_cache.to_weakid __env__ $lid:cache n$ db.Orm.Sql_backend.name __n__
+			$uid:ormid n$.of_int64 (Orm.Sql_cache.to_weakid __env__ $lid:cache n$ db.Orm.Sql_backend.name __n__)
 	>>
 
 let cache_binding env tds (_loc, n, t) =
@@ -276,6 +279,37 @@ let cache_module env tds (_loc, n, t) =
 			end)
 	>>
 
+let ormid_module env tds (_loc, n, t) =
+  <:str_item<
+    module $uid:"ORMID_" ^ n$ = Orm.Sig.Make_ID(struct end);
+  >>
+
+let orm_module env tds (_loc, n, t) =
+  <:str_item<
+    module $uid:"ORM_" ^ n$ : Orm.Sig.T
+      with type t = $lid:n$
+      and type id = $uid:"ORMID_" ^ n$.t
+      and type get_params 'get_result =
+        $Get.sig_of_name _loc tds n$ =
+    struct
+
+      type __t__         = $lid:n$;
+      type t             = __t__;
+      type id            = $uid:"ORMID_" ^ n$.t;
+      type get_params 'get_result =
+        $Get.sig_of_name _loc tds n$;
+
+      value init           = $lid:init n$;
+      value init_read_only = $lid:initRO n$;
+      value save           = $lid:save n$;
+      value get            = $lid:get n$;
+      value get_by_id      = $lid:get_by "id" n$;
+      value delete         = $lid:delete n$;
+      value id             = $lid:id n$;
+
+    end
+  >>
+
 let gen env tds =
 	let _loc = loc_of_ctyp tds in
 
@@ -289,6 +323,8 @@ let gen env tds =
 	let id_bindings = List.map (id_binding env tds) ts in
 	let cache_bindings = List.map (cache_binding env tds) ts in
 	let cache_modules = List.map (cache_module env tds) ts in
+  let orm_modules = List.map (orm_module env tds) ts in
+  let ormid_modules = List.map (ormid_module env tds) ts in
 
 	<:str_item<
 		value __env__ : Orm.Sql_backend.env = $env_to_env _loc env$;
@@ -300,6 +336,8 @@ let gen env tds =
 		$P4_type.gen tds$;
 		$P4_value.gen ~gen_id ~id_seed tds$;
 
+    $stSem_of_list ormid_modules$;
+
 		value $biAnd_of_list init_bindings$;
 		value $biAnd_of_list initRO_bindings$;
 		value rec $biAnd_of_list save_bindings$;
@@ -307,4 +345,6 @@ let gen env tds =
 		value rec $biAnd_of_list get_by_id_bindings$;
 		value $biAnd_of_list delete_bindings$;
 		value $biAnd_of_list id_bindings$;
+
+    $stSem_of_list orm_modules$;
 	>>
