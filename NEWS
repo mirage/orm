@@ -1,3 +1,12 @@
+0.6.3:
+(working version)
+
+0.6.2:
+* abstract table index of type x to ORMID_x.t [25 Jan 2011]
+* generate a unified module representation ORM_x for all the generated functions (useful to make functors) [25 Jan 2011]
+* add lazy getters [26 Jan 2011]
+* add order_by [26 Jan 2011]
+
 0.6.1:
 * Use dyntype 0.7.2
 * Fix save and get for 'big' list (ie more than 64 elements)
