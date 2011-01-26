@@ -134,10 +134,15 @@ let step_map db stmt iterfn =
 
 let lazy_map db stmt (iterfn : Sqlite3.stmt -> 'a) : unit -> 'a option =
   let stepfn () = Sqlite3.step stmt in
-	let fn () = match db_busy_retry db stepfn with
-		| Sqlite3.Rc.ROW  -> Some (iterfn stmt)
-		| Sqlite3.Rc.DONE -> None
-		| x               -> raise_sql_error x in
+  let empty = ref false in
+	let fn () =
+    if !empty then
+      None
+    else
+      match db_busy_retry db stepfn with
+		  | Sqlite3.Rc.ROW  -> Some (iterfn stmt)
+		  | Sqlite3.Rc.DONE -> empty := true; None
+		  | x               -> raise_sql_error x in
 	fn
   
 

@@ -120,7 +120,10 @@ let test_lazy_get () =
     | _       -> "2 in db" @? false);
   (match next () with
     | None    -> "nothing in db" @? true
-    | _       -> "nothing in db" @? false)
+    | _       -> "nothing in db" @? false);
+  (match next () with
+    | None    -> "really nothing in db" @? true
+    | _       -> "really nothing in db" @? false)
 
 let suite = [
   "simple_order" >:: test_order;
