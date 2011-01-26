@@ -106,7 +106,22 @@ let test_delete () =
   match x_get db with
   [a1;a3] -> "equal" @? (a3=x3 && a1=x1)
   |_ -> assert false
-  
+
+let test_lazy_get () =
+  let db = open_db x_init name in
+  x_save db x;
+  x_save db x2;
+  let next = x_lazy_get db in
+  (match next () with
+    | Some a1 -> "1 in db" @? (x.bar = a1.bar)
+    | _       -> "1 in db" @? false);
+  (match next () with
+    | Some a2 -> "2 in db" @? (x2.bar = a2.bar)
+    | _       -> "2 in db" @? false);
+  (match next () with
+    | None    -> "nothing in db" @? true
+    | _       -> "nothing in db" @? false)
+
 let suite = [
   "simple_order" >:: test_order;
   "simple_init" >:: test_init;
@@ -114,6 +129,7 @@ let suite = [
   "simple_save" >:: test_save;
   "simple_update" >:: test_update;
   "simple_get" >:: test_get;
+  "simple_lazy_get" >:: test_lazy_get;
   "simple_custom_get" >:: test_custom_get;
   "simple_subtype" >:: test_subtype;
   "simple_save_get" >:: test_save_get;
