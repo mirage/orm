@@ -46,7 +46,7 @@ let test_get () =
   let i = x_get db in
   "2 in db" @? (List.length i = 2);
   match i with 
-  | [a2;a1] ->
+  | [a1;a2] ->
     "x1 values match" @? (a1.foo = x1.foo && (a1.bar = x1.bar));
     "x2 values match" @? (a2.foo = x2.foo && (a2.bar = x2.bar))
   | _ -> assert false

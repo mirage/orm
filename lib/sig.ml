@@ -35,6 +35,7 @@ module type T = sig
   val init_read_only  : string -> (t, [`RO]) Db.t
   val save            : db:(t, [`RW]) Db.t -> t -> unit
   val get             : (?custom:(t -> bool) -> ?order_by:order_by -> (t, [< `RO|`RW]) Db.t -> t list) get_params
+  val lazy_get        : (?custom:(t -> bool) -> ?order_by:order_by -> (t, [< `RO|`RW]) Db.t -> (unit -> t option)) get_params
   val get_by_id       : id:[`Eq of id] -> (t, [< `RO|`RW]) Db.t -> t
   val delete          : ?recursive:bool -> db:(t, [`RW]) Db.t -> t -> unit
   val id              : db:(t, [< `RO|`RW]) Db.t -> t -> id

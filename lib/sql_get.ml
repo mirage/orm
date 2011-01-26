@@ -30,13 +30,21 @@ let process_error v d s =
 
 let exec_sql ~env ~db = exec_sql ~tag:"get" ~db ~env
 
-let process ~env ~db ~constraints ?order_by name field_names fn =
+let process getter ~env ~db ~constraints ?order_by name field_names fn =
 	let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
 	let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
-	let order_by = match order_by with None -> "" | Some str -> sprintf " ORDER BY %s DESC" str in (* Rows will be reverted later *)
+	let order_by = match order_by with None -> "" | Some str -> sprintf " ORDER BY %s" str in
 	let sql = sprintf "SELECT %s FROM %s%s%s;" (String.concat "," field_names) name where order_by in
 	let binds = List.rev (List.fold_left (function accu -> function (_,_,None) -> accu | (_,_,Some c) -> c :: accu) [] constraints) in
-	exec_sql ~env ~db sql binds (fun stmt -> step_map db stmt fn)
+	exec_sql ~env ~db sql binds (fun stmt -> getter db stmt fn)
+
+(* The eta-expansion is needed to make the program compile ... *)
+let strict_process ~env ~db ~constraints ?order_by name field_names fn =
+  process step_map ~env ~db ~constraints ?order_by name field_names fn
+
+(* The eta-expansion is needed to make the program compile ... *)
+let lazy_process ~env ~db ~constraints ?order_by name field_names fn =
+  process lazy_map ~env ~db ~constraints ?order_by name field_names fn
 
 let string_of_constraint (name, c) =
 	let make name = String.concat "__" name in
@@ -65,6 +73,15 @@ let string_of_constraint (name, c) =
 		| `Int64 i   -> int_like name (fun i -> Data.INT i) i
 		| `Opaque_id i -> direct name (fun i -> Data.INT i) i
 		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
+
+(* force a lazy list into a normal list *)
+let force next =
+  let accu = ref [] in
+  let rec loop () =
+    match next () with
+      | None   -> List.rev !accu
+      | Some e -> accu := e :: !accu; loop () in
+  loop ()
 
 (* Build up the list of fields actually needed to save the row *)
 let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
@@ -111,7 +128,7 @@ let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
       V.Var (v,i), n + 1
     else begin
       let vars = match t with T.Rec _ | T.Var _ -> (v,i) :: vars | _ -> vars in
-      match get_values ~env ~db ~id:i ~type_env ~vars t with
+      match force (lazy_get_values ~env ~db ~id:i ~type_env ~vars t) with
       | [_,v] -> v, n + 1
       | []    -> process_error t row.(n) "No value found"
       | _     -> process_error t row.(n) "Too many values found"
@@ -119,7 +136,7 @@ let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
   | _ when skip              -> V.Null, n + 1
   | _                        -> process_error t row.(n) (sprintf "%s: unknown" name)
 
-and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?order_by ?custom_fn t =
+and lazy_get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?order_by ?custom_fn t =
 
 	let name, s, type_env =
     match t with
@@ -152,8 +169,14 @@ and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?order_b
 		(match custom_fn with None -> [] | Some fn -> custom fn) @
 		List.map string_of_constraint constraints in
 
-	let res = process ~env ~db ~constraints ?order_by name (field_names_of_type ~id:true s) value_of_stmt in
-	(match !_custom with None -> () | Some name -> delete_function db.db name);
+	let res = lazy_process ~env ~db ~constraints ?order_by name (field_names_of_type ~id:true s) value_of_stmt in
+  let res () =
+    match res () with
+      | Some x -> Some x
+      | None ->
+	      (* deregister the function when all the rows have been loaded *)
+        (match !_custom with None -> () | Some name -> delete_function db.db name);
+        None in
 	res
 
 and get_enum_values ~env ~db ~id ~type_env ~vars name t =
@@ -169,7 +192,7 @@ and get_enum_values ~env ~db ~id ~type_env ~vars name t =
   let get_chunk first_id =
     let constraints = [ "__id__", "=", Some (Data.INT first_id) ] in
     let field_names = "__id__" :: "__next__" :: "__next_chunk__" :: "__size__" :: field_names_of_type ~id:false t in
-    match process ~env ~db ~constraints name field_names aux with
+    match strict_process ~env ~db ~constraints name field_names aux with
     | [ _ , None     , None      , _   , v ] -> None, [ v ]
     | [ id, Some next, next_chunk, size, _ ] ->
       let size = min size max_join in
@@ -191,7 +214,7 @@ and get_enum_values ~env ~db ~id ~type_env ~vars name t =
         | Some next_id -> sprintf "__t%i__.__next__" (size-1), "="     , Some (Data.INT next_id));
         "__t0__.__id__","=", Some (Data.INT first_id);
       ] in
-      let fn stmt =
+      let fn (stmt : Sqlite3.stmt) : V.t list =
         let row = row_data stmt in
         let rec aux n =
           if n >= Array.length row
@@ -200,7 +223,7 @@ and get_enum_values ~env ~db ~id ~type_env ~vars name t =
             let v, m = parse_row ~env ~db ~skip:false ~name ~type_env ~vars t row n in
             v :: aux m in
         aux 0 in
-      begin match process ~env ~db ~constraints table_name (field_names 0) fn with
+      begin match strict_process ~env ~db ~constraints table_name (field_names 0) fn with
       | [r] -> next_chunk, r
       | []  -> process_error t Data.NULL "No result found"
       | rs  -> process_error t Data.NULL "Too many results found"
@@ -226,3 +249,6 @@ and get_enum_values ~env ~db ~id ~type_env ~vars name t =
     result := r :: !result;
   done;
   List.concat (List.rev !result)
+
+let get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?order_by ?custom_fn t =
+  force (lazy_get_values ~env ~db ?id ~type_env ~vars ~constraints ?order_by ?custom_fn t)

@@ -132,6 +132,15 @@ let step_map db stmt iterfn =
 		| x -> raise_sql_error x in
 	fn []
 
+let lazy_map db stmt (iterfn : Sqlite3.stmt -> 'a) : unit -> 'a option =
+  let stepfn () = Sqlite3.step stmt in
+	let fn () = match db_busy_retry db stepfn with
+		| Sqlite3.Rc.ROW  -> Some (iterfn stmt)
+		| Sqlite3.Rc.DONE -> None
+		| x               -> raise_sql_error x in
+	fn
+  
+
 let list_foldi fn accu l =
 	let accu, _ = List.fold_left (fun (accu, i) x -> fn accu i x, i + 1) (accu, 0) l in accu
 

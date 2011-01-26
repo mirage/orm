@@ -104,7 +104,7 @@ let test_delete () =
   x_delete db x2;
   "2 in db" @? (List.length (x_get db) = 2);
   match x_get db with
-  [a3;a1] -> "equal" @? (a3=x3 && a1=x1)
+  [a1;a3] -> "equal" @? (a3=x3 && a1=x1)
   |_ -> assert false
   
 let suite = [

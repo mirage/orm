@@ -37,7 +37,7 @@ let test_get () =
   let db = open_db ~rm:false s_init name in
   let i = s_get db in
   "3 in db" @? (List.length i = 3);
-  let i = List.hd i in
+  let i = List.hd (List.rev i) in
   "values match" @? (i.bar = t3.bar && (i.foo = t3.foo))
 
 let test_save_get () =
@@ -58,7 +58,7 @@ let test_delete () =
   s_delete db t2;
   "2 in db" @? (List.length (s_get db) = 2);
   (match s_get db with
-  [a3;a1] -> "equal" @? (a3=t3 && a1=t1)
+  [a1;a3] -> "equal" @? (a3=t3 && a1=t1)
   |_ -> assert false);
   s_delete db t1;
   s_delete db t3;

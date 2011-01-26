@@ -44,7 +44,7 @@ let test_save_get () =
   x_save db x2;
   x_save db x3;
   match x_get db with 
-  |[a3;a2;a1] ->
+  |[a1;a2;a3] ->
     "structural values equal" @? ( x1 = a1);
     "physical values equal" @? ( x1 == a1);
     "structural values equal" @? ( x2 = a2);
