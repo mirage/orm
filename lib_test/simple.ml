@@ -21,6 +21,14 @@ let test_init () =
   ignore(open_db ~rm:false x_init name);
   ignore(open_db ~rm:false x_init name)
 
+let test_order () =
+  let db = open_db x_init name in
+  x_save db x;
+  x_save db x2;
+  match x_get ~order_by:`foo db with
+    | [y1; y2] -> "query is ordered" @? (y1.foo <= y2.foo)
+    | _        -> "get error" @? false
+
 let test_id () =
   let db = open_db x_init name in
    x_save db x;
@@ -100,6 +108,7 @@ let test_delete () =
   |_ -> assert false
   
 let suite = [
+  "simple_order" >:: test_order;
   "simple_init" >:: test_init;
   "simple_id" >:: test_id;
   "simple_save" >:: test_save;

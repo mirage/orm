@@ -30,10 +30,11 @@ let process_error v d s =
 
 let exec_sql ~env ~db = exec_sql ~tag:"get" ~db ~env
 
-let process ~env ~db ~constraints name field_names fn =
+let process ~env ~db ~constraints ?order_by name field_names fn =
 	let where_str = String.concat " AND " (List.map (function | (n,c,None) -> sprintf "%s %s" n c | (n,c,Some _) -> sprintf "%s %s ?" n c) constraints) in
 	let where = if where_str = "" then "" else sprintf " WHERE %s" where_str in
-	let sql = sprintf "SELECT %s FROM %s%s;" (String.concat "," field_names) name where in
+	let order_by = match order_by with None -> "" | Some str -> sprintf " ORDER BY %s DESC" str in (* Rows will be reverted later *)
+	let sql = sprintf "SELECT %s FROM %s%s%s;" (String.concat "," field_names) name where order_by in
 	let binds = List.rev (List.fold_left (function accu -> function (_,_,None) -> accu | (_,_,Some c) -> c :: accu) [] constraints) in
 	exec_sql ~env ~db sql binds (fun stmt -> step_map db stmt fn)
 
@@ -49,8 +50,8 @@ let string_of_constraint (name, c) =
 		| `Ge i  -> make name, ">", Some (conv i)
 		| `Leq i -> make name, "<=", Some (conv i)
 		| `Geq i -> make name, ">=", Some (conv i)
-        and direct name conv = function
-                | `Eq i  -> make name, "=", Some (conv i)
+	and direct name conv = function
+		| `Eq i  -> make name, "=", Some (conv i)
 	and string name = function
 		| `Eq s       -> make name, "IS", Some (Data.TEXT s)
 		| `Contains s -> make name, "IS", Some (Data.TEXT (sprintf "*%s*" s)) in
@@ -62,7 +63,7 @@ let string_of_constraint (name, c) =
 		| `Int i     -> int_like name (fun i -> Data.INT (Int64.of_int i)) i
 		| `Int32 i   -> int_like name (fun i -> Data.INT (Int64.of_int32 i)) i
 		| `Int64 i   -> int_like name (fun i -> Data.INT i) i
-                | `Opaque_id i -> direct name (fun i -> Data.INT i) i
+		| `Opaque_id i -> direct name (fun i -> Data.INT i) i
 		| `Big_int i -> int_like name (fun i -> Data.TEXT (Big_int.string_of_big_int i)) i
 
 (* Build up the list of fields actually needed to save the row *)
@@ -118,7 +119,7 @@ let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
   | _ when skip              -> V.Null, n + 1
   | _                        -> process_error t row.(n) (sprintf "%s: unknown" name)
 
-and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?custom_fn t =
+and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?order_by ?custom_fn t =
 
 	let name, s, type_env =
     match t with
@@ -151,7 +152,7 @@ and get_values ~env ~db ?id ?(type_env=[]) ?(vars=[]) ?(constraints=[]) ?custom_
 		(match custom_fn with None -> [] | Some fn -> custom fn) @
 		List.map string_of_constraint constraints in
 
-	let res = process ~env ~db ~constraints name (field_names_of_type ~id:true s) value_of_stmt in
+	let res = process ~env ~db ~constraints ?order_by name (field_names_of_type ~id:true s) value_of_stmt in
 	(match !_custom with None -> () | Some name -> delete_function db.db name);
 	res
 

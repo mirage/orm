@@ -128,6 +128,19 @@ module Get = struct
 			| _ -> None in
 		map_type fn t
 
+  let variant_names_of_type _loc tds n =
+    let t = pp_type_of _loc tds n in
+    let ctyps = List.map (fun n -> <:ctyp< `$lid:n$ >>) (arg_names_of_type t) in
+    <:ctyp< [= $tyOr_of_list ctyps$ ] >>
+
+  let match_case_of_type _loc tds n =
+    let t = pp_type_of _loc tds n in
+    let match_cases = 
+      List.map (fun n -> <:match_case< Some `$lid:n$ -> Some $str:n$ >>) (arg_names_of_type t) in
+    <:match_case<
+      $mcOr_of_list match_cases$ | _ -> None
+    >>
+
 	let fun_of_type _loc t body =
 		List.fold_left (fun accu n -> <:expr< fun ? $lid:n$ -> $accu$ >>) body (arg_names_of_type t)
 
@@ -211,9 +224,11 @@ let get_binding env tds (_loc, n, t) =
 	<:binding< $lid:get n$ =
 	if Type.is_mutable $lid:P4_type.type_of n$ then (
 		$Get.fun_of_name _loc tds n <:expr<
-			fun ?custom: (__custom_fn__) ->
+			fun ?custom: (__custom_fn__) -> 
+       fun ?order_by ->
 				fun (__db__ : Orm.Db.t $lid:n$ [<`RO|`RW])  ->
 					let __db__ = Orm.Db.to_state __db__ in
+          let __order_by__ = match order_by with [ $Get.match_case_of_type _loc tds n$ ] in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None	-> None
@@ -223,13 +238,16 @@ let get_binding env tds (_loc, n, t) =
 						(fun (__id__, __v__) ->
 							let __n__ = $lid:P4_value.of_value n$ __v__ in
 							do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
-						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__
+                 ?order_by:__order_by__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
 		>>$
 	) else (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) ->
+       fun ?order_by ->
 				fun __db__ ->
 					let __db__ = Orm.Db.to_state __db__ in
+          let __order_by__ = match order_by with [ $Get.match_case_of_type _loc tds n$ ] in
 					let __constraints__ = $Get.constraints_of_args _loc tds n$ in
 					let __custom_fn__ = match __custom_fn__ with [
 					  None	-> None
@@ -243,7 +261,8 @@ let get_binding env tds (_loc, n, t) =
 							) else (
 								let __n__ = $lid:P4_value.of_value n$ __v__ in
 								do { Orm.Sql_cache.replace __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ } )
-						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
+						) (Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints:__constraints__
+                 ?order_by:__order_by__ ?custom_fn:__custom_fn__ $lid:P4_type.type_of n$)
 		>>$
 	) >>
 
@@ -290,7 +309,9 @@ let orm_module env tds (_loc, n, t) =
       with type t = $lid:n$
       and type id = $uid:"ORMID_" ^ n$.t
       and type get_params 'get_result =
-        $Get.sig_of_name _loc tds n$ =
+        $Get.sig_of_name _loc tds n$
+      and type order_by =
+        $Get.variant_names_of_type _loc tds n$ =
     struct
 
       type __t__         = $lid:n$;
@@ -298,6 +319,8 @@ let orm_module env tds (_loc, n, t) =
       type id            = $uid:"ORMID_" ^ n$.t;
       type get_params 'get_result =
         $Get.sig_of_name _loc tds n$;
+      type order_by =
+          $Get.variant_names_of_type _loc tds n$;
 
       value init           = $lid:init n$;
       value init_read_only = $lid:initRO n$;
