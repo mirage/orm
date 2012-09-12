@@ -19,6 +19,7 @@ open Printf
 open Sqlite3
 open Sql_backend
 
+open Dyntype
 module T = Type
 module V = Value
 
@@ -95,8 +96,10 @@ let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
   | T.String  , Data.TEXT t  -> V.String t, n + 1
   | T.String  , Data.INT t   -> V.String (Int64.to_string t), n + 1
   | T.String  , Data.FLOAT f -> V.String (string_of_float f), n + 1
-  | T.Enum t  , Data.NULL    -> V.Enum [], n + 1
-  | T.Enum t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id ~type_env ~vars (Name.enum name) t), n + 1
+  | T.Array t , Data.NULL    -> V.Enum [], n + 1
+  | T.Array t , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id ~type_env ~vars (Name.enum name) t), n + 1
+  | T.List t  , Data.NULL    -> V.Enum [], n + 1
+  | T.List t  , Data.INT id  -> V.Enum (get_enum_values ~env ~db ~id ~type_env ~vars (Name.enum name) t), n + 1
   | T.Arrow _ , Data.BLOB b  -> V.Arrow b, n + 1
   | T.Option t, Data.INT r   ->
     let res, j = parse_row ~env ~db ~skip:(r=0L) ~name:(Name.option name) ~type_env ~vars t row (n + 1) in
@@ -107,13 +110,13 @@ let rec parse_row ~env ~db ~skip ~name ~type_env ~vars t row n =
       res :: accu, n2
     ) ([], n) tl in
     V.Tuple (List.rev tuple), n
-  | T.Dict tl , _            ->
+  | T.Dict (_,tl), _         ->
     let dict, n = List.fold_left (fun (accu, n1) (f,_,t) ->
       let res, n2 = parse_row ~env ~db ~skip ~name:(Name.dict name f) ~type_env ~vars t row n1 in
       (f, res) :: accu, n2
     ) ([], n) tl in
     V.Dict (List.rev dict), n
-  | T.Sum tl  , Data.TEXT r  ->
+  | T.Sum (_,tl), Data.TEXT r  ->
     let row, n = List.fold_left (fun (accu, n1) (rn, tl) ->
       list_foldi (fun (accu, n2) i t ->
         let res, n3 = parse_row ~skip:(rn<>r) ~env ~db ~name:(Name.sum "" rn i) ~type_env ~vars t row n2 in

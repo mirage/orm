@@ -23,6 +23,8 @@ open Ast
 
 open P4_utils
 
+open Pa_dyntype
+
 let init n   = n ^ "_init"
 let initRO n = n ^ "_init_read_only"
 let save n   = n ^ "_save"

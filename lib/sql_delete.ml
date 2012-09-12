@@ -18,6 +18,7 @@
 open Printf
 open Sqlite3
 open Sql_backend
+open Dyntype
 open Value
 
 let exec_sql ~env ~db = exec_sql ~tag:"delete" ~db ~env

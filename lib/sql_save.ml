@@ -19,6 +19,7 @@
 open Printf
 open Sqlite3
 open Sql_backend
+open Dyntype
 open Value
 
 exception Sql_process_error of Value.t * string

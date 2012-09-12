@@ -11,8 +11,8 @@ slow: dnc
 
 export INCDIRS =
 export LIBDIRS =
-export LIBS = orm
-export PACKS = unix sqlite3 oUnit orm.syntax
+export LIBS =
+export PACKS = unix sqlite3 oUnit dyntype orm.syntax orm
 export PREDS = camlp4o
 
 RESULT= run_test

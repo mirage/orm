@@ -23,6 +23,9 @@ open Ast
 
 open P4_utils
 
+open Pa_dyntype
+open Dyntype
+
 let init n     = n ^ "_init"
 let initRO n   = n ^ "_init_read_only"
 let save n     = n ^ "_save"
@@ -51,7 +54,7 @@ let init_binding env tds (_loc, n, t) =
 		let __db__ = Orm.Sql_backend.new_state __name__ in
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RW ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
-		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
+		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Dyntype.Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
 	>>
 
@@ -61,7 +64,7 @@ let initRO_binding env tds (_loc, n, t) =
 		let __db__ = Orm.Sql_backend.new_state __name__ in
 		let () = if not (Orm.Sql_init.database_exists ~env:__env__ ~db:__db__) then Orm.Sql_cache.flush_all __env__ __name__ else () in
 		let () = Orm.Sql_init.init_tables ~mode:`RO ~env:__env__ ~db:__db__ $lid:P4_type.type_of n$ in
-		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Type.foreigns $lid:P4_type.type_of n$) in
+		let () = List.iter (Orm.Sql_cache.Trigger.create_function ~env:__env__ ~db:__db__) (Dyntype.Type.foreigns $lid:P4_type.type_of n$) in
 		Orm.Db.of_state __db__
 	>>
 
@@ -78,7 +81,7 @@ let id_seed _loc = None, <:ctyp< Orm.Sql_backend.state >>
 
 let save_binding env tds (_loc, n, t) =
 	<:binding< $lid:save n$ =
-	if Type.is_mutable $lid:P4_type.type_of n$ then (
+	if Dyntype.Type.is_mutable $lid:P4_type.type_of n$ then (
 		fun ~db: (db: Orm.Db.t $lid:n$ [=`RW])  ->
 			let db = Orm.Db.to_state db in
 			fun __n__ ->
@@ -103,14 +106,14 @@ module Get = struct
 		t
 
 	let map_type fn t =
-		let module T = Type in
+		let module T = Dyntype.Type in
 		let rec aux name accu t =
 			(match fn name t with None -> [] | Some r -> [r])
 			@ match t with
 				| T.Unit | T.Sum _ | T.Var _ | T.Arrow _
-				| T.Bool | T.Float | T.Char | T.String | T.Int _ | T.Option _ | T.Enum _
+				| T.Bool | T.Float | T.Char | T.String | T.Int _ | T.Option _ | T.List _ | T.Array _
 					-> accu
-				| T.Dict d when name = []
+				| T.Dict (_,d) when name = []
 					-> List.fold_left (fun accu (n,_,t) -> aux [n] accu t) accu d
 				| T.Dict _  -> accu
 				| T.Tuple t when name = []
@@ -123,7 +126,7 @@ module Get = struct
 		aux [] [] t
 
 	let arg_names_of_type t =
-		let module T = Type in
+		let module T = Dyntype.Type in
 		let fn name = function
 			| T.Bool | T.Float | T.Char | T.String | T.Int _  -> Some (if name = [] then "value" else String.concat "_" name)
 			| _ -> None in
@@ -146,7 +149,7 @@ module Get = struct
 		List.fold_left (fun accu n -> <:expr< fun ? $lid:n$ -> $accu$ >>) body (arg_names_of_type t)
 
 	let ctyp_of_arg _loc t =
-		let module T = Type in
+		let module T = Dyntype.Type in
 		let int_like t =
 			<:ctyp< [= `Eq of $lid:t$ | `Neq of $lid:t$ | `Le of $lid:t$ | `Ge of $lid:t$ | `Leq of $lid:t$ | `Geq of $lid:t$ ] >> in
 		let fn _ = function
@@ -183,7 +186,7 @@ module Get = struct
 			let name_str = match name with [] -> "value" | l -> String.concat "_" l in
 			let name_lst = expr_list_of_list _loc (List.map (fun s -> <:expr< $str:s$ >>) name) in
 			<:expr< match $lid:name_str$ with [ None -> [] | Some x -> [ ($name_lst$, `$uid:str$ x) ] ] >> in
-		let module T = Type in
+		let module T = Dyntype.Type in
 		let fn name = function
 			| T.Bool	 -> Some (make name "Bool")
 			| T.Float	-> Some (make name "Float")
@@ -205,7 +208,7 @@ let get_by_id_binding env tds (_loc, n, t) =
 			 let constraints = [ ( ["__id__"], (`Opaque_id id) ) ] in
 			 match Orm.Sql_get.get_values ~env:__env__ ~db:__db__ ~constraints $lid:P4_type.type_of n$ with [ 
 			   [ (__id__, __v__) ] -> 
-				   if Type.is_mutable $lid:P4_type.type_of n$ then (
+				   if Dyntype.Type.is_mutable $lid:P4_type.type_of n$ then (
 					   let __n__ = $lid:P4_value.of_value n$ __v__ in
 					   do { Orm.Sql_cache.add __env__ $lid:cache n$ __db__.Orm.Sql_backend.name __n__ __id__; __n__ }
 				   ) else (
@@ -223,7 +226,7 @@ let get_by_id_binding env tds (_loc, n, t) =
 
 let get_binding env tds (_loc, n, t) =
 	<:binding< $lid:get n$ =
-	if Type.is_mutable $lid:P4_type.type_of n$ then (
+	if Dyntype.Type.is_mutable $lid:P4_type.type_of n$ then (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) -> 
        fun ?order_by ->
@@ -270,7 +273,7 @@ let get_binding env tds (_loc, n, t) =
 (* XXX: TODO; would be nice to avoid code duplication here ... *)
 let lazy_get_binding env tds (_loc, n, t) =
 	<:binding< $lid:lazy_get n$ =
-	if Type.is_mutable $lid:P4_type.type_of n$ then (
+	if Dyntype.Type.is_mutable $lid:P4_type.type_of n$ then (
 		$Get.fun_of_name _loc tds n <:expr<
 			fun ?custom: (__custom_fn__) -> 
        fun ?order_by ->

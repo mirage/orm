@@ -1,16 +1,13 @@
 name = "orm"
 version = "0.6.3"
 description = "An Object-Relational Mapper (ORM) to persist and retrieve data" 
-requires = "orm.core"
 
-package "core" (
-  requires = "num, sqlite3, dyntype.type, dyntype.value, unix"
-  archive(byte) = "orm.cma"
-  archive(native) = "orm.cmxa"
-)
+archive(byte) = "orm.cma"
+archive(native) = "orm.cmxa"
+requires = "num, sqlite3, unix, dyntype"
 
 package "syntax" (
-  requires = "orm.core, dyntype.syntax, camlp4"
+  requires = "dyntype.syntax, camlp4, dyntype"
   description = "Syntax extension for ORM"
   archive(syntax, preprocessor) = "pa_orm.cma"
 )

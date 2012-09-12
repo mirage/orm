@@ -18,6 +18,7 @@
 
 open Sqlite3
 open Printf
+open Dyntype
 
 (* Maximum number of JOINS *)
 let max_join = 64
@@ -190,12 +191,12 @@ let with_valid_type fn t =
 		| _                           -> process_error t "This is not a well-formed type"
 
 let is_enum = function
-	| Type.Enum _ -> true
-	| _           -> false
+	| Type.List _ | Type.Array _ -> true
+	| _ -> false
 
 let get_enum_type = function
-	| Type.Enum t -> t
-	| t           -> process_error t "This is not a enum type"
+	| Type.List t | Type.Array t -> t
+	| t -> process_error t "This is not a enum type"
 
 let get_internal_type = with_valid_type (fun name t -> t)
 
@@ -222,12 +223,12 @@ let exec_sql ~tag ~env ~db sql binds fn =
 let field_names_of_type ~id t =
 	let module T = Type in
 	let rec aux name = function
-		| T.Unit | T.Int _ | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ | T.Arrow _ ->
+		| T.Unit | T.Int _ | T.Char | T.Bool | T.String | T.Float | T.Var _ | T.Rec _ | T.Ext _ | T.List _ | T.Array _ | T.Arrow _ ->
 			[ if name = "" then Name.default else name ]
 		| T.Option t -> Name.option_is_set name :: aux (Name.option name) t
 		| T.Tuple tl -> list_foldi (fun accu i t -> accu @ aux (Name.tuple name i) t) [] tl
-		| T.Dict tl  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict name n) t) [] tl
-		| T.Sum tl   -> 
+		| T.Dict (_,tl)  -> List.fold_left (fun accu (n,_,t) -> accu @ aux (Name.dict name n) t) [] tl
+		| T.Sum (_,tl)   -> 
 			"__row__" :: List.fold_left 
 				(fun accu (r,tl) -> list_foldi (fun accu i t -> accu @ aux (Name.sum name r i) t) accu tl)
 				[] tl in
@@ -238,13 +239,13 @@ let field_types_of_type ~id t =
 	let module T = Type in
 	let rec aux = function
 		| T.Unit | T.Int _ | T.Char | T.Bool
-		| T.Var _ | T.Rec _ | T.Ext _ | T.Enum _ -> [ "INTEGER" ]
+		| T.Var _ | T.Rec _ | T.Ext _ | T.List _ | T.Array _ -> [ "INTEGER" ]
 		| T.Float    -> [ "FLOAT" ]
 		| T.String   -> [ "STRING" ]
 		| T.Arrow _  -> [ "BLOB" ]
 		| T.Tuple tl -> List.fold_left (fun accu t -> accu @ aux t) [] tl
-		| T.Dict tl  -> List.fold_left (fun accu (_,_,t) -> accu @ aux t) [] tl
-		| T.Sum tl   -> "TEXT" :: List.fold_left (fun accu (_,tl) -> accu @ List.fold_left (fun accu t -> accu @ aux t) [] tl) [] tl
+		| T.Dict (_,tl)  -> List.fold_left (fun accu (_,_,t) -> accu @ aux t) [] tl
+		| T.Sum (_,tl)   -> "TEXT" :: List.fold_left (fun accu (_,tl) -> accu @ List.fold_left (fun accu t -> accu @ aux t) [] tl) [] tl
 		| T.Option t -> "INTEGER" :: aux t in
 	if id then "INTEGER" :: aux t else aux t
 
@@ -260,8 +261,8 @@ let subtables_of_type t =
 		| T.Float | T.String | T.Arrow _ -> accu
 		| T.Option t  -> aux ?parent ~field:(Name.option field) (Name.option name) accu t
 		| T.Tuple tl  -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.tuple field i) (Name.tuple name i) accu t) accu tl
-		| T.Dict tl   -> List.fold_left (fun accu (n,_,t) -> aux ?parent ?field:(Name.dict field n) (Name.dict name n) accu t) accu tl
-		| T.Sum tl    ->
+		| T.Dict (_,tl)   -> List.fold_left (fun accu (n,_,t) -> aux ?parent ?field:(Name.dict field n) (Name.dict name n) accu t) accu tl
+		| T.Sum (_,tl)    ->
 			  List.fold_left
 				  (fun accu (r,tl) -> list_foldi (fun accu i t -> aux ?parent ?field:(Name.sum field r i) (Name.sum name r i) accu t) accu tl)
 				  accu tl
@@ -270,7 +271,7 @@ let subtables_of_type t =
 		| T.Ext (v,s) as t ->
 			let res = ( [v, Type.unroll tables t], match parent with Some p -> [p, default field, `Foreign, v] | _ -> [] ) in
 			if List.mem_assoc v tables then accu else aux ~parent:v ~field:"" v (res >> accu) s
-		| T.Enum s    as t ->
+		| T.List s | T.Array s   as t ->
 			let name = Name.enum name in
 			let res = ( [name, Type.unroll tables t], match parent with Some p -> [p, default field, `Enum, name] | _ -> [] ) in
 			res >> (aux ~parent:name ~field:"" name accu s) in

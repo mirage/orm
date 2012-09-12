@@ -16,7 +16,7 @@ all: $(TESTS:%=pr_%) $(TESTS:%=r_%) $(TESTS:%=pi_%) $(TESTS:%=i_%)
 # p_% prints out the process ML file to stdout
 .PHONY: p_%
 p_%:
-	camlp4o $(P4INC) -parser -printer o $*.ml
+	camlp4o $(P4INC) -parser o -printer o $*.ml
 
 # top_% makes a top-level for the ML file
 top_%: pc_%

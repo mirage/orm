@@ -16,6 +16,7 @@
  *)
 
 open Printf
+open Dyntype
 open Type
 open Sql_backend
 open Sqlite3
