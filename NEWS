@@ -1,8 +1,8 @@
 0.6.4:
-(working version)
+* Fix toplevel usage in META file [29 Sep 2012]
 
 0.6.3:
-* Update to dyntype 0.8.4 [12 Sept 2012]
+* Update to dyntype 0.8.4 [12 Sep 2012]
 
 0.6.2:
 * abstract table index of type x to ORMID_x.t [25 Jan 2011]
