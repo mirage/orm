@@ -24,7 +24,7 @@ open Pa_type_conv
 
 let _ = 
   add_generator "hash"
-    (fun tds ->
+    (fun _ tds ->
       let _loc = loc_of_ctyp tds in
       <:str_item< $P4_hash.gen tds$ >>
     )

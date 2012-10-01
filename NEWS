@@ -1,3 +1,7 @@
+0.7.0:
+
+* Support (and require) type_conv-108.07.00 or greater [1 Oct 2012]
+
 0.6.4:
 * Fix toplevel usage in META file [29 Sep 2012]
 

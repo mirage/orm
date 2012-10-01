@@ -79,7 +79,7 @@ end
 
 let _ = 
   add_generator_with_arg "orm" Key.orm_parms
-    (fun args tds ->
+    (fun args _ tds ->
       let _loc = loc_of_ctyp tds in
       let args = match args with None -> [] |Some x -> x in
       let mode, keys =  List.partition (function `Mode _ -> true |_ -> false) args in

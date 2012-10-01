@@ -5,13 +5,13 @@ Installation
 
 You can download the latest distribution from Github at <http://github.com/mirage/orm>.  It also depends on the following libraries:
 
-* `dyntype` : available from <http://github.com/mirage/dyntype>
+* `dyntype` : version 0.9.0+, available from <http://github.com/mirage/dyntype>
 
 * `ocaml-sqlite3`: version 1.5.7+, available from <http://www.ocaml.info/home/ocaml_sources.html>. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
 
-* `type-conv`: available from <http://www.ocaml.info/home/ocaml_sources.html>
+* `type-conv`: version 108.07.00+, available from <http://www.ocaml.info/home/ocaml_sources.html>
 
-* `sqlite3`: version 3.6.22+, available from <http://www.sqlite.org/download.html>. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.
+* `sqlite3`: version 3.6.22+, available from <http://www.sqlite.org/download.html>. Earlier versions had crash bugs which are easily triggered by the ORM library, so please ensure you are up-to-date before reporting bugs.  Note that you may also need `pkg-config` installed for this to compile, so on MacOS X do `brew install pkg-config sqlite3` to get the latest dependencies for the OCaml bindings.
 
 The library installs an ocamlfind META file, so use it with the `orm.syntax` package.  To compile a file `foo.ml` with the ORM and findlib, do:
 
@@ -22,6 +22,8 @@ To link it into a standalone executable:
     ocamlfind ocamlopt -syntax camlp4o -linkpkg -package orm.syntax t.ml
 
 You can report issues using the Github issue tracker at <http://github.com/mirage/orm/issues>, or mail the authors at <mailto:mirage@recoil.org>.  If you use the ORM somewhere, feel free to drop us a short line and we can add your project to the Wiki as well.
+
+We recommend installation via the OPAM package manager, available at <http://opam.ocamlpro.com>.  Simply do `opam install orm`.
 
 Usage
 =====
