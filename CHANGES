@@ -1,0 +1,60 @@
+0.7.0 (Oct 2012):
+* Support (and require) type_conv-108.07.00 or greater.
+
+0.6.4 (Sep 2012):
+* Fix toplevel usage in META file.
+
+0.6.3 (Sep 2012):
+* Update to dyntype 0.8.4
+
+0.6.2 (Jan 2011):
+* abstract table index of type x to `ORMID_x.t`
+* generate a unified module representation ORM_x for all the generated functions (useful to make functors).
+* add lazy getters.
+* add order_by.
+
+0.6.1 (Jan 2011):
+* Use dyntype 0.7.2
+* Fix save and get for big lists (ie more than 64 elements)
+
+0.6.0 (Sep 2010):
+* Fix annoying bug when assigning the empty list to a mutable list.
+* Use the new dyntype's interface to create custom ID generator.
+* Allow non-recursive deletion of values.
+* Add x_get_by_id to retrieve values by id directly.
+* Experimental support for Google Appengine datastore.
+
+0.5.1 (Mar 2010):
+* Fix database sharing of lists for small sizes.
+* Rename `True|`False to `T|`F to fix syntax conflict.
+* Fix variant phantom types of RW/RO handles.
+* Make generated SQL more robust against older SQLite.
+
+0.5 (Feb 2010):
+* Simplify layout and use the dyntype library.
+* Many, many bugfixes and test suite improvements.
+* Breakdown core into smaller sub-libraries for value, hash, type
+  comparison, and weak table generation.
+
+0.4 (Oct 2009):
+* Add a hash function generation library for most ML types.
+* Sub-typing checking improvements.
+* Fixed mutable records not hashing correctly.
+* Add a t_id function to return an int64 UUID for a value.
+* Add debug "none" keyword to disable debug explicitly.
+* Store type in database to ensure safe attachment at runtime.
+* More debugging in SQL mode for index/trigger creation.
+
+0.3 (Oct 2009):
+* Add support for index (both lookup and unique).
+* Rewrite to a camlp4 (3.11+) code base and remove old extension.
+
+0.2 (May 2009):
+* Add support for unique indices of groups of fields.
+* Add a 'real' function for floating point datatypes.
+
+0.1 (May 2009):
+* Add support for custom WHERE clauses in queries.
+* Custom busy functions and control over the SQL transaction type.
+* Many bug fixes for foreign operations and new tests.
+* Initial release.
