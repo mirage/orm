@@ -1,12 +1,12 @@
-opam-version: "1"
+opam-version: "1.2.2"
 name: "orm"
 version: "0.7.0"
 maintainer: "anil@recoil.org"
+authors: "anil@recoil.org"
+homepage: "https://github.com/mirage/orm"
 tags: "org:mirage"
-build: [
-  [make]
-  [make "install"]
-]
+build: [make]
+install: [make "install"]
 remove: ["ocamlfind" "remove" "orm"]
 depends: [
   "ocamlfind"
