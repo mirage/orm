@@ -72,6 +72,15 @@ let test_get () =
   let i = List.hd i in
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
 
+let test_contains_get () =
+  let db = open_db x_init name in
+  x_save db x;
+  x_save db x2;
+  let i = x_get ~bar:(`Contains "hello") db in
+  "1 in db" @? (List.length i = 1);
+  let i = List.hd i in
+  "values match" @? (i.foo = x.foo && (i.bar = x.bar))
+    
 let test_custom_get () =
   let db = open_db x_init name in
   x_save db x;
@@ -132,6 +141,7 @@ let suite = [
   "simple_save" >:: test_save;
   "simple_update" >:: test_update;
   "simple_get" >:: test_get;
+  "simple_contains_get" >:: test_contains_get;
   "simple_lazy_get" >:: test_lazy_get;
   "simple_custom_get" >:: test_custom_get;
   "simple_subtype" >:: test_subtype;

@@ -63,7 +63,7 @@ let string_of_constraint (name, c) =
 		| `Eq i  -> make name, "=", Some (conv i)
 	and string name = function
 		| `Eq s       -> make name, "IS", Some (Data.TEXT s)
-		| `Contains s -> make name, "IS", Some (Data.TEXT (sprintf "*%s*" s)) in
+		| `Contains s -> make name, "LIKE", Some (Data.TEXT (sprintf "%%%s%%" s)) in
 	match c with
 		| `Bool b    -> bool name b
 		| `String s  -> string name s
