@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Simple"
+(*pp camlp4orf *)
 
 open Printf
 
@@ -26,19 +26,19 @@ let test_order () =
   x_save db x;
   x_save db x2;
   match x_get ~order_by:`foo db with
-    | [y1; y2] -> "query is ordered" @? (y1.foo <= y2.foo)
-    | _        -> "get error" @? false
+  | [y1; y2] -> "query is ordered" @? (y1.foo <= y2.foo)
+  | _        -> "get error" @? false
 
 let test_id () =
   let db = open_db x_init name in
-   x_save db x;
-   let i = x_id db x in
-   "id is 1" @? (ORMID_x.to_int64 i = 1L);
-   let x' = x_get_by_id (`Eq i) db in
-   "bar eq" @? (x'.bar = x.bar);
-   let x2 = { foo=100; bar="x2222" } in
-   assert_raises ~msg:"test_id_not_found" Not_found (fun () -> x_id db x2);
-   assert_raises ~msg:"test_id_not_found2" Not_found (fun () -> x_get_by_id ~id:(`Eq (ORMID_x.of_int64 5L)) db)
+  x_save db x;
+  let i = x_id db x in
+  "id is 1" @? (ORMID_x.to_int64 i = 1L);
+  let x' = x_get_by_id (`Eq i) db in
+  "bar eq" @? (x'.bar = x.bar);
+  let x2 = { foo=100; bar="x2222" } in
+  assert_raises ~msg:"test_id_not_found" Not_found (fun () -> x_id db x2);
+  assert_raises ~msg:"test_id_not_found2" Not_found (fun () -> x_get_by_id ~id:(`Eq (ORMID_x.of_int64 5L)) db)
 
 let test_save () =
   let db = open_db x_init name in
@@ -55,7 +55,7 @@ let test_subtype () =
   let module A = struct
     type x = {
       foo: int64;
-    } with orm 
+    } with orm
   end in
   let db = open_db ~rm:false A.x_init_read_only name in
   let i = A.x_get ~foo:(`Eq (Int64.of_int x.foo)) db in
@@ -80,7 +80,7 @@ let test_contains_get () =
   "1 in db" @? (List.length i = 1);
   let i = List.hd i in
   "values match" @? (i.foo = x.foo && (i.bar = x.bar))
-    
+
 let test_custom_get () =
   let db = open_db x_init name in
   x_save db x;
@@ -113,7 +113,7 @@ let test_delete () =
   x_delete db x2;
   "2 in db" @? (List.length (x_get db) = 2);
   match x_get db with
-  [a1;a3] -> "equal" @? (a3=x3 && a1=x1)
+    [a1;a3] -> "equal" @? (a3=x3 && a1=x1)
   |_ -> assert false
 
 let test_lazy_get () =
@@ -122,17 +122,17 @@ let test_lazy_get () =
   x_save db x2;
   let next = x_lazy_get db in
   (match next () with
-    | Some a1 -> "1 in db" @? (x.bar = a1.bar)
-    | _       -> "1 in db" @? false);
+   | Some a1 -> "1 in db" @? (x.bar = a1.bar)
+   | _       -> "1 in db" @? false);
   (match next () with
-    | Some a2 -> "2 in db" @? (x2.bar = a2.bar)
-    | _       -> "2 in db" @? false);
+   | Some a2 -> "2 in db" @? (x2.bar = a2.bar)
+   | _       -> "2 in db" @? false);
   (match next () with
-    | None    -> "nothing in db" @? true
-    | _       -> "nothing in db" @? false);
+   | None    -> "nothing in db" @? true
+   | _       -> "nothing in db" @? false);
   (match next () with
-    | None    -> "really nothing in db" @? true
-    | _       -> "really nothing in db" @? false)
+   | None    -> "really nothing in db" @? true
+   | _       -> "really nothing in db" @? false)
 
 let suite = [
   "simple_order" >:: test_order;
@@ -148,4 +148,3 @@ let suite = [
   "simple_save_get" >:: test_save_get;
   "simple_delete" >:: test_delete;
 ]
-

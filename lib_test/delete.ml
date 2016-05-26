@@ -1,3 +1,5 @@
+(*pp camlp4orf *)
+
 open Test_utils
 open OUnit
 
@@ -30,6 +32,5 @@ let test_delete () =
   check 2 (1, 0)
 
 let suite = [
-	"delete" >:: test_delete;
+  "delete" >:: test_delete;
 ]
-	

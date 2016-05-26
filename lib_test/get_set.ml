@@ -1,5 +1,5 @@
-TYPE_CONV_PATH "Get_set"
- 
+(*pp camlp4orf *)
+
 type t = {
   mutable x : string;
   mutable y : string;
@@ -18,7 +18,7 @@ let set db x y =
   t_save db t
 
 (*
- * The following should fail to compile 
+ * The following should fail to compile
 let fail () =
   let t = { x="hello"; y="world" } in
   let db = t_init_read_only "foo" in

@@ -1,17 +1,17 @@
-TYPE_CONV_PATH "Foreign"
+(*pp camlp4orf *)
 
 type t = {
   foo: string;
   bar: int64;
   xyz: char;
 } and x = {
-  first: t;
-  second: t;
-  third: int;
-} with orm (
- unique: t<xyz>, t<bar>;
- index: x<first,second>
-)
+    first: t;
+    second: t;
+    third: int;
+  } with orm (
+    unique: t<xyz>, t<bar>;
+    index: x<first,second>
+  )
 
 let name = "foreign.db"
 let s1 = { foo="hello"; bar=100L; xyz='a' }
@@ -48,7 +48,7 @@ let test_save_get () =
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
   match i with
-  [i] ->
+    [i] ->
     "structural values equal" @? ( x = i);
     "physical values equal" @? ( x == i)
   |_ -> assert false
@@ -60,5 +60,3 @@ let suite = [
   "foreign_get" >:: test_get;
   "foreign_save_get" >:: test_save_get;
 ]
-
-

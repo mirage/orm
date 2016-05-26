@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "List_simple"
+(*pp camlp4orf *)
 
 type x = {
   foo: string list;
@@ -46,4 +46,3 @@ let suite = [
   "list_simple_get" >:: test_get;
   "list_simple_save_get" >:: test_save_get;
 ]
-

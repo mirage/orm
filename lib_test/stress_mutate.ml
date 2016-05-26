@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Stress_mutate"
+(*pp camlp4orf *)
 
 type t = { a : int; mutable b : int } with orm
 

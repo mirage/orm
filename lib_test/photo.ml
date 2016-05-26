@@ -1,13 +1,13 @@
-TYPE_CONV_PATH "Photo"
+(*pp camlp4orf *)
 
 open Printf
 
 type exif_val =
-  Exif_string of string
-| Exif_int of int64
-| Exif_float of float
+    Exif_string of string
+  | Exif_int of int64
+  | Exif_float of float
 and
-photo = {
+  photo = {
   filename: string;
   metadata: (string * exif_val) list;
 } with orm
@@ -22,16 +22,16 @@ let type_of_image = type_of_photo
 
 (* marshalling to the database from a image *)
 let value_of_image ~id_seed (img:image) : Dyntype.Value.t =
- (* printf "reading exif data from file: %s\n%!" img; *)
- let exif = [ "date", (Exif_string ("today " ^ img)) ] in
- let filename = img ^ ".jpg" in
- value_of_photo ~id_seed { filename=filename; metadata=exif }
+  (* printf "reading exif data from file: %s\n%!" img; *)
+  let exif = [ "date", (Exif_string ("today " ^ img)) ] in
+  let filename = img ^ ".jpg" in
+  value_of_photo ~id_seed { filename=filename; metadata=exif }
 
 (* marshalling from the database into an image type *)
 let image_of_value (v:Dyntype.Value.t) : image =
- let p = photo_of_value v in
- (* printf "retrieving file from database: %s\n%!" p.filename; *)
- p.filename
+  let p = photo_of_value v in
+  (* printf "retrieving file from database: %s\n%!" p.filename; *)
+  p.filename
 
 let hash_of_image = Hashtbl.hash
 
@@ -53,9 +53,8 @@ let test_gallery () =
   gallery_save db g;
   gallery_save db g;
   "list eq 3" @? (List.length (List.hd (gallery_get db)).contents = 3)
-  
+
 let suite = [
   "photo_init" >:: test_init;
   "photo_save" >:: test_gallery;
 ]
-

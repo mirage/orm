@@ -1,13 +1,13 @@
-TYPE_CONV_PATH "Foreign_tuple"
+(*pp camlp4orf *)
 
 type t = {
   foo: string;
   bar: int64;
 } and x = {
-  first: (string * int64 * t);
-  second: t;
-  third: int;
-} with orm
+    first: (string * int64 * t);
+    second: t;
+    third: int;
+  } with orm
 
 open OUnit
 open Test_utils
@@ -44,7 +44,7 @@ let test_save_get () =
   let i = x_get db in
   "1 in db" @? (List.length i = 1);
   match i with
-  [i] ->
+    [i] ->
     "structural values equal" @? ( x = i);
     "physical values equal" @? ( x == i)
   |_ -> assert false

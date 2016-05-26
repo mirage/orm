@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "List_share"
+(*pp camlp4orf *)
 
 type x = {
   foo: string list;
@@ -54,6 +54,5 @@ let suite = [
   "list_share_save" >:: test_save;
   "list_share_update" >:: test_update;
   "list_share_get" >:: test_get;
-  "list_share_save_get" >:: test_save_get; 
+  "list_share_save_get" >:: test_save_get;
 ]
-

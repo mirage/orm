@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Stress"
+(*pp camlp4orf *)
 
 type t = { a : int; b : int } with orm
 
@@ -40,9 +40,9 @@ let test_bench name () =
 
 (* One result with big tables:
 
-timing (total: 229733 elements):
-get_where: 0.1541 (filtered: 23157 elements);
-get_custom: 0.6346 (filtered: 23157 elements)
+   timing (total: 229733 elements):
+   get_where: 0.1541 (filtered: 23157 elements);
+   get_custom: 0.6346 (filtered: 23157 elements)
 
 *)
 

@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Array_simple"
+(*pp camlp4orf *)
 
 type s = {
   foo: int array;
@@ -58,8 +58,8 @@ let test_delete () =
   s_delete db t2;
   "2 in db" @? (List.length (s_get db) = 2);
   (match s_get db with
-  [a1;a3] -> "equal" @? (a3=t3 && a1=t1)
-  |_ -> assert false);
+     [a1;a3] -> "equal" @? (a3=t3 && a1=t1)
+   |_ -> assert false);
   s_delete db t1;
   s_delete db t3;
   "0 in db" @? (List.length (s_get db) = 0)
@@ -72,5 +72,3 @@ let suite = [
   "array_simple_save_get" >:: test_save_get;
   "array_simple_delete" >:: test_delete;
 ]
-
-

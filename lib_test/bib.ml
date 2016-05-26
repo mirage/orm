@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Bib"
+(*pp camlp4orf *)
 
 open Printf
 

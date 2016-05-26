@@ -1,14 +1,14 @@
-TYPE_CONV_PATH "Recursive"
+(*pp camlp4orf *)
 
 type y = char with orm
 
-type t = { 
+type t = {
   t1: string;
   t2: x option
 } and x = {
-  x1: t option;
-  x2: y
-} with orm
+    x1: t option;
+    x2: y
+  } with orm
 
 type z = t with orm
 
@@ -79,7 +79,7 @@ let test_delete () =
 
   z_save dbz vz;
   a_save dba va;
-  
+
   (* 0. basic sanity checks before doing the delete test *)
   check 0 (1, 1, 1, 1, 1);
 
@@ -108,4 +108,3 @@ let suite = [
   "recursive_save_get" >:: test_save_get;
   "recursive_delete" >:: test_delete;
 ]
-

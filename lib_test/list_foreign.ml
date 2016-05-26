@@ -1,11 +1,11 @@
-TYPE_CONV_PATH "List_foreign"
+(*pp camlp4orf *)
 
 type s = {
   foo: int;
   bar: string
 } and x = {
-  one: s list;
-} with orm
+    one: s list;
+  } with orm
 
 let t1 = {foo=1; bar="t1"}
 let t2 = {foo=2; bar="t2"}
@@ -56,5 +56,3 @@ let suite = [
   "list_foreign_get" >:: test_get;
   "list_foreign_save_get" >:: test_save_get;
 ]
-
-

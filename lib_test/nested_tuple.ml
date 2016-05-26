@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Nested_tuple"
+(*pp camlp4orf *)
 
 type x = {
   foo: (int32 * int64 * string * (string * bool option));
@@ -8,7 +8,7 @@ type x = {
 open OUnit
 open Test_utils
 
-let x = {foo=(5l, 10L, "tt", ("xx", Some true)) ; bar=("hello",'w') } 
+let x = {foo=(5l, 10L, "tt", ("xx", Some true)) ; bar=("hello",'w') }
 let name = "nested_tuple.db"
 
 let test_init () =
@@ -48,4 +48,3 @@ let suite = [
   "nested_tuple_get" >:: test_get;
   "nested_tuple_save_get" >:: test_save_get;
 ]
-

@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Bibtex"
+(*pp camlp4orf *)
 
 open Printf
 

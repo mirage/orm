@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Large_string"
+(*pp camlp4orf *)
 
 open Printf
 
@@ -31,14 +31,13 @@ let test_save () =
 let test_update () =
   let db = open_db x_init name in
   List.iter (fun i ->
-    x_save db x1;
-    x_save db x2;
-    x_save db x3;
-  ) [1;2;3;4;5;6;7;8;9;10]
+      x_save db x1;
+      x_save db x2;
+      x_save db x3;
+    ) [1;2;3;4;5;6;7;8;9;10]
 
 let suite = [
   "large_string_init" >:: test_init;
   "large_string_save" >:: test_save;
   "large_string_update" >:: test_update;
 ]
-
