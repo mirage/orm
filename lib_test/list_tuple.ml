@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "List_tuple"
+(*pp camlp4orf *)
 
 type x = {
   foo: (int * char list) list;
@@ -43,7 +43,7 @@ let test_save_get () =
   x_save db x1;
   x_save db x2;
   x_save db x3;
-  match x_get db with 
+  match x_get db with
   |[a1;a2;a3] ->
     "structural values equal" @? ( x1 = a1);
     "physical values equal" @? ( x1 == a1);
@@ -60,4 +60,3 @@ let suite = [
   "list_tuple_get" >:: test_get;
   "list_tuple_save_get" >:: test_save_get;
 ]
-

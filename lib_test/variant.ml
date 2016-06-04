@@ -1,6 +1,6 @@
-TYPE_CONV_PATH "Variant"
+(*pp camlp4orf *)
 
-type s = 
+type s =
   |Foo
   |Bar of int
   |Xyz of string
@@ -14,8 +14,8 @@ open OUnit
 open Test_utils
 
 let string_of_s = function
-  |Foo -> "Foo" 
-  |Bar i -> "Bar " ^ (string_of_int i) 
+  |Foo -> "Foo"
+  |Bar i -> "Bar " ^ (string_of_int i)
   |Xyz z -> "Xyz " ^ z
   |_ -> "??"
 
@@ -45,7 +45,7 @@ let test_get () =
   let db = open_db ~rm:false x_init name in
   let i = x_get db in
   "2 in db" @? (List.length i = 2);
-  match i with 
+  match i with
   | [a1;a2] ->
     "x1 values match" @? (a1.foo = x1.foo && (a1.bar = x1.bar));
     "x2 values match" @? (a2.foo = x2.foo && (a2.bar = x2.bar))
@@ -55,7 +55,7 @@ let test_save_get () =
   let db = open_db x_init name in
   x_save db x1;
   match x_get db with
-  [i] -> "structurally equal after get" @? ( x1 == i)
+    [i] -> "structurally equal after get" @? ( x1 == i)
   |_ -> assert false
 
 let suite = [
@@ -66,4 +66,3 @@ let suite = [
   "variant_get" >:: test_get;
   "variant_save_get" >:: test_save_get;
 ]
-

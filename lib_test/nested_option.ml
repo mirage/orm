@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Nested_option"
+(*pp camlp4orf *)
 
 type x = {
   foo: int option option;
@@ -49,5 +49,3 @@ let suite = [
   "nested_option_get" >:: test_get;
   "nested_option_save_get" >:: test_save_get;
 ]
-
-

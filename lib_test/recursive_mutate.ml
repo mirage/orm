@@ -1,16 +1,16 @@
-TYPE_CONV_PATH "Recursive_mutate"
+(*pp camlp4orf *)
 
-type t = { 
+type t = {
   t1: string;
   t2: x option;
   mutable t3: char;
 }
 and x = {
   x1: t option;
-  mutable x2: char; 
+  mutable x2: char;
   x3: int64
 }
-with orm 
+with orm
 
 open Test_utils
 open OUnit
@@ -19,9 +19,9 @@ open OUnit
 let rec x_equal ~depth u v =
   depth = 0 ||
   (match u.x1, v.x1 with
-  | None, None       -> true
-  | Some t1, Some t2 -> t_equal ~depth:(depth-1) t1 t2
-  | _                -> false)
+   | None, None       -> true
+   | Some t1, Some t2 -> t_equal ~depth:(depth-1) t1 t2
+   | _                -> false)
   && u.x2 = v.x2
   && u.x3 = v.x3
 
@@ -29,9 +29,9 @@ and t_equal ~depth u v =
   depth = 0 ||
   u.t1 = v.t1
   && (match u.t2, v.t2 with
-  | None, None       -> true
-  | Some x1, Some x2 -> x_equal ~depth:(depth-1) x1 x2
-  | _                -> false)
+      | None, None       -> true
+      | Some x1, Some x2 -> x_equal ~depth:(depth-1) x1 x2
+      | _                -> false)
   && u.t3 = v.t3
 
 let name = "recursive_mutate.db"
@@ -71,7 +71,7 @@ let test_save_get () =
   let i = List.hd i in
   "values equal" @? ( x_equal ~depth:10 vx i)
 
-let test_delete () = 
+let test_delete () =
   let db = open_db x_init name in
   let dbt = open_db ~rm:false t_init_read_only name in
   x_save db vx;
@@ -89,4 +89,3 @@ let suite = [
   "recursive_mutate_save_get" >:: test_save_get;
   "recursive_mutate_delete" >:: test_delete;
 ]
-

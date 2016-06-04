@@ -1,9 +1,9 @@
-TYPE_CONV_PATH "Hash"
+(*pp camlp4orf *)
 
 type p =
- |One of int array * string * float * bool * (char list)
- |Two of (int * int * int)
- |Three of x option list
+  |One of int array * string * float * bool * (char list)
+  |Two of (int * int * int)
+  |Three of x option list
 
 and pp = [ `Poly1 | `Poly2 | `Poly3 of int ]
 
@@ -19,7 +19,7 @@ and x = {
 }
 
 and
-f = {
+  f = {
   mutable f1: int;
   mutable f2: string list;
   f3: string;
@@ -27,18 +27,18 @@ f = {
   f5: char array;
 }
 
-and tu = ( int  * f * pp ) 
+and tu = ( int  * f * pp )
 
 with hash
 
 type o = < x: int; y: string; z: (int -> string) > with hash
 
 module FH = Hashtbl.Make(struct
-  let hash = hash_of_f
-  let equal = (=)
-  let compare = compare
-  type t = f
-end)
+    let hash = hash_of_f
+    let equal = (=)
+    let compare = compare
+    type t = f
+  end)
 
 let rs () =
   Random.self_init ();

@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Variant_nested"
+(*pp camlp4orf *)
 
 type n =
   | Non of int64
@@ -32,12 +32,12 @@ let test_save () =
 
 let test_subtype () =
   let module A = struct
-  type n =
+    type n =
       | Non of int64
       | NTwo
       | Nthree of string
       | Nfour of x
-    and x = 
+    and x =
       | XONE
       | Xtwo of n
       | Xthree of int64

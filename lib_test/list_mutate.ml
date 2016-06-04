@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "List_mutate"
+(*pp camlp4orf *)
 
 type x = {
   foo: int;
@@ -8,7 +8,7 @@ type x = {
 open Test_utils
 open OUnit
 
-let name = "list_mutate.db" 
+let name = "list_mutate.db"
 
 let test_mutate_basic () =
   let db = open_db x_init name in
@@ -24,14 +24,14 @@ let test_mutate_basic () =
   | x -> failwith (Printf.sprintf "too many x: %d" (List.length x))
 
 let test_mutate_empty () =
-	let db = open_db x_init name in
-	let l = [ "foo1", "bar1" ] in
-	let t1 = { foo = 1; bar = l } in
-	x_save db t1;
-	t1.bar <- [];
-	x_save db t1
+  let db = open_db x_init name in
+  let l = [ "foo1", "bar1" ] in
+  let t1 = { foo = 1; bar = l } in
+  x_save db t1;
+  t1.bar <- [];
+  x_save db t1
 
 let suite = [
   "list_mutate_basic" >:: test_mutate_basic;
-	"list_mutate_empty" >:: test_mutate_empty;
+  "list_mutate_empty" >:: test_mutate_empty;
 ]

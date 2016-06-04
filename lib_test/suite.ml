@@ -40,8 +40,8 @@ let slow_suites = [
 
 let _ =
   let s = try 
-   if Sys.getenv "SLOW" <> "" then
-      slow_suites
-     else suites
-   with Not_found -> suites in
+      if Sys.getenv "SLOW" <> "" then
+        slow_suites
+      else suites
+    with Not_found -> suites in
   run_test_tt_main ("ORM" >::: (List.flatten s))

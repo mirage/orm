@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Tuple"
+(*pp camlp4orf *)
 
 type x = {
   foo: int32;
@@ -49,4 +49,3 @@ let suite = [
   "tuple_get" >:: test_get;
   "tuple_save_get" >:: test_save_get;
 ]
-

@@ -1,4 +1,4 @@
-TYPE_CONV_PATH "Record_mutate"
+(*pp camlp4orf *)
 
 type x = {
   mutable foo: string;
@@ -9,14 +9,14 @@ open Test_utils
 open OUnit
 
 module H = Hashtbl.Make (
-  struct 
+  struct
     type t = x
     let equal = (==)
     let compare = (==)
     let hash _ = 0
   end )
 
-let name = "record_mutate.db" 
+let name = "record_mutate.db"
 
 let test_mutate_nodb () =
   let t1 = { foo="foo"; bar=None } in

@@ -1,4 +1,5 @@
-TYPE_CONV_PATH "All_types"
+(*pp camlp4orf *)
+
 open Printf
 open OUnit
 open Test_utils
@@ -23,10 +24,10 @@ type x = {
 and y=int with orm
 
 let name = "alltypes.db"
-let x = { one='a'; two="foo"; three=1; four=2l; 
-     five=true; six=3L; seven=(); eight=(Some "bar");
-     nine=6.9; ten=(100,"hello"); eleven=["aa";"bb";"cc"];
-     twelve=(Some ('t',9l,())); thirteen=('d', (Some ("abc",999L))) }
+let x = { one='a'; two="foo"; three=1; four=2l;
+          five=true; six=3L; seven=(); eight=(Some "bar");
+          nine=6.9; ten=(100,"hello"); eleven=["aa";"bb";"cc"];
+          twelve=(Some ('t',9l,())); thirteen=('d', (Some ("abc",999L))) }
 
 let test_init () =
   ignore(open_db x_init name);
@@ -65,4 +66,3 @@ let suite = [
   "alltypes_get" >:: test_get;
   "alltypes_save_get" >:: test_save_get;
 ]
-
