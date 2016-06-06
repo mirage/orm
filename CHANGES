@@ -1,3 +1,7 @@
+0.7.1
+* Fix contains for string gets (#6, by @mvalle)
+* Add TravisCI (#9, by @mvalle and @samoht)
+
 0.7.0 (Oct 2012):
 * Support (and require) type_conv-108.07.00 or greater.
 
